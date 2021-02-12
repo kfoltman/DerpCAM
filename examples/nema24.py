@@ -1,3 +1,6 @@
+import sys
+sys.path += '..'
+
 from process import *
 from geom import *
 from gcodegen import *
