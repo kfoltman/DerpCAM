@@ -163,7 +163,7 @@ class Operation(object):
          pathToGcode(gcode, path=path, safe_z=safe_z, start_depth=self.props.start_depth, end_depth=self.props.depth, doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
 
 class HelicalDrill(Operation):
-   def __init__(self, x, y, d, tool, props, woc):
+   def __init__(self, x, y, d, tool, props):
       shape = Shape.circle(x, y, r=0.5*d)
       Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
       self.x = x
