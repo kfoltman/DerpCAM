@@ -98,21 +98,14 @@ class PathViewer(QWidget):
       for op in self.operations:
          if op.paths and op.tabs and op.tabs.tabs:
             for toolpath in op.flattened:
-               points, flags = toolpath.eliminate_tabs(op.tabs)
+               subpaths = toolpath.eliminate_tabs2(op.tabs)
                pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter * self.scalingFactor())
                pen.setCapStyle(Qt.RoundCap)
                pen.setJoinStyle(Qt.RoundJoin)
                qp.setPen(pen)
-               pts = []
-               for i in range(0, len(points) - 1):
-                  if flags[i] or pts:
-                     pts.append(points[i])
-                  if not flags[i]:
-                     if pts:
-                        self.drawLines(qp, pts, False)
-                        pts = []
-               if pts:
-                  self.drawLines(qp, pts, False)
+               for is_tab, subpath in subpaths:
+                  if not is_tab:
+                     self.drawLines(qp, subpath, False)
       lastpt = (0, 0)
       for op in self.operations:
          if op.paths:
