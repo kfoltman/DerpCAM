@@ -213,10 +213,10 @@ class Shape(object):
       #polygon = list(reversed(polygon))
       return Shape(polygon, True, None)
    @staticmethod
-   def union(path1, path2):
+   def union(*paths):
       pc = Pyclipper()
-      pc.AddPath(PtsToInts(path1.boundary), PT_SUBJECT, path1.closed)
-      pc.AddPath(PtsToInts(path2.boundary), PT_CLIP, path2.closed)
+      for path in paths:
+         pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
       res = pc.Execute(CT_UNION, fillMode, fillMode)
       if not res:
          return []

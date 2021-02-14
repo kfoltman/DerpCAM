@@ -68,8 +68,13 @@ preview the actual output.
 quite badly on Grbl based machines with short motion buffers and slow serial
 ports. This is something I want to improve in near future.
 
-* There is no support for islands yet. This is simple to add and I'll probably
-add it as soon as I need it.
+Note: I've now added an experimental feature that tries to simplify the
+paths by replacing series of line segments that describe arcs by proper
+G-Code arc commands. However, it is too new and is disabled by default.
+See gcodegen.py. It also doesn't affect ramp paths at the moment.
+
+* There is no support for pockets with islands yet. This is simple to add and
+I'll probably add it as soon as I need it.
 
 * No axis-aligned pocketing. I don't like it enough to bother. I may add it later
 if there is a good reason.

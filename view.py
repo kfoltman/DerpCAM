@@ -61,6 +61,10 @@ class PathViewer(QWidget):
          pen = QPen(QColor(0, 0, 0), 0)
       qp.setPen(pen)
       self.drawLines(qp, path.points, path.closed)
+      if simplify_arcs:
+         pen = QPen(QColor(0, 128, 0), 0)
+         qp.setPen(pen)
+         self.drawLines(qp, CircleFitter.simplify(path.points), path.closed)
 
    def drawRapids(self, qp, path, lastpt):
       if isinstance(path, Toolpaths):
@@ -139,7 +143,8 @@ class PathViewer(QWidget):
       return QPointF((qpf.x() - mx) / scale + self.zero.x(), -(qpf.y() - my) / scale + self.zero.y())
    
    def drawLines(self, painter, points, closed):
-      pts = [self.project(QPointF(p[0], p[1])) for p in points]
+      pts = CircleFitter.interpolate_arcs(points, debug_simplify_arcs, self.scalingFactor())
+      pts = [self.project(QPointF(*p)) for p in pts]
 
       #scale = self.scalingFactor()
       #zx, zy = self.zero.x(), self.zero.y()
