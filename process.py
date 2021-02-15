@@ -141,7 +141,27 @@ class Toolpaths(object):
    def calc_bounds(self):
       return max_bounds(*[tp.bounds for tp in self.toolpaths])
 
+def fixPathNesting(tps):
+   nestings = []
+   for tp in tps:
+      contours = tp.toolpaths if isinstance(tp, Toolpaths) else [tp]
+      for subtp in contours:
+         for children in nestings:
+            if inside_bounds(children[-1].bounds, subtp.bounds):
+               # subtp contains this chain of contours
+               children.append(subtp)
+               break
+         else:
+            # Doesn't contain any earlier contour, so start a nesting.
+            nestings.append([subtp])
+   res = []
+   nestings = sorted(nestings, key=len)
+   for nesting in nestings:
+      res += nesting
+   return res
+
 def joinClosePaths(tps):
+   tps = fixPathNesting(tps)
    last = None
    res = []
    for tp in tps:
@@ -244,7 +264,7 @@ class Shape(object):
          [[transform(p[0], p[1]) for p in interpolate(island)] for island in self.islands])
    @staticmethod
    def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
-      return Shape(circle(x, y, r if r else 0.5 * d, n), True, None, sangle, eangle)
+      return Shape(circle(x, y, r if r else 0.5 * d, n, sa, ea), True, None)
    @staticmethod
    def rectangle(sx, sy, ex, ey):
       polygon = [(sx, sy), (ex, sy), (ex, ey), (sx, ey)]

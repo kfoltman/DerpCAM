@@ -34,6 +34,12 @@ def weighted(p1, p2, alpha):
 def SameOrientation(path, expected):
    return path if Orientation(path) == expected else ReversePath(path)
 
+# Is b1 inside or overlapping b2?
+def inside_bounds(b1, b2):
+   sx1, sy1, ex1, ey1 = b1
+   sx2, sy2, ex2, ey2 = b2
+   return sx1 >= sx2 and ex1 <= ex2 and sy1 >= sy2 and ey1 <= ey2
+
 def max_bounds(b1, *b2etc):
    sx, sy, ex, ey = b1
    for b2 in b2etc:

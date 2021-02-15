@@ -5,11 +5,6 @@ from process import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-def inside_bounds(b1, b2):
-   sx1, sy1, ex1, ey1 = b1
-   sx2, sy2, ex2, ey2 = b2
-   return sx1 >= sx2 and ex1 <= ex2 and sy1 >= sy2 and ey1 <= ey2
-
 def sort_polygons(polygons):
    bounds = []
    for i, pts in enumerate(polygons):
