@@ -180,33 +180,71 @@ class Shape(object):
       xcoords = [p[0] for p in self.boundary]
       ycoords = [p[1] for p in self.boundary]
       return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
-   def contour(self, tool, outside = True, displace = 0):
+   def engrave(self, tool):
+      tps = [Toolpath(self.boundary, self.closed, tool)] + [
+         Toolpath(island, True, tool) for island in self.islands ]
+      if len(tps) == 1:
+         return tps[0]
+      return Toolpaths(tps)
+   def contour(self, tool, outside=True, displace=0, subtract=None):
       dist = (0.5 * tool.diameter + displace) * RESOLUTION
       boundary = PtsToInts(self.boundary)
       pc = PyclipperOffset()
-      pc.AddPath(boundary, JT_ROUND, ET_CLOSEDPOLYGON if self.closed else ET_OPENPOLYGON)
+      pc.AddPath(boundary, JT_ROUND, ET_CLOSEDPOLYGON if self.closed else ET_OPENROUND)
       res = pc.Execute(dist if outside else -dist)
       if not res:
          return None
+
+      if subtract:
+         res2 = []
+         for i in res:
+            d = Shape._difference(i, *subtract)
+            if d:
+               res2 += d
+         if not res2:
+            return None
+         res = res2
       tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
       if len(tps) == 1:
          return tps[0]
       return Toolpaths(tps)
    def pocket_contour(self, tool):
       tps = []
+      islands_transformed = []
+      for island in self.islands:
+         pc = PyclipperOffset()
+         pc.AddPath(PtsToInts(island), JT_ROUND, ET_CLOSEDPOLYGON)
+         res = pc.Execute(tool.diameter * 0.5 * RESOLUTION)
+         if not res:
+            return None
+         islands_transformed += res
+         tps += [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
       while True:
-         res = self.contour(tool, False, displace)
+         res = self.contour(tool, False, displace, islands_transformed)
          if not res:
             break
          displace += stepover
          tps.append(res)
+      if len(tps) == 0:
+         raise ValueError("Empty contour")
       tps = joinClosePaths(list(reversed(tps)))
       return Toolpaths(tps)
+   def warp(self, transform):
+      def interpolate(pts):
+         res = []
+         for i, p1 in enumerate(pts):
+            p2 = pts[(i + 1) % len(pts)]
+            segs = max(1, floor(dist(p1, p2)))
+            for i in range(segs):
+               res.append(weighted(p1, p2, i / segs))
+         return res
+      return Shape([transform(p[0], p[1]) for p in interpolate(self.boundary)], self.closed,
+         [[transform(p[0], p[1]) for p in interpolate(island)] for island in self.islands])
    @staticmethod
-   def circle(x, y, r = None, d = None, n = None):
-      return Shape(circle(x, y, r if r else 0.5 * d, n), True, None)
+   def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
+      return Shape(circle(x, y, r if r else 0.5 * d, n), True, None, sangle, eangle)
    @staticmethod
    def rectangle(sx, sy, ex, ey):
       polygon = [(sx, sy), (ex, sy), (ex, ey), (sx, ey)]
@@ -223,4 +261,14 @@ class Shape(object):
       if len(res) == 1:
          return Shape(PtsFromInts(res[0]))
       return [Shape(PtsFromInts(i)) for i in res]
+   # This works on lists of points
+   @staticmethod
+   def _difference(*paths):
+      pc = Pyclipper()
+      for path in paths:
+         pc.AddPath(PtsToInts(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
+      res = pc.Execute(CT_DIFFERENCE, fillMode, fillMode)
+      if not res:
+         return []
+      return [PtsFromInts(i) for i in res]
 
