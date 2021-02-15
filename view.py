@@ -190,8 +190,16 @@ class PathViewer(QWidget):
       else:
          self.setCursor(Qt.CrossCursor)
 
+app = None
+
+def init_app():
+   global app
+   if app is None:
+      app = QApplication(sys.argv)
+
 def viewer_modal(operations):
-   app = QApplication(sys.argv)
+   global app
+   init_app()
    w = QMainWindow()
    w.viewer = PathViewer(operations)
    w.viewer.initUI()
