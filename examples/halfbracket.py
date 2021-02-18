@@ -31,6 +31,20 @@ holes = [
     (3 * width / 4, length - width / 2 - hole_diameter / 2),
 ]
 
+angle = -pi / 4
+rx, ry = width / 2, 0
+outside = outside.rotated(angle, rx, ry)
+holes = Shape._rotate_points(holes, angle, rx, ry)
+
+bounds = outside.bounds
+
+outside = outside.translated(-bounds[0], -bounds[1])
+holes = Shape._translate_points(holes, -bounds[0], -bounds[1])
+
+shrinkage = 0.03
+outside = outside.scaled(1 + shrinkage)
+holes = Shape._scale_points(holes, 1 + shrinkage)
+
 operations = []
 
 operations += [HelicalDrill(x=hole[0], y=hole[1], d=hole_diameter, tool=tool, props=OperationProps(depth=depth)) for hole in holes ]

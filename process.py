@@ -130,7 +130,10 @@ class Toolpaths(object):
    def __init__(self, toolpaths):
       self.toolpaths = toolpaths
       self.bounds = self.calc_bounds()
+      self.flattened_cache = self.calc_flattened()
    def flattened(self):
+      return self.flattened_cache
+   def calc_flattened(self):
       res = []
       for path in self.toolpaths:
          if isinstance(path, Toolpaths):
@@ -262,6 +265,27 @@ class Shape(object):
          return res
       return Shape([transform(p[0], p[1]) for p in interpolate(self.boundary)], self.closed,
          [[transform(p[0], p[1]) for p in interpolate(island)] for island in self.islands])
+   @staticmethod
+   def _rotate_points(points, angle, x=0, y=0):
+      def rotate(x, y, cosv, sinv, sx, sy):
+         x -= sx
+         y -= sy
+         return sx + x * cosv - y * sinv, sy + x * sinv + y * cosv
+      return [rotate(p[0], p[1], cos(angle), sin(angle), x, y) for p in points]
+   def rotated(self, angle, x, y):
+      return Shape(self._rotate_points(self.boundary, angle, x, y), self.closed, [self._rotate_points(island, angle, x, y) for island in self.islands])
+   @staticmethod
+   def _scale_points(points, mx, my=None, sx=0, sy=0):
+      if my is None:
+         my = mx
+      return [(sx + (x - sx) * mx, sy + (y - sy) * my) for x, y in points]
+   def scaled(self, mx, my=None, sx=0, sy=0):
+      return Shape(self._scale_points(self.boundary, mx, my, sx, sy), self.closed, [self._scale_points(island, mx, my, sx, sy) for island in self.islands])
+   @staticmethod
+   def _translate_points(points, dx, dy):
+      return [(p[0] + dx, p[1] + dy) for p in points]
+   def translated(self, dx, dy):
+      return Shape(self._translate_points(self.boundary, dx, dy), self.closed, [self._translate_points(island, dx, dy) for island in self.islands])
    @staticmethod
    def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
       return Shape(circle(x, y, r if r else 0.5 * d, n, sa, ea), True, None)
