@@ -380,7 +380,7 @@ class CircleFitter(object):
             eangle = c.angle(p2)
 
             if not debug:
-               steps *= min(4, max(1, scaling_factor))
+               steps *= ceil(min(4, max(1, scaling_factor)))
             else:
                steps = 3
 
