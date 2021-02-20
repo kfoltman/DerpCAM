@@ -18,6 +18,7 @@ class PathViewer(QWidget):
       if ex > sx and ey > sy:
          self.zero = QPointF(0.5 * (sx + ex), 0.5 * (sy + ey))
          self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
+      self.renderDrawing()
    def bounds(self):
       b = None
       for op in self.operations:
@@ -48,85 +49,99 @@ class PathViewer(QWidget):
       self.zero += vpt - vpt2
       self.repaint()
 
-   def drawToolpaths(self, qp, path, stage):
-      if isinstance(path, Toolpaths):
-         for tp in path.toolpaths:
-            self.drawToolpaths(qp, tp, stage)
-         return
-      if stage == 1:
-         pen = QPen(QColor(192, 192, 192, 100), path.tool.diameter * self.scalingFactor())
-         pen.setCapStyle(Qt.RoundCap)
-         pen.setJoinStyle(Qt.RoundJoin)
-      else:
-         pen = QPen(QColor(0, 0, 0), 0)
-      qp.setPen(pen)
-      self.drawLines(qp, path.points, path.closed)
-      if simplify_arcs:
-         if not hasattr(path, 'points_simplified_cache'):
-            path.points_simplified_cache = CircleFitter.simplify(path.points)
-         pen = QPen(QColor(0, 128, 0), 0)
-         qp.setPen(pen)
-         self.drawLines(qp, path.points_simplified_cache, path.closed, True)
+   def addPath(self, pen, *polylines):
+      paths = []
+      for polyline in polylines:
+         path = QPainterPath()
+         path.moveTo(*polyline[0])
+         for point in polyline[1:]:
+            path.lineTo(*point)
+         self.drawingOps.append((pen, path, path.boundingRect()))
 
-   def drawRapids(self, qp, path, lastpt):
+   def addToolpaths(self, pen, path, stage):
       if isinstance(path, Toolpaths):
          for tp in path.toolpaths:
-            lastpt = self.drawRapids(qp, tp, lastpt)
+            self.addToolpaths(pen, tp, stage)
+         return
+      if simplify_arcs:
+         if stage == 1:
+            pen = QPen(QColor(192, 192, 192, 100), path.tool.diameter)
+         else:
+            pen = QPen(QColor(0, 128, 128), 0)
+         self.addLines(pen, CircleFitter.simplify(path.points), path.closed, True)
+      else:
+         self.addLines(pen, path.points, path.closed)
+
+   def addRapids(self, pen, path, lastpt):
+      if isinstance(path, Toolpaths):
+         for tp in path.toolpaths:
+            lastpt = self.addRapids(pen, tp, lastpt)
          return lastpt
-      self.drawLines(qp, [lastpt, path.points[0]], False)
+      self.addLines(pen, [lastpt, path.points[0]], False)
       return path.points[0 if path.closed else -1]
       
+   def renderDrawing(self):
+      self.drawingOps = []
+      for op in self.operations:
+         if op.paths:
+            for stage in (1, 2):
+               for toolpath in op.flattened:
+                  if stage == 1:
+                     pen = QPen(QColor(192, 192, 192, 100), toolpath.tool.diameter)
+                     pen.setCapStyle(Qt.RoundCap)
+                     pen.setJoinStyle(Qt.RoundJoin)
+                  else:
+                     pen = QPen(QColor(0, 0, 0), 0)
+                  #self.drawToolpaths(qp, self.paths, stage)
+                  self.addToolpaths(pen, op.paths, stage)
+      pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter)
+      pen.setCapStyle(Qt.RoundCap)
+      pen.setJoinStyle(Qt.RoundJoin)
+      for op in self.operations:
+         if op.paths and op.tabs and op.tabs.tabs:
+            for toolpath in op.flattened:
+               subpaths = toolpath.eliminate_tabs2(op.tabs)
+               for is_tab, subpath in subpaths:
+                  if not is_tab:
+                     self.addLines(pen, subpath, False)
+      pen = QPen(QColor(255, 0, 0), 0)
+      lastpt = (0, 0)
+      for op in self.operations:
+         if op.paths:
+            lastpt = self.addRapids(pen, op.paths, lastpt)
+      penOutside = QPen(QColor(0, 0, 255), 0)
+      penIslands = QPen(QColor(0, 255, 0), 0)
+      for op in self.operations:
+         p = op.shape.boundary
+         self.addLines(penOutside, p, op.shape.closed)
+         for p in op.shape.islands:
+            self.addLines(penIslands, p, True)
+
    def paintEvent(self, e):
       qp = QPainter()
       qp.begin(self)
-      qp.setRenderHint(1, True)
-      qp.setRenderHint(8, True)
+      if not self.click_data:
+         qp.setRenderHint(1, True)
+         qp.setRenderHint(8, True)
 
       size = self.size()
       zeropt = self.project(QPointF())
       qp.setPen(QPen(QColor(128, 128, 128)))
       qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
       qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
-
-      for op in self.operations:
-         if op.paths:
-            for toolpath in op.flattened:
-               for stage in (1, 2):
-                  #self.drawToolpaths(qp, self.paths, stage)
-                  if stage == 1:
-                     pen = QPen(QColor(192, 192, 192, 100), toolpath.tool.diameter * self.scalingFactor())
-                     pen.setCapStyle(Qt.RoundCap)
-                     pen.setJoinStyle(Qt.RoundJoin)
-                  else:
-                     pen = QPen(QColor(0, 0, 0), 0)
-                  qp.setPen(pen)
-                  self.drawToolpaths(qp, op.paths, stage)
-      for op in self.operations:
-         if op.paths and op.tabs and op.tabs.tabs:
-            for toolpath in op.flattened:
-               subpaths = toolpath.eliminate_tabs2(op.tabs)
-               pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter * self.scalingFactor())
-               pen.setCapStyle(Qt.RoundCap)
-               pen.setJoinStyle(Qt.RoundJoin)
+      scale = self.scalingFactor()
+      transform = QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
+      qp.setTransform(transform)
+      drawingArea = QRectF(self.rect())
+      for pen, path, bbox in self.drawingOps:
+         bounds = transform.mapRect(bbox)
+         if bounds.intersects(drawingArea):
+            if self.click_data:
+               qp.setPen(QPen(pen.color(), 0))
+            else:
                qp.setPen(pen)
-               for is_tab, subpath in subpaths:
-                  if not is_tab:
-                     self.drawLines(qp, subpath, False)
-      lastpt = (0, 0)
-      for op in self.operations:
-         if op.paths:
-            pen = QPen(QColor(255, 0, 0))
-            qp.setPen(pen)
-            lastpt = self.drawRapids(qp, op.paths, lastpt)
-      for op in self.operations:
-         pen = QPen(QColor(0, 0, 255))
-         qp.setPen(pen)
-         p = op.shape.boundary
-         self.drawLines(qp, p, op.shape.closed)
-         pen = QPen(QColor(0, 255, 0))
-         qp.setPen(pen)
-         for p in op.shape.islands:
-            self.drawLines(qp, p, True)
+            qp.drawPath(path)
+      qp.end()
 
    def scalingFactor(self):
       return self.scale * (2 ** (self.zoom_level / 4))
@@ -144,17 +159,13 @@ class PathViewer(QWidget):
       mx, my = (self.size().width() * 0.5, self.size().height() * 0.5)
       return QPointF((qpf.x() - mx) / scale + self.zero.x(), -(qpf.y() - my) / scale + self.zero.y())
    
-   def drawLines(self, painter, points, closed, has_arcs=False):
+   def addLines(self, pen, points, closed, has_arcs=False):
       if has_arcs:
          points = CircleFitter.interpolate_arcs(points, debug_simplify_arcs, self.scalingFactor())
-      pts = [self.project(QPointF(*p)) for p in points]
-
-      #scale = self.scalingFactor()
-      #zx, zy = self.zero.x(), self.zero.y()
-      #pts = [QPointF((p[0] - zx) * scale + self.cx, (zy - p[1]) * scale + self.cy) for p in points]
       if closed:
-         pts.append(pts[0])
-      painter.drawPolyline(*pts)
+         self.addPath(pen, points + points[0:1])
+      else:
+         self.addPath(pen, points)
 
    def mousePressEvent(self, e):
       b = e.button()
@@ -166,6 +177,7 @@ class PathViewer(QWidget):
       if self.click_data:
          self.processMove(e)
          self.click_data = None
+         self.repaint()
       self.updateCursor()
 
    def mouseMoveEvent(self, e):
