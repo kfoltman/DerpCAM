@@ -116,9 +116,8 @@ class PathViewer(QWidget):
    def paintEvent(self, e):
       qp = QPainter()
       qp.begin(self)
-      if not self.click_data and not self.draft_time:
-         qp.setRenderHint(1, True)
-         qp.setRenderHint(8, True)
+      qp.setRenderHint(1, True)
+      qp.setRenderHint(8, True)
 
       size = self.size()
       zeropt = self.project(QPointF())
