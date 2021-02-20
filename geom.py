@@ -237,14 +237,14 @@ class CircleFitter(object):
          if (pangles == 0 or nangles == 0) and tangle <= 1.5 * pi:
             error = c.calc_error2(pts[start:end])
             if error < CircleFitter.error_threshold:
-               return [(start, end, c, error)], error
+               return [(start, end, c, error, 1 if pangles else -1)], error
       if not recurse:
          return [], -1
       mid = (start + end) // 2
       left, lerror = CircleFitter.fit_arcs1(pts, start, mid)
       right, rerror = CircleFitter.fit_arcs1(pts, mid, end)
       # Coalesce
-      while len(left) and len(right) and left[-1][1] == right[0][0]:
+      while len(left) and len(right) and left[-1][1] == right[0][0] and left[-1][4] != -right[-1][4]:
          coal, cerror = CircleFitter.fit_arcs1(pts, left[-1][0], right[0][1], False)
          if not coal:
             break
@@ -279,10 +279,9 @@ class CircleFitter(object):
       pts_out = []
       arcs = CircleFitter.fit_arcs2(pts, 0, len(pts))
       last = 0
-      for start, end, c, error in arcs:
+      for start, end, c, error, adir in arcs:
          pts_out += pts[last:start]
-         pangles, nangles, tangle = c.count_angles(pts[start : start + 2])
-         pts_out.append(("ARC_CCW" if pangles else "ARC_CW", c.snap(pts[start]), c.snap(pts[end - 1]), (c.cx - pts[start][0], c.cy - pts[start][1]), c, end - start, 1 if pangles else -1))
+         pts_out.append(("ARC_CCW" if adir > 0 else "ARC_CW", c.snap(pts[start]), c.snap(pts[end - 1]), (c.cx - pts[start][0], c.cy - pts[start][1]), c, end - start, 1 if adir > 0 else -1))
          last = end
       pts_out += pts[last:]
       return pts_out
