@@ -23,13 +23,33 @@ def circle(x, y, r, n=None, sa=0, ea=2*pi):
          res.append(newpt)
    return res
 
+def arc_length(arc):
+   # tag, p1, p2, c, steps, sangle, sspan = arc
+   return abs(arc[6]) * arc[3].r
+
+def dist_fast(a, b):
+   dx = b[0] - a[0]
+   dy = b[1] - a[1]
+   return sqrt(dx * dx + dy * dy)
+
 def dist(a, b):
+   if len(a) == 7:
+      a = a[2]
+   if len(b) == 7:
+      b = b[1]
    dx = b[0] - a[0]
    dy = b[1] - a[1]
    return sqrt(dx * dx + dy * dy)
 
 def weighted(p1, p2, alpha):
    return p1[0] + (p2[0] - p1[0]) * alpha, p1[1] + (p2[1] - p1[1]) * alpha
+
+def weighted_with_arcs(p1, p2, alpha):
+   if len(p1) == 7:
+      p1 = p1[2]
+   if len(p2) == 7:
+      return p2[3].at_angle(p2[5] + alpha * p2[6])
+   return weighted(p1, p2, alpha)
 
 def SameOrientation(path, expected):
    return path if Orientation(path) == expected else ReversePath(path)
@@ -51,66 +71,85 @@ def max_bounds(b1, *b2etc):
    return sx, sy, ex, ey
 
 def path_length(path):
-   return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)])
+   return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc_length(arc) for arc in path if len(arc) == 7])
 
 def path_lengths(path):
    res = [0]
    lval = 0
    for i in range(len(path) - 1):
-      lval += dist(path[i], path[i + 1])
+      if len(path[i + 1]) == 2:
+         lval += dist(path[i], path[i + 1])
+      else:
+         lval += arc_length(path[i + 1])
       res.append(lval)
    return res   
+
+def reverse_path(path):
+   res = []
+   i = len(path) - 1
+   while i >= 0:
+      pi = path[i]
+      if len(pi) == 2:
+         res.append(pi)
+      else: # arc
+         # tag, p1, p2, c, steps, sangle, sspan = p
+         res.append(pi[2]) # end point
+         res.append(("ARC_CW" if pi[0] == "ARC_CCW" else "ARC_CW", pi[2], pi[1], pi[3], pi[4], pi[5] + pi[6], -pi[6]))
+         # Skip start point, as it is already inside the arc
+         i -= 1
+         # Verify that it actually was
+         if path[i] != pi[1]:
+            for n, p in enumerate(path):
+               print ("Item", n, p)
+         assert path[i] == pi[1]
+      i -= 1
+   return res
+
+def cut_arc(arc, alpha, beta):
+   alpha = max(0, alpha)
+   beta = min(1, beta)
+   if alpha == 0 and beta == 1:
+      return [arc[1], arc]
+   c = arc[3]
+   start = arc[5] + arc[6] * alpha
+   span = arc[6] * (beta - alpha)
+   arc_start = c.at_angle(start)
+   arc_end = c.at_angle(start + span)
+   return [arc_start, (arc[0], arc_start, arc_end, arc[3], arc[4], start, span)]
 
 def calc_subpath(path, start, end):
    res = []
    tlen = 0
-   next = None
-   i = 0
-   # Omit all segments before start
-   while i < len(path) - 1:
-      p1 = path[i]
-      p2 = path[i + 1]
-      d = dist(p1, p2)
-      if tlen + d > start:
-         break
-      tlen += d
-      i += 1
-   if i >= len(path) - 1:
-      return []
-   if start > tlen:
-      # Start is within the first non-omitted segment
-      while i < len(path) - 1 and tlen < end:
-         p1 = path[i]
-         p2 = path[i + 1]
-         d = dist(p1, p2)
-         if d > 0:
-            break
-         i += 1
-      res.append(weighted(p1, p2, (start - tlen) / d))
-      # Perhaps the end is also within the same segment?
-      if end <= tlen + d:
-         res.append(weighted(p1, p2, (end - tlen) / d))
-         return res
-   else:
-      # The start of the first segment is the start of the output
-      if tlen < end:
-         res.append(path[i])
-   while i < len(path) - 1 and tlen < end:
-      p1 = path[i]
-      p2 = path[i + 1]
-      d = dist(p1, p2)
-      if d == 0:
-         i += 1
-         continue
-      if tlen > end:
-         break
-      if tlen + d >= end:
-         res.append(weighted(p1, p2, (end - tlen) / d))
-         return res
+   last = path[0]
+   for p in path[1:]:
+      if len(p) == 7: # Arc
+         tag, p1, p2, c, points, sstart, sspan = p
+         assert dist(last, p1) < 1 / RESOLUTION
+         d = arc_length(p)
+         if d == 0:
+            continue
+         tlen_after = tlen + d
+         if tlen_after >= start and tlen <= end:
+            alpha = (start - tlen) / d
+            beta = (end - tlen) / d
+            res += cut_arc(p, alpha, beta)
+         last = p2
       else:
-         res.append(p2)
-      tlen += d
-      i += 1
+         d = dist(last, p)
+         if d == 0:
+            continue
+         tlen_after = tlen + d
+         if tlen_after >= start and tlen <= end:
+            alpha = (start - tlen) / d
+            beta = (end - tlen) / d
+            alpha = max(0, alpha)
+            beta = min(1, beta)
+            res.append(weighted(last, p, alpha) if alpha > 0 else last)
+            res.append(weighted(last, p, beta) if beta < 1 else p)
+         last = p
+      tlen = tlen_after
+   # Eliminate duplicates
+   res = [p for i, p in enumerate(res) if i == 0 or p != res[i - 1]]
    return res
 
 eps = 1e-6
@@ -300,113 +339,31 @@ class CircleFitter(object):
       last = 0
       for start, end, c, error, adir in arcs:
          pts_out += pts[last:start]
-         pts_out.append(("ARC_CCW" if adir > 0 else "ARC_CW", c.snap(pts[start]), c.snap(pts[end - 1]), (c.cx - pts[start][0], c.cy - pts[start][1]), c, end - start, 1 if adir > 0 else -1))
+
+         p1, p2 = pts[start], pts[end - 1]
+         sangle, eangle = c.angle(p1), c.angle(p2)
+         if adir == 1 and eangle < sangle:
+            eangle += 2 * pi
+         if adir == -1 and eangle > sangle:
+            eangle -= 2 * pi
+
+         pts_out.append(c.snap(pts[start]))
+         pts_out.append(("ARC_CCW" if adir > 0 else "ARC_CW", c.snap(pts[start]), c.snap(pts[end - 1]), c, end - start, sangle, eangle - sangle))
          last = end
       pts_out += pts[last:]
       return pts_out
-
-   # Old fitter:
-   # Fit a circle based on 3 specified points, return match data
-   @staticmethod
-   def try_fit_circle_old(pts, p1, p2, p3):
-      cir = CandidateCircle.from_3(p1, p2, p3)
-      if cir is None:
-         return
-      maxerror = 0
-      rmserror = 0
-      pangles, nangles = cir.count_angles(pts)
-      for p in pts:
-         error = abs(cir.dist(p) - cir.r)
-         maxerror = max(error, maxerror)
-         rmserror += error * error
-      rmserror = sqrt(rmserror / len(pts))
-      return cir, pangles, nangles, maxerror, rmserror
-
-   # Old fitter:
-   # Find runs of short segments that look like they might be quantized arcs.
-   # Break a run when a longer segment occurs or when there's a change of a
-   # direction in X or Y.
-   @staticmethod
-   def find_runs_old(pts):
-      def sign(value):
-         return (1 if value > 0 else -1) if value else 0
-      def delta(p1, p2):
-         return (p2[1] - p1[1], p2[0] - p1[0])
-      deltas = [delta(p1, pts[(i + 1) % len(pts)]) for i, p1 in enumerate(pts)]
-      ranges = []
-      run_start = None
-      # This threshold is dependent on how we subdivide the circles
-      threshold = 1 ** 2
-      min_count = 4
-      for i, delta in enumerate(deltas):
-         d2 = delta[0] ** 2 + delta[1] ** 2
-         if run_start is None:
-            if d2 <= threshold:
-               run_start = i
-         else:
-            if d2 > threshold:
-               #print ("At ", i, "too long", sqrt(d2), sqrt(threshold))
-               # Too long a segment, so it's not part of a quantized arc
-               if i - run_start > min_count:
-                  # Don't bother with short ranges
-                  ranges.append((run_start, i))
-               run_start = None
-      if run_start is not None and len(pts) - run_start > min_count:
-         ranges.append((run_start, len(pts)))
-      return ranges
-
-   @staticmethod
-   def simplify_old(pts):
-      ranges = CircleFitter.find_runs_old(pts)
-      last = 0
-      pts2 = []
-      #print ("Ranges:", ranges)
-      errthr = 2.0 / RESOLUTION
-      for start, end in ranges:
-         if last > end:
-            continue
-         if last > start:
-            start = last
-         pts2 += pts[last:start]
-
-         res = (end > start + 2) and CircleFitter.try_fit_circle(pts[start:end], pts[start], pts[(start + end) // 2], pts[end - 1])
-         #res = (end > start + 2) and CircleFitter.try_fit_circle(pts[start:end], pts[start], pts[start + 1], pts[end - 1])
-         if res:
-            c, pangles, nangles, maxerror, rmserror = res
-            cx, cy, radius = c.cx, c.cy, c.r
-            if maxerror < errthr:
-               p1 = pts[start]
-               p2 = pts[end - 1]
-               if pangles:
-                  pts2.append(("ARC_CCW", p1, p2, (cx - p1[0], cy - p1[1]), c, end - start, 1))
-               else:
-                  pts2.append(("ARC_CW", p1, p2, (cx - p1[0], cy - p1[1]), c, end - start, -1))
-            else:
-               print ("Max error too large", maxerror, errthr, rmserror)
-               pts2 += pts[start:end]
-         last = end
-      pts2 += pts[last:]
-      return pts2
 
    @staticmethod
    def interpolate_arcs(points, debug, scaling_factor):
       pts = []
       for p in points:
          if type(p[0]) is str:
-            tag, p1, p2, dc, c, steps, sdir = p
-            sangle = c.angle(p1)
-            eangle = c.angle(p2)
-
+            tag, p1, p2, c, steps, sangle, sspan = p
             if not debug:
                steps *= ceil(min(4, max(1, scaling_factor)))
             else:
                steps = 3
-
-            if sdir == 1 and eangle < sangle:
-               eangle += 2 * pi
-            if sdir == -1 and eangle > sangle:
-               eangle -= 2 * pi
-            step = (eangle - sangle) / steps
+            step = sspan / steps
             for i in range(1 + steps):
                pts.append(c.at_angle(sangle + step * i))
 

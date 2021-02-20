@@ -77,14 +77,42 @@ class Gcode(object):
          self.feed(tool.hfeed)
       else:
          self.rapid(z=new_z)
+
+   def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
+      assert dist(lastpt, subpath[0]) < 1 / RESOLUTION
+      tdist = 0
+      for pt in subpath[1:]:
+         if len(pt) > 2:
+            # Arc
+            tag, spt, ept, c, steps, sangle, sspan = pt
+            cdist = (c.cx - spt[0], c.cy - spt[1])
+            assert dist(lastpt, spt) < 1 / RESOLUTION
+            tdist += arc_length(pt)
+            if new_z is not None:
+               self.arc(1 if sspan > 0 else -1, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1], z=old_z + (new_z - old_z) * tdist / tlength)
+            else:
+               self.arc(1 if sspan > 0 else -1, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1])
+            lastpt = ept
+         else:
+            if new_z is not None:
+               tdist += dist(lastpt, pt)
+               self.linear(x=pt[0], y=pt[1], z=old_z + (new_z - old_z) * tdist / tlength)
+            else:
+               self.linear(x=pt[0], y=pt[1])
+            lastpt = pt
+      return lastpt
+
    def ramped_move_z(self, new_z, old_z, subpath, slope, semi_safe_z):
+      if False:
+         # If doing it properly proves to be too hard
+         subpath = CircleFitter.interpolate_arcs(subpath, False, 1)
       if new_z >= old_z:
          self.rapid(z=new_z)
+         # ???
          return
-      # XXXKF hack: don't bother ramping above Z=1
       if old_z > semi_safe_z:
          self.rapid(z=semi_safe_z)
-         old_z = 1
+         old_z = semi_safe_z
       # Always positive
       z_diff = old_z - new_z
       xy_diff = z_diff * slope
@@ -92,39 +120,55 @@ class Gcode(object):
       npasses = xy_diff / tlengths[-1]
       if debug_ramp:
          self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
+      subpath_reverse = reverse_path(subpath)
       self.linear(x=subpath[0][0], y=subpath[0][1])
+      lastpt = subpath[0]
       per_level = tlengths[-1] / slope
+      cur_z = old_z
       for i in range(ceil(npasses)):
          if i == floor(npasses):
             # Last pass, do a shorter one
             newlength = (npasses - floor(npasses)) * tlengths[-1]
+            if newlength < 1 / RESOLUTION:
+               # Very small delta, just plunge down
+               self.linear(z=new_z)
+               break
             if debug_ramp:
                self.add("(Last pass, shortening to %d)" % newlength)
             subpath = calc_subpath(subpath, 0, newlength)
+            real_length = path_length(subpath)
+            assert abs(newlength - real_length) < 1 / RESOLUTION
+            subpath_reverse = reverse_path(subpath)
             tlengths = path_lengths(subpath)
          pass_z = max(new_z, old_z - i * per_level)
+         next_z = max(new_z, pass_z - per_level)
          if debug_ramp:
-            self.add("(Pass %d base level %0.2f min %0.2f)" % (i, pass_z, pass_z - tlengths[-1] / slope))
-         for j in range(1, len(subpath)):
-            self.linear(x=subpath[j][0], y=subpath[j][1], z=max(new_z, pass_z - tlengths[j] / slope))
-         #self.add("Pass %d reverse" % i)
-         for j in range(len(subpath) - 2, -1, -1):
-            self.linear(x=subpath[j][0], y=subpath[j][1])
+            self.add("(Pass %d base level %0.2f min %0.2f)" % (i, pass_z, next_z))
+         lastpt = self.apply_subpath(subpath, lastpt, next_z, cur_z, tlengths[-1])
+         cur_z = next_z
+         lastpt = self.apply_subpath(subpath_reverse, lastpt)
+      return lastpt
 
 def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, tabs, tab_depth):
+   def simplifySubpaths(subpaths):
+      return [(is_tab, CircleFitter.simplify(subpath)) for is_tab, subpath in subpaths]
    paths = path.flattened() if isinstance(path, Toolpaths) else [path]
-   prev_depth = start_depth
+   prev_depth = semi_safe_z
    depth = max(start_depth - doc, end_depth)
    curz = safe_z
    lastpt = None
    slope = max(1, int(path.tool.hfeed / path.tool.vfeed))
+   paths_out = []
+   for p in paths:
+      subpaths_full = [(False, p.points + ([p.points[0]] if p.closed else []))]
+      subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else subpaths_full
+      if simplify_arcs:
+         subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
+         subpaths_full = simplifySubpaths(subpaths_full)
+      paths_out.append((subpaths_tabbed, subpaths_full))
    while True:
-      for p in paths:
-         if depth < tab_depth:
-            subpaths = p.eliminate_tabs2(tabs)
-         else:
-            #subpaths = p.eliminate_tabs2(Tabs([]))
-            subpaths = [(False, p.points + ([p.points[0]] if p.closed else []))]
+      for subpaths_tabbed, subpaths_full in paths_out:
+         subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
          # Not a continuous path, need to jump to a new place
          firstpt = subpaths[0][1][0]
          if lastpt is None or dist(lastpt, firstpt) > 1 / RESOLUTION:
@@ -142,25 +186,13 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
                      gcode.move_z(prev_depth, curz, p.tool, semi_safe_z)
                      curz = prev_depth
                   gcode.feed(p.tool.hfeed)
-                  # XXXKF add support for arc finding
-                  gcode.ramped_move_z(newz, curz, subpath, slope, semi_safe_z)
+                  lastpt = gcode.ramped_move_z(newz, curz, subpath, slope, semi_safe_z)
                else:
                   gcode.move_z(newz, curz, p.tool, semi_safe_z)
                curz = newz
             # First point was either equal to the most recent one, or
             # was reached using a rapid move, so omit it here.
-            assert dist(lastpt, subpath[0]) < 1 / RESOLUTION
-            subpath2 = CircleFitter.simplify(subpath) if simplify_arcs else subpath
-            for pt in subpath2:
-               if len(pt) > 2:
-                  # Arc
-                  tag, spt, ept, cdist, c, steps, direction = pt
-                  gcode.linear(x=spt[0], y=spt[1])
-                  gcode.arc(direction, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1])
-                  lastpt = ept
-               else:
-                  gcode.linear(x=pt[0], y=pt[1])
-                  lastpt = pt
+            lastpt = gcode.apply_subpath(subpath, lastpt)
             if is_tab and debug_tabs:
                gcode.add("(tab end)")
       if depth == end_depth:
