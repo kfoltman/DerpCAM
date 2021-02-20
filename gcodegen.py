@@ -1,7 +1,7 @@
 from process import *
 
 # VERY experimental feature
-simplify_arcs = False
+simplify_arcs = True
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False

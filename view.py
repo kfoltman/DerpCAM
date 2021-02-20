@@ -62,9 +62,11 @@ class PathViewer(QWidget):
       qp.setPen(pen)
       self.drawLines(qp, path.points, path.closed)
       if simplify_arcs:
+         if not hasattr(path, 'points_simplified_cache'):
+            path.points_simplified_cache = CircleFitter.simplify(path.points)
          pen = QPen(QColor(0, 128, 0), 0)
          qp.setPen(pen)
-         self.drawLines(qp, CircleFitter.simplify(path.points), path.closed)
+         self.drawLines(qp, path.points_simplified_cache, path.closed, True)
 
    def drawRapids(self, qp, path, lastpt):
       if isinstance(path, Toolpaths):
@@ -142,9 +144,10 @@ class PathViewer(QWidget):
       mx, my = (self.size().width() * 0.5, self.size().height() * 0.5)
       return QPointF((qpf.x() - mx) / scale + self.zero.x(), -(qpf.y() - my) / scale + self.zero.y())
    
-   def drawLines(self, painter, points, closed):
-      pts = CircleFitter.interpolate_arcs(points, debug_simplify_arcs, self.scalingFactor())
-      pts = [self.project(QPointF(*p)) for p in pts]
+   def drawLines(self, painter, points, closed, has_arcs=False):
+      if has_arcs:
+         points = CircleFitter.interpolate_arcs(points, debug_simplify_arcs, self.scalingFactor())
+      pts = [self.project(QPointF(*p)) for p in points]
 
       #scale = self.scalingFactor()
       #zx, zy = self.zero.x(), self.zero.y()
