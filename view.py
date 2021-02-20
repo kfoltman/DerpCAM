@@ -15,10 +15,12 @@ class PathViewer(QWidget):
       self.zero = QPointF(0, 0)
       self.zoom_level = 0
       self.click_data = None
+      self.draft_time = None
       if ex > sx and ey > sy:
          self.zero = QPointF(0.5 * (sx + ex), 0.5 * (sy + ey))
          self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
       self.renderDrawing()
+      self.startTimer(50)
    def bounds(self):
       b = None
       for op in self.operations:
@@ -30,12 +32,6 @@ class PathViewer(QWidget):
          else:
             b = max_bounds(b, opb)
       return b
-   def resizeEvent(self, e):
-      sx, sy, ex, ey = self.bounds()
-      self.cx = self.size().width() / 2
-      self.cy = self.size().height() / 2
-      self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
-      self.repaint()
    def initUI(self):
       self.setMinimumSize(500, 500)
       self.setMouseTracking(True)
@@ -120,7 +116,7 @@ class PathViewer(QWidget):
    def paintEvent(self, e):
       qp = QPainter()
       qp.begin(self)
-      if not self.click_data:
+      if not self.click_data and not self.draft_time:
          qp.setRenderHint(1, True)
          qp.setRenderHint(8, True)
 
@@ -136,7 +132,7 @@ class PathViewer(QWidget):
       for pen, path, bbox in self.drawingOps:
          bounds = transform.mapRect(bbox)
          if bounds.intersects(drawingArea):
-            if self.click_data:
+            if self.click_data or self.draft_time:
                qp.setPen(QPen(pen.color(), 0))
             else:
                qp.setPen(pen)
@@ -167,6 +163,12 @@ class PathViewer(QWidget):
       else:
          self.addPath(pen, points)
 
+   def processMove(self, e):
+      orig_zero, orig_pos = self.click_data
+      transpose = (e.localPos() - orig_pos) / self.scalingFactor()
+      self.zero = orig_zero - QPointF(transpose.x(), -transpose.y())
+      self.repaint()
+
    def mousePressEvent(self, e):
       b = e.button()
       if e.button() == Qt.RightButton:
@@ -186,6 +188,8 @@ class PathViewer(QWidget):
 
    def wheelEvent(self, e):
       delta = e.angleDelta().y()
+      if delta != 0:
+         self.draft_time = time.time() + 0.5
       if delta > 0:
          self.adjustScale(e.position(), 1)
       if delta < 0:
@@ -193,11 +197,19 @@ class PathViewer(QWidget):
       if self.click_data:
          self.click_data = (self.zero, e.position())
 
-   def processMove(self, e):
-      orig_zero, orig_pos = self.click_data
-      transpose = (e.localPos() - orig_pos) / self.scalingFactor()
-      self.zero = orig_zero - QPointF(transpose.x(), -transpose.y())
+   def resizeEvent(self, e):
+      sx, sy, ex, ey = self.bounds()
+      self.cx = self.size().width() / 2
+      self.cy = self.size().height() / 2
+      self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
       self.repaint()
+
+   def timerEvent(self, e):
+      if self.draft_time is not None and time.time() > self.draft_time:
+         self.draft_time = None
+         self.setCursor(Qt.WaitCursor)
+         self.repaint()
+         self.updateCursor()
 
    def updateCursor(self):
       if self.click_data:
