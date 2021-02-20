@@ -253,6 +253,25 @@ class CircleFitter(object):
             break
          left[-1] = coal[0]
          right.pop(0)
+      while len(left) and len(right) and left[-1][1] < right[0][0]:
+         # Extend by one
+         lstart, lend, lcircle, lerror, ldir = left[-1]
+         coal, cerror = CircleFitter.fit_arcs1(pts, lstart, lend + 1, False)
+         if coal and cerror <= lerror:
+            left[-1] = coal[0]
+            lerror = cerror
+            continue
+         rstart, rend, rcircle, rerror, rdir = right[0]
+         coal, cerror = CircleFitter.fit_arcs1(pts, rstart - 1, rend, False)
+         if coal and cerror <= rerror:
+            right[0] = coal[0]
+            rerror = cerror
+            continue
+         if rstart - lend > 5:
+            coal, cerror = CircleFitter.fit_arcs1(pts, lend, rstart, True)
+            if cerror < max(lerror, rerror):
+               left += coal
+         break
       return left + right, max(lerror, rerror)
 
    @staticmethod
