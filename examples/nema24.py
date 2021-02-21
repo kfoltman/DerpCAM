@@ -19,6 +19,8 @@ safe_z = 5
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
+# Best kept at False, because it's unfinished and untested on a real machine.
+use_trochoidal_for_contour = False
 
 outside = Shape.rectangle(0, 0, 60, 60)
 holes = [(30 + hole_spacing * i, 30 + hole_spacing * j, 4.2) for i in (-0.5, 0.5) for j in (-0.5, 0.5)]
@@ -35,7 +37,10 @@ operations.helical_drill_full_depth(x=30, y=30, d=10.2)
 operations.pocket(recess, props=props_recess)
 for x, y, d in holes:
     operations.helical_drill(x=x, y=y, d=d)
-operations.outside_contour(outside, tabs=4)
+if use_trochoidal_for_contour:
+    operations.outside_contour_trochoidal(outside, nrad=0.5, nspeed=1, tabs=4)
+else:
+    operations.outside_contour(outside, tabs=4)
 
 operations.to_gcode_file("nema24.ngc")
 

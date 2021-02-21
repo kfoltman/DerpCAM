@@ -1,7 +1,7 @@
 from process import *
 
 # VERY experimental feature
-simplify_arcs = False
+simplify_arcs = True
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
@@ -214,9 +214,11 @@ class Operation(object):
       self.flattened = paths.flattened()
       if tabs:
          assert len(self.flattened) == 1
-         self.tabs = self.flattened[0].autotabs(tabs)
+         self.tabs = self.flattened[0].autotabs(tabs, width=self.tabs_width())
       else:
          self.tabs = Tabs([])
+   def tabs_width(self):
+      return 1
    def to_gcode(self, gcode, safe_z, semi_safe_z):
       tab_depth = self.props.tab_depth
       if tab_depth is None:
@@ -229,6 +231,47 @@ class Operation(object):
 class Contour(Operation):
    def __init__(self, shape, outside, tool, props, tabs):
       Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside), props, tabs=tabs)
+
+def trochoidal(path, nrad, nspeed):
+   res = []
+   lastpt = path[0]
+   res.append(lastpt)
+   for pt in path:
+      d = dist(lastpt, pt)
+      subdiv = ceil(max(10, d * RESOLUTION))
+      for i in range(subdiv):
+         res.append(weighted(lastpt, pt, i / subdiv))
+      lastpt = pt
+   res.append(path[-1])
+   path = res
+   res = []
+   lastpt = path[0]
+   t = 0
+   for pt in path:
+      x, y = pt
+      d = dist(lastpt, pt)
+      t += d
+      x += nrad*cos(t * nspeed * 2 * pi)
+      y += nrad*sin(t * nspeed * 2 * pi)
+      res.append((x, y))
+      lastpt = pt
+   res.append(pt)
+   return res
+
+class TrochoidalContour(Operation):
+   def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
+      nrad *= 0.5 * tool.diameter
+      self.nrad = nrad
+      self.nspeed = nspeed
+      if not outside:
+         nrad = -nrad
+      contour = shape.contour(tool, outside=outside, displace=nrad)
+      points = trochoidal(contour.points, nrad, nspeed)
+      contour = Toolpath(points, contour.closed, tool)
+      Operation.__init__(self, shape, tool, contour, props, tabs=tabs)
+   def tabs_width(self):
+      # This needs tweaking
+      return 4 * pi * self.nspeed
 
 class Pocket(Operation):
    def __init__(self, shape, tool, props):
@@ -300,6 +343,8 @@ class Operations(object):
       self.operations.append(operation)
    def outside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
+   def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
+      self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
    def inside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
    def engrave(self, shape, props=None):
