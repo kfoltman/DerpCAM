@@ -210,12 +210,23 @@ class Shape(object):
       if len(tps) == 1:
          return tps[0]
       return Toolpaths(tps)
+   @staticmethod
+   def _offset(points, closed, dist):
+      if abs(dist) > 10 * RESOLUTION:
+         res = Shape._offset(points, closed, int(dist / 2))
+         if not res:
+            return
+         res2 = []
+         for contour in res:
+            res2 += Shape._offset(contour, closed, dist - int(dist / 2))
+         return res2
+      pc = PyclipperOffset()
+      pc.AddPath(points, JT_ROUND, ET_CLOSEDPOLYGON if closed else ET_OPENROUND)
+      return pc.Execute(dist)
    def contour(self, tool, outside=True, displace=0, subtract=None):
       dist = (0.5 * tool.diameter + displace) * RESOLUTION
       boundary = PtsToInts(self.boundary)
-      pc = PyclipperOffset()
-      pc.AddPath(boundary, JT_ROUND, ET_CLOSEDPOLYGON if self.closed else ET_OPENROUND)
-      res = pc.Execute(dist if outside else -dist)
+      res = Shape._offset(boundary, self.closed, dist if outside else -dist)
       if not res:
          return None
 
@@ -242,7 +253,9 @@ class Shape(object):
          if not res:
             return None
          islands_transformed += res
-         tps += [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
+         for path in res:
+            for ints in Shape._intersection(path, self.boundary):
+               tps += [Toolpath(ints, self.closed, tool)]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
       while True:
@@ -313,6 +326,16 @@ class Shape(object):
       for path in paths:
          pc.AddPath(PtsToInts(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
       res = pc.Execute(CT_DIFFERENCE, fillMode, fillMode)
+      if not res:
+         return []
+      return [PtsFromInts(i) for i in res]
+   # This works on lists of points
+   @staticmethod
+   def _intersection(*paths):
+      pc = Pyclipper()
+      for path in paths:
+         pc.AddPath(PtsToInts(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
+      res = pc.Execute(CT_INTERSECTION, fillMode, fillMode)
       if not res:
          return []
       return [PtsFromInts(i) for i in res]
