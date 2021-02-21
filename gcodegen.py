@@ -234,6 +234,10 @@ class Pocket(Operation):
    def __init__(self, shape, tool, props):
       Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
 
+class Engrave(Operation):
+   def __init__(self, shape, tool, props):
+      Operation.__init__(self, shape, tool, shape.engrave(tool), props)
+
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
       shape = Shape.circle(x, y, r=0.5*d)
@@ -298,6 +302,8 @@ class Operations(object):
       self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
    def inside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
+   def engrave(self, shape, props=None):
+      self.add(Engrave(shape, self.tool, props or self.props))
    def pocket(self, shape, props=None):
       self.add(Pocket(shape, self.tool, props or self.props))
    def helical_drill(self, x, y, d, props=None):

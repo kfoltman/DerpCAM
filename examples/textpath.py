@@ -7,6 +7,7 @@ from gcodegen import *
 from view import *
 
 width = 250
+inner_width = 240
 length = 100
 
 
@@ -25,13 +26,12 @@ hole_diameter = 4.2
 #frame = circle(width / 2, -length, sqrt((width / 2) ** 2 + (2 * length) ** 2), sa = atan2(2 * length, width / 2), ea = pi - atan2(2 * length, width / 2)) + \
 #    [( 0, 0), (width, 0)]
 
-frame = circle(0, 0, width / 2)
-
-outside = Shape(frame, True, [])
+outside = Shape.circle(0, 0, width/2)
+inner_frame = Shape.circle(0, 0, inner_width / 2)
 
 def curve_transform(x, y):
-    pos = 0.5 + 0.5 * x / (width / 2)
-    r = width / 2 - 22 + y * 1.4
+    pos = 0.5 + 0.5 * x / (inner_width / 2)
+    r = width / 2 - 25 + y * 1.4
     angle = (1 - pos) * pi
     return r * cos(angle), r * sin(angle)
 
@@ -50,16 +50,16 @@ def curve2_transform(x, y):
 from ptext import *
 init_app()
 font = "Gentium"
-label = text_to_shapes(-width / 2, -length / 2, width, length, "BLACKPITTS", font, 30, -1, 0)
-label2 = text_to_shapes(-width / 2, -length / 2, width, length, "22", font, 120, -1, 0)
+label = text_to_shapes(-inner_width / 2, -length / 2, inner_width, length, "BLACKPITTS", font, 28, -1, 0)
+label2 = text_to_shapes(-inner_width / 2, -length / 2, inner_width, length, "22", font, 120, -1, 0)
 label = [shape.warp(curve_transform) for shape in label]
-
 
 props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
 props_engrave = OperationProps(depth=engrave_depth)
 operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
 for label_item in label + label2:
     operations.pocket(label_item, props=props_engrave)
+operations.engrave(inner_frame, props=props_engrave)
 operations.outside_contour(outside, tabs=4)
 operations.to_gcode_file("textpath.ngc")
 viewer_modal(operations)
