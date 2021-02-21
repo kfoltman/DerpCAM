@@ -47,12 +47,13 @@ class Tabs(object):
       return fres
 
 class Tool(object):
-   def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover = 0.6):
+   def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1):
       self.diameter = diameter
       self.hfeed = hfeed
       self.vfeed = vfeed
       self.maxdoc = maxdoc
       self.stepover = stepover
+      self.stepover_fulldepth = stepover_fulldepth
       
 class Toolpath(object):
    def __init__(self, points, closed, tool):

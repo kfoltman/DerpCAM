@@ -27,7 +27,7 @@ shaft = Shape.circle(30, 30, d = 8.2)
 
 
 operations = [
-    HelicalDrill2(x=30, y=30, d=10.2, tool=tool, props=OperationProps(depth=depth)),
+    HelicalDrillFullDepth(x=30, y=30, d=10.2, tool=tool, props=OperationProps(depth=depth)),
     #Operation(shaft, tool, shaft.pocket_contour(tool), props=OperationProps(depth=depth)),
     #HelicalDrill2(x=30, y=30, d=38.3, tool=tool, props=OperationProps(depth=recess_depth))
     Operation(recess, tool, recess.pocket_contour(tool), props=OperationProps(depth=recess_depth))

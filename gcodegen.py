@@ -54,16 +54,19 @@ class Gcode(object):
       if k is not None:
          res += (" K%0.3f" % k)
       return res
+
    def helix_turn(self, x, y, r, start_z, end_z):
       self.linear(x = x + r, y = y)
       cur_z = start_z
       delta_z = end_z - start_z
-      # self.arc_cw(x = x, y = y - r, i = -r, z = cur_z + 0.25 * delta_z)
-      # self.arc_cw(x = x - r, y = y, j = r, z = cur_z + 0.5 * delta_z)
-      # self.arc_cw(x = x, y = y + r, i = r, z = cur_z + 0.75 * delta_z)
-      # self.arc_cw(x = x + r, y = y, j = -r, z = cur_z + delta_z)
-      self.arc_cw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
-      self.arc_cw(x = x + r, y = y, i = r, z = cur_z + delta_z)
+      if False: # generate 4 quadrants for a circle - seems unnecessary
+         self.arc_cw(x = x, y = y - r, i = -r, z = cur_z + 0.25 * delta_z)
+         self.arc_cw(x = x - r, y = y, j = r, z = cur_z + 0.5 * delta_z)
+         self.arc_cw(x = x, y = y + r, i = r, z = cur_z + 0.75 * delta_z)
+         self.arc_cw(x = x + r, y = y, j = -r, z = cur_z + delta_z)
+      else:
+         self.arc_cw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
+         self.arc_cw(x = x + r, y = y, i = r, z = cur_z + delta_z)
       
    def move_z(self, new_z, old_z, tool, semi_safe_z):
       if new_z == old_z:
@@ -257,7 +260,7 @@ class HelicalDrill(Operation):
 
 # First make a helical entry and then enlarge to the target diameter
 # by side milling
-class HelicalDrill2(HelicalDrill):
+class HelicalDrillFullDepth(HelicalDrill):
    def to_gcode(self, gcode, safe_z, semi_safe_z):
       if self.d < 2 * self.tool.diameter * self.tool.stepover:
          self.to_gcode_ring(gcode, safe_z, self.d, semi_safe_z)
@@ -268,7 +271,7 @@ class HelicalDrill2(HelicalDrill):
             r = max(0, (d - self.tool.diameter) / 2)
             gcode.linear(x=self.x + r, y=self.y)
             gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
-            d += self.tool.diameter * self.tool.stepover
+            d += self.tool.diameter * self.tool.stepover_fulldepth
          r = max(0, (self.d - self.tool.diameter) / 2)
          gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
       gcode.rapid(z=safe_z)
