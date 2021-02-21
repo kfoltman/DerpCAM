@@ -20,7 +20,9 @@ Only these operation types are currently supported:
 
 * part/cutout milling (the tool on the outside or the inside of the shape) with auto-placed tabs only; tabs can be full or partial depth
 
-* contour-aligned pocketing with no support for islands
+* contour-aligned pocketing with islands
+
+* basic engraving (following a path without offsetting it)
 
 * helical milling of holes, with two modes:
 
@@ -30,6 +32,10 @@ Only these operation types are currently supported:
     * helical entry and radial expansion, first running a helix at initial diameter
 at full depth, then successively expanding the hole, at full depth, up to the final
 diameter
+
+Some limited facilities are provided to convert text into shapes and to
+warp shapes using mapping functions to allow operations like mapping a text
+onto a curve.
 
 Currently the entry into the material is done using ramping when possible, to
 avoid straight plunges that may be detrimental to tool life. This is done
@@ -54,27 +60,27 @@ spare-time hobby project to make a few nice looking custom parts a month, if
 even that.
 
 * There is no UI for creating/editing the shapes or toolpaths. Everything is
-created via Python API. See an example in examples/nema24.py. More examples to follow.
+created via Python API. See the examples directory.
 
 * The API is not finalized yet. It is a minimum viable implementation that
 allows me to test my machine, but any convenience features are currently missing.
 
 * UI feature: there is only a 2D, Qt5 based path preview. It doesn't display
-the generated g-code, but the path used to generate it, which can be good or
-bad depending on the specific goals. Use something else, like CAMotics, to
-preview the actual output.
+the generated g-code, but it does show the XY tool movement and indicates the 
+tool diameter using line thickness, so it is a reasonable estimate of how
+well the cut approximates the desired shape. It is not currently accurate for
+operations like helical drilling where the G-Code is generated from the original
+parameters. This won't currently show the actual radial engagement of the
+full-depth helical drilling operation.
 
 * Paths are not optimized. They contain lots of line segments, and might run
 quite badly on Grbl based machines with short motion buffers and slow serial
-ports. This is something I want to improve in near future.
+ports.
 
 Note: I've now added an experimental feature that tries to simplify the
 paths by replacing series of line segments that describe arcs by proper
 G-Code arc commands. However, it is too new and is disabled by default.
-See gcodegen.py. It also doesn't affect ramp paths at the moment.
-
-* There is no support for pockets with islands yet. This is simple to add and
-I'll probably add it as soon as I need it.
+See gcodegen.py.
 
 * No axis-aligned pocketing. I don't like it enough to bother. I may add it later
 if there is a good reason.
@@ -82,7 +88,8 @@ if there is a good reason.
 * No manual tab placing, it will currently place a desired number of tabs equally
 spaced around the perimeter.
 
-* No support for corner overcut
+* No support for corner overcut, but a similar result can be achieved by using
+the union operation to add some circles at the sharp turns.
 
 * No trochoidal or adaptive paths (may be added in future)
 
