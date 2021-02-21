@@ -64,7 +64,9 @@ class PathViewer(QWidget):
             pen = QPen(QColor(192, 192, 192, 100), path.tool.diameter)
          else:
             pen = QPen(QColor(0, 128, 128), 0)
-         self.addLines(pen, CircleFitter.simplify(path.points), path.closed, True)
+         if not hasattr(path, 'simplified_points'):
+            path.simplified_points = CircleFitter.simplify(path.points)
+         self.addLines(pen, path.simplified_points, path.closed, True)
       else:
          self.addLines(pen, path.points, path.closed)
 
@@ -87,7 +89,7 @@ class PathViewer(QWidget):
                      pen.setCapStyle(Qt.RoundCap)
                      pen.setJoinStyle(Qt.RoundJoin)
                   else:
-                     pen = QPen(QColor(0, 0, 0), 0)
+                     pen = QPen(QColor(0, 0, 0, 64), 0)
                   #self.drawToolpaths(qp, self.paths, stage)
                   self.addToolpaths(pen, op.paths, stage)
       pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter)
@@ -113,6 +115,9 @@ class PathViewer(QWidget):
          for p in op.shape.islands:
             self.addLines(penIslands, p, True)
 
+   def isDraft(self):
+      return self.click_data or self.draft_time
+
    def paintEvent(self, e):
       qp = QPainter()
       qp.begin(self)
@@ -131,11 +136,20 @@ class PathViewer(QWidget):
       for pen, path, bbox in self.drawingOps:
          bounds = transform.mapRect(bbox)
          if bounds.intersects(drawingArea):
-            if self.click_data or self.draft_time:
-               qp.setPen(QPen(pen.color(), 0))
+            # Skip all the thick lines when drawing during an interactive
+            # operation like panning and zooming
+            if self.isDraft() and pen.widthF():
+               continue
+            qp.setPen(pen)
+            # Do not anti-alias very long segments
+            if pen.widthF() and path.elementCount() > 1000:
+               qp.setRenderHint(1, False)
+               qp.setRenderHint(8, False)
+               qp.drawPath(path)
+               qp.setRenderHint(1, True)
+               qp.setRenderHint(8, True)
             else:
-               qp.setPen(pen)
-            qp.drawPath(path)
+               qp.drawPath(path)
       qp.end()
 
    def scalingFactor(self):
@@ -193,6 +207,9 @@ class PathViewer(QWidget):
          self.adjustScale(e.position(), 1)
       if delta < 0:
          self.adjustScale(e.position(), -1)
+      if delta != 0:
+         # do it again to account for repainting time
+         self.draft_time = time.time() + 0.5
       if self.click_data:
          self.click_data = (self.zero, e.position())
 
