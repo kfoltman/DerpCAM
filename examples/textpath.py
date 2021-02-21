@@ -12,6 +12,7 @@ length = 100
 
 tool = Tool(diameter = 1.5, hfeed = 300, vfeed = 50, maxdoc = 0.2)
 depth = -4
+engrave_depth = -0.2
 tab_depth = -2
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
 safe_z = 5
@@ -53,20 +54,12 @@ label = text_to_shapes(-width / 2, -length / 2, width, length, "BLACKPITTS", fon
 label2 = text_to_shapes(-width / 2, -length / 2, width, length, "22", font, 120, -1, 0)
 label = [shape.warp(curve_transform) for shape in label]
 
-operations = []
 
-engrave_depth = -0.2
-operations += [Operation(label_item, tool, label_item.pocket_contour(tool), OperationProps(depth=engrave_depth)) for label_item in label]
-operations += [Operation(label_item, tool, label_item.pocket_contour(tool), OperationProps(depth=engrave_depth)) for label_item in label2]
-operations += [Operation(outside, tool, outside.contour(tool, outside=True), OperationProps(depth=depth, tab_depth=tab_depth), tabs=4)]
-
-gcode = gcodeFromOperations(operations, safe_z, semi_safe_z)
-
-glines = gcode.gcode
-
-f = open("textpath.ngc", "w")
-for line in glines:
-  f.write(line + '\n')
-f.close()
-
+props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
+props_engrave = OperationProps(depth=engrave_depth)
+operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
+for label_item in label + label2:
+    operations.pocket(label_item, props=props_engrave)
+operations.outside_contour(outside, tabs=4)
+operations.to_gcode_file("textpath.ngc")
 viewer_modal(operations)

@@ -33,17 +33,9 @@ for i in range(249, 21, -1):
     points.append((r * cos(a), r * sin(a)))
 
 outside = Shape(points)
-operations = []
 
-operations += [Operation(outside, tool, outside.contour(tool, outside=True), OperationProps(depth=depth, tab_depth=tab_depth), tabs=4)]
-
-gcode = gcodeFromOperations(operations, safe_z, semi_safe_z)
-
-glines = gcode.gcode
-
-f = open("spiral.ngc", "w")
-for line in glines:
-  f.write(line + '\n')
-f.close()
+operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=OperationProps(depth=depth, tab_depth=tab_depth))
+operations.outside_contour(outside, tabs=4)
+operations.to_gcode_file("spiral.ngc")
 
 viewer_modal(operations)

@@ -226,6 +226,14 @@ class Operation(object):
             start_depth=self.props.start_depth, end_depth=self.props.depth,
             doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
 
+class Contour(Operation):
+   def __init__(self, shape, outside, tool, props, tabs):
+      Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside), props, tabs=tabs)
+
+class Pocket(Operation):
+   def __init__(self, shape, tool, props):
+      Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
+
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
       shape = Shape.circle(x, y, r=0.5*d)
@@ -277,13 +285,38 @@ class HelicalDrillFullDepth(HelicalDrill):
       gcode.rapid(z=safe_z)
          
 
-def gcodeFromOperations(operations, safe_z, semi_safe_z):
-   gcode = Gcode()
-   gcode.reset()
-   gcode.rapid(z=safe_z)
-   gcode.rapid(x=0, y=0)
-   for operation in operations:
-      operation.to_gcode(gcode, safe_z, semi_safe_z)
-   gcode.rapid(x=0, y=0)
-   gcode.finish()
-   return gcode
+class Operations(object):
+   def __init__(self, safe_z, semi_safe_z, tool=None, props=None):
+      self.safe_z = safe_z
+      self.semi_safe_z = semi_safe_z
+      self.tool = tool
+      self.props = props
+      self.operations = []
+   def add(self, operation):
+      self.operations.append(operation)
+   def outside_contour(self, shape, tabs, props=None):
+      self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
+   def inside_contour(self, shape, tabs, props=None):
+      self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
+   def pocket(self, shape, props=None):
+      self.add(Pocket(shape, self.tool, props or self.props))
+   def helical_drill(self, x, y, d, props=None):
+      self.add(HelicalDrill(x, y, d, self.tool, props or self.props))
+   def helical_drill_full_depth(self, x, y, d, props=None):
+      self.add(HelicalDrillFullDepth(x, y, d, self.tool, props or self.props))
+   def to_gcode(self):
+      gcode = Gcode()
+      gcode.reset()
+      gcode.rapid(z=self.safe_z)
+      gcode.rapid(x=0, y=0)
+      for operation in self.operations:
+         operation.to_gcode(gcode, self.safe_z, self.semi_safe_z)
+      gcode.rapid(x=0, y=0)
+      gcode.finish()
+      return gcode
+   def to_gcode_file(self, filename):
+      glines = self.to_gcode().gcode
+      f = open(filename, "w")
+      for line in glines:
+        f.write(line + '\n')
+      f.close()

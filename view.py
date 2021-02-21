@@ -23,7 +23,7 @@ class PathViewer(QWidget):
       self.startTimer(50)
    def bounds(self):
       b = None
-      for op in self.operations:
+      for op in self.operations.operations:
          opb = op.shape.bounds
          if op.paths:
             opb = max_bounds(opb, op.paths.bounds)
@@ -78,7 +78,7 @@ class PathViewer(QWidget):
       
    def renderDrawing(self):
       self.drawingOps = []
-      for op in self.operations:
+      for op in self.operations.operations:
          if op.paths:
             for stage in (1, 2):
                for toolpath in op.flattened:
@@ -93,7 +93,7 @@ class PathViewer(QWidget):
       pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter)
       pen.setCapStyle(Qt.RoundCap)
       pen.setJoinStyle(Qt.RoundJoin)
-      for op in self.operations:
+      for op in self.operations.operations:
          if op.paths and op.tabs and op.tabs.tabs:
             for toolpath in op.flattened:
                subpaths = toolpath.eliminate_tabs2(op.tabs)
@@ -102,12 +102,12 @@ class PathViewer(QWidget):
                      self.addLines(pen, subpath, False)
       pen = QPen(QColor(255, 0, 0), 0)
       lastpt = (0, 0)
-      for op in self.operations:
+      for op in self.operations.operations:
          if op.paths:
             lastpt = self.addRapids(pen, op.paths, lastpt)
       penOutside = QPen(QColor(0, 0, 255), 0)
       penIslands = QPen(QColor(0, 255, 0), 0)
-      for op in self.operations:
+      for op in self.operations.operations:
          p = op.shape.boundary
          self.addLines(penOutside, p, op.shape.closed)
          for p in op.shape.islands:
