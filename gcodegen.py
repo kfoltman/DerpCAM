@@ -1,7 +1,7 @@
 from process import *
 
 # VERY experimental feature
-simplify_arcs = True
+simplify_arcs = False
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
@@ -105,6 +105,23 @@ class Gcode(object):
             lastpt = pt
       return lastpt
 
+   def helical_move_z(self, new_z, old_z, helical_entry, slope, semi_safe_z):
+      x, y, r = helical_entry
+      if new_z >= old_z:
+         self.rapid(z=new_z)
+         return
+      if old_z > semi_safe_z:
+         self.rapid(z=semi_safe_z)
+         old_z = semi_safe_z
+      cur_z = old_z
+      while cur_z > new_z:
+         next_z = max(new_z, cur_z - 2 * pi * r / slope)
+         self.helix_turn(x, y, r, cur_z, next_z)
+         cur_z = next_z
+      self.helix_turn(x, y, r, next_z, next_z)
+      self.linear(x=x, y=y, z=new_z)
+      return (x, y)
+
    def ramped_move_z(self, new_z, old_z, subpath, slope, semi_safe_z):
       if False:
          # If doing it properly proves to be too hard
@@ -154,7 +171,7 @@ class Gcode(object):
 
 def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, tabs, tab_depth):
    def simplifySubpaths(subpaths):
-      return [(is_tab, CircleFitter.simplify(subpath)) for is_tab, subpath in subpaths]
+      return [subpath.lines_to_arcs() for subpath in subpaths]
    paths = path.flattened() if isinstance(path, Toolpaths) else [path]
    prev_depth = semi_safe_z
    depth = max(start_depth - doc, end_depth)
@@ -163,8 +180,9 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
    slope = max(1, int(path.tool.hfeed / path.tool.vfeed))
    paths_out = []
    for p in paths:
-      subpaths_full = [(False, p.points + ([p.points[0]] if p.closed else []))]
+      subpaths_full = [p.transformed()]
       subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else subpaths_full
+      subpaths_tabbed = [subpath.transformed() for subpath in subpaths_tabbed]
       if simplify_arcs:
          subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
          subpaths_full = simplifySubpaths(subpaths_full)
@@ -173,13 +191,14 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
       for subpaths_tabbed, subpaths_full in paths_out:
          subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
          # Not a continuous path, need to jump to a new place
-         firstpt = subpaths[0][1][0]
+         firstpt = subpaths[0].points[0]
          if lastpt is None or dist(lastpt, firstpt) > 1 / RESOLUTION:
             gcode.rapid(z=safe_z)
             curz = safe_z
             gcode.rapid(x=firstpt[0], y=firstpt[1])
             lastpt = firstpt
-         for is_tab, subpath in subpaths:
+         for subpath in subpaths:
+            is_tab = subpath.is_tab
             newz = tab_depth if is_tab else depth
             if is_tab and debug_tabs:
                gcode.add("(tab start)")
@@ -189,13 +208,16 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
                      gcode.move_z(prev_depth, curz, p.tool, semi_safe_z)
                      curz = prev_depth
                   gcode.feed(p.tool.hfeed)
-                  lastpt = gcode.ramped_move_z(newz, curz, subpath, slope, semi_safe_z)
+                  if subpath.helical_entry:
+                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, slope, semi_safe_z)
+                  else:
+                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, slope, semi_safe_z)
                else:
                   gcode.move_z(newz, curz, p.tool, semi_safe_z)
                curz = newz
             # First point was either equal to the most recent one, or
             # was reached using a rapid move, so omit it here.
-            lastpt = gcode.apply_subpath(subpath, lastpt)
+            lastpt = gcode.apply_subpath(subpath.points, lastpt)
             if is_tab and debug_tabs:
                gcode.add("(tab end)")
       if depth == end_depth:
@@ -215,8 +237,10 @@ class Operation(object):
       if tabs:
          assert len(self.flattened) == 1
          self.tabs = self.flattened[0].autotabs(tabs, width=self.tabs_width())
+         self.tabbed = self.flattened[0].eliminate_tabs2(self.tabs)
       else:
          self.tabs = Tabs([])
+         self.tabbed = self.flattened
    def tabs_width(self):
       return 1
    def to_gcode(self, gcode, safe_z, semi_safe_z):
@@ -232,32 +256,6 @@ class Contour(Operation):
    def __init__(self, shape, outside, tool, props, tabs):
       Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside), props, tabs=tabs)
 
-def trochoidal(path, nrad, nspeed):
-   res = []
-   lastpt = path[0]
-   res.append(lastpt)
-   for pt in path:
-      d = dist(lastpt, pt)
-      subdiv = ceil(max(10, d * RESOLUTION))
-      for i in range(subdiv):
-         res.append(weighted(lastpt, pt, i / subdiv))
-      lastpt = pt
-   res.append(path[-1])
-   path = res
-   res = []
-   lastpt = path[0]
-   t = 0
-   for pt in path:
-      x, y = pt
-      d = dist(lastpt, pt)
-      t += d
-      x += nrad*cos(t * nspeed * 2 * pi)
-      y += nrad*sin(t * nspeed * 2 * pi)
-      res.append((x, y))
-      lastpt = pt
-   res.append(pt)
-   return res
-
 class TrochoidalContour(Operation):
    def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
       nrad *= 0.5 * tool.diameter
@@ -266,12 +264,12 @@ class TrochoidalContour(Operation):
       if not outside:
          nrad = -nrad
       contour = shape.contour(tool, outside=outside, displace=nrad)
-      points = trochoidal(contour.points, nrad, nspeed)
-      contour = Toolpath(points, contour.closed, tool)
+      trochoidal_func = lambda contour: trochoidal_transform(contour, nrad, nspeed)
+      contour = Toolpath(contour.points, contour.closed, tool, transform=trochoidal_func)
       Operation.__init__(self, shape, tool, contour, props, tabs=tabs)
    def tabs_width(self):
       # This needs tweaking
-      return 4 * pi * self.nspeed
+      return 1 + self.nrad
 
 class Pocket(Operation):
    def __init__(self, shape, tool, props):
@@ -283,6 +281,9 @@ class Engrave(Operation):
 
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
+      min_dia = tool.diameter * tool.stepover
+      if d < min_dia:
+         raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, min_dia))
       shape = Shape.circle(x, y, r=0.5*d)
       Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
       self.x = x
@@ -295,13 +296,13 @@ class HelicalDrill(Operation):
       else:
          d = 2 * self.tool.diameter * self.tool.stepover
          while d < self.d:
-            self.to_gcode_ring(gcode, safe_z, d, semi_safe_z)
+            self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
             d += self.tool.diameter * self.tool.stepover
-         self.to_gcode_ring(gcode, safe_z, self.d, semi_safe_z)
+         self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
       gcode.rapid(z=safe_z)
          
-   def to_gcode_ring(self, gcode, safe_z, d, semi_safe_z):
-      r = max(0, (d - self.tool.diameter) / 2)
+   def to_gcode_ring(self, gcode, d, safe_z, semi_safe_z):
+      r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
       gcode.rapid(z=safe_z)
       gcode.rapid(x=self.x + r, y=self.y)
       curz = semi_safe_z
@@ -318,12 +319,14 @@ class HelicalDrill(Operation):
 class HelicalDrillFullDepth(HelicalDrill):
    def to_gcode(self, gcode, safe_z, semi_safe_z):
       if self.d < 2 * self.tool.diameter * self.tool.stepover:
-         self.to_gcode_ring(gcode, safe_z, self.d, semi_safe_z)
+         self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
       else:
+         # Mill initial hole by helical descent into desired depth
          d = 2 * self.tool.diameter * self.tool.stepover
-         self.to_gcode_ring(gcode, safe_z, d, semi_safe_z)
+         self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
+         # Bore it out at full depth to the final diameter
          while d < self.d:
-            r = max(0, (d - self.tool.diameter) / 2)
+            r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
             gcode.linear(x=self.x + r, y=self.y)
             gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
             d += self.tool.diameter * self.tool.stepover_fulldepth

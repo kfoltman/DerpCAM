@@ -10,6 +10,12 @@ def PtsToInts(points):
 def PtsFromInts(points):
    return [(x / RESOLUTION, y / RESOLUTION) for x, y in points]
    
+def PtsToIntsPos(points):
+   res = [(round(x * RESOLUTION), round(y * RESOLUTION)) for x, y in points]
+   if Orientation(res) == False:
+      res = list(reversed(res))
+   return res
+
 def circle(x, y, r, n=None, sa=0, ea=2*pi):
    if n is None:
       n = pi * r * RESOLUTION
@@ -117,9 +123,12 @@ def cut_arc(arc, alpha, beta):
    arc_end = c.at_angle(start + span)
    return [arc_start, (arc[0], arc_start, arc_end, arc[3], arc[4], start, span)]
 
-def calc_subpath(path, start, end):
+def calc_subpath(path, start, end, closed=False):
    res = []
    tlen = 0
+   if closed:
+      # That's a bit wasteful, but we'll live with this for now.
+      path = path + path[0:1]
    last = path[0]
    for p in path[1:]:
       if len(p) == 7: # Arc

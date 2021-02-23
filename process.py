@@ -56,11 +56,17 @@ class Tool(object):
       self.stepover_fulldepth = stepover_fulldepth
       
 class Toolpath(object):
-   def __init__(self, points, closed, tool):
+   def __init__(self, points, closed, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
       self.points = points
       self.closed = closed
       self.tool = tool
-      self.bounds = self.calc_bounds()
+      self.transform = transform if not is_tab else None
+      self.is_tab = is_tab
+      self.transformed_cache = None
+      self.lines_to_arcs_cache = None
+      self.helical_entry = helical_entry
+      # Allow borrowing bounds from the non-simplified shape to avoid calculating arc bounds
+      self.bounds = self.calc_bounds() if bounds is None else bounds
       self.tlength = 0
       self.lengths = [0]
       for i in range(1, len(self.points)):
@@ -69,12 +75,33 @@ class Toolpath(object):
       if self.closed:
          self.tlength += dist(self.points[- 1], self.points[0])
          self.lengths.append(self.tlength)
-         
+
+   def transformed(self):
+      if self.transform is None:
+         return self
+      if self.transformed_cache is None:
+         self.transformed_cache = self.transform(self)
+      return self.transformed_cache
+
    def calc_bounds(self):
       xcoords = [p[0] for p in self.points]
       ycoords = [p[1] for p in self.points]
       tr = 0.5 * self.tool.diameter
       return (min(xcoords) - tr, min(ycoords) - tr, max(xcoords) + tr, max(ycoords) + tr)
+
+   def lines_to_arcs(self):
+      if self.lines_to_arcs_cache is None:
+         self.lines_to_arcs_cache = Toolpath(CircleFitter.simplify(self.points), self.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+      return self.lines_to_arcs_cache
+
+   def subpath(self, start, end, is_tab=False):
+      points = calc_subpath(self.points, start, end, self.closed)
+      if points[0] == points[-1]:
+         tp = Toolpath(points[:-1], True, self.tool, transform=self.transform, is_tab=is_tab)
+      else:
+         tp = Toolpath(points, False, self.tool, transform=self.transform, is_tab=is_tab)
+      tp.helical_entry = None
+      return tp
 
    def eliminate_tabs2(self, tabs):
       ptsc = self.points if not self.closed else self.points + [self.points[0]]
@@ -83,39 +110,15 @@ class Toolpath(object):
       res = []
       for tab in tabs:
          if pos < tab.start:
-            res.append((False, calc_subpath(ptsc, pos, tab.start)))
-         res.append((True, calc_subpath(ptsc, tab.start, tab.end)))
+            res.append(self.subpath(pos, tab.start, is_tab=False))
+         res.append(self.subpath(tab.start, tab.end, is_tab=True))
+         # No transform on tabs, so that no time is wasted doing trochoidal
+         # milling of empty space above the tab
          pos = tab.end
       if pos < self.tlength:
-         res.append((False, calc_subpath(ptsc, pos, self.tlength)))
+         res.append(self.subpath(pos, self.tlength, is_tab=False))
       return res
       
-   def eliminate_tabs(self, tabs):
-      points = [self.points[0]]
-      flags = []
-      cur_segment = None
-      ptsc = self.points if not self.closed else self.points + [self.points[0]]
-      for i in range(1, len(ptsc)):
-         res = tabs.cut(self.lengths[i - 1], self.lengths[i], self.tlength)
-         p1, p2 = ptsc[i - 1], ptsc[i]
-         if res is True:
-            points.append(p2)
-            flags.append(True)
-         elif res is False:
-            points.append(p2)
-            flags.append(False)
-         else: # list of (s, e)
-            for s, e in res:
-               if s == 0:
-                  points.append(weighted(p1, p2, e))
-                  flags.append(True)
-               else:
-                  points.append(weighted(p1, p2, s))
-                  flags.append(False)
-                  points.append(weighted(p1, p2, e))
-                  flags.append(True)
-      return points, flags
-
    def flattened(self):
       return [self]
 
@@ -194,6 +197,26 @@ def joinClosePaths(tps):
       last = tp
    return res
 
+def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
+   for toolpath in toolpaths:
+      if type(toolpath) is Toolpaths:
+         findHelicalEntryPoints(toolpath.toolpaths)
+         continue
+      startx, starty = toolpath.points[0]
+      # Size of the helical entry hole
+      d = tool.diameter * (1 + tool.stepover)
+      c = circle(startx, starty, d / 2)
+      if Orientation(PtsToInts(boundary)) == False:
+         boundary = list(reversed(boundary))
+      # Check if it sticks outside of the final shape
+      # XXXKF could be optimized by doing a simple bounds check first
+      if Shape._difference(c, boundary):
+         continue
+      # Check for collision with islands
+      if islands and any([Shape._intersection(i, c) for i in islands]):
+         continue
+      toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
+
 class Shape(object):
    def __init__(self, boundary, closed=True, islands=None):
       self.boundary = boundary
@@ -244,6 +267,8 @@ class Shape(object):
          return tps[0]
       return Toolpaths(tps)
    def pocket_contour(self, tool):
+      if not self.closed:
+         raise ValueError("Cannot mill pockets of open polylines")
       tps = []
       islands_transformed = []
       for island in self.islands:
@@ -255,7 +280,7 @@ class Shape(object):
          islands_transformed += res
          for path in res:
             for ints in Shape._intersection(path, self.boundary):
-               tps += [Toolpath(ints, self.closed, tool)]
+               tps += [Toolpath(ints, True, tool)]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
       while True:
@@ -267,6 +292,8 @@ class Shape(object):
       if len(tps) == 0:
          raise ValueError("Empty contour")
       tps = joinClosePaths(list(reversed(tps)))
+      if self.closed:
+         findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
       return Toolpaths(tps)
    def warp(self, transform):
       def interpolate(pts):
@@ -324,7 +351,7 @@ class Shape(object):
    def _difference(*paths):
       pc = Pyclipper()
       for path in paths:
-         pc.AddPath(PtsToInts(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
+         pc.AddPath(PtsToIntsPos(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
       res = pc.Execute(CT_DIFFERENCE, fillMode, fillMode)
       if not res:
          return []
@@ -334,9 +361,45 @@ class Shape(object):
    def _intersection(*paths):
       pc = Pyclipper()
       for path in paths:
-         pc.AddPath(PtsToInts(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
+         pc.AddPath(PtsToIntsPos(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
       res = pc.Execute(CT_INTERSECTION, fillMode, fillMode)
       if not res:
          return []
       return [PtsFromInts(i) for i in res]
+
+def interpolate_path(path):
+   lastpt = path[0]
+   res = [lastpt]
+   for pt in path:
+      d = dist(lastpt, pt)
+      subdiv = ceil(max(10, d * RESOLUTION))
+      for i in range(subdiv):
+         if i > 0 and lastpt == pt:
+            continue
+         res.append(weighted(lastpt, pt, i / subdiv))
+      lastpt = pt
+   res.append(path[-1])
+   return res
+
+def trochoidal_transform(contour, nrad, nspeed):
+   path = contour.points
+   if contour.closed:
+      path = path + [path[0]]
+   path = interpolate_path(path)
+   res = [path[0]]
+   lastpt = path[0]
+   t = 0
+   for pt in path:
+      x, y = pt
+      d = dist(lastpt, pt)
+      t += d
+      x += nrad*cos(t * nspeed * 2 * pi)
+      y += nrad*sin(t * nspeed * 2 * pi)
+      res.append((x, y))
+      lastpt = pt
+   res.append(path[-1])
+   if res and res[-1] == res[0]:
+      return Toolpath(points=res[:-1], closed=True, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)
+   else:
+      return Toolpath(points=res, closed=False, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)
 

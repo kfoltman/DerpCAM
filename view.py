@@ -54,19 +54,25 @@ class PathViewer(QWidget):
             path.lineTo(*point)
          self.drawingOps.append((pen, path, path.boundingRect()))
 
+   def toolPen(self, path, alpha=100):
+      pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
+      pen.setCapStyle(Qt.RoundCap)
+      pen.setJoinStyle(Qt.RoundJoin)
+      return pen
+
    def addToolpaths(self, pen, path, stage):
       if isinstance(path, Toolpaths):
          for tp in path.toolpaths:
             self.addToolpaths(pen, tp, stage)
          return
+      path = path.transformed()
       if simplify_arcs:
+         path = path.lines_to_arcs()
          if stage == 1:
-            pen = QPen(QColor(192, 192, 192, 100), path.tool.diameter)
+            pen = self.toolPen(path)
          else:
-            pen = QPen(QColor(0, 128, 128), 0)
-         if not hasattr(path, 'simplified_points'):
-            path.simplified_points = CircleFitter.simplify(path.points)
-         self.addLines(pen, path.simplified_points, path.closed, True)
+            pen = QPen(QColor(160, 160, 160) if path.is_tab else QColor(0, 128, 128), 0)
+         self.addLines(pen, path.points, path.closed, True)
       else:
          self.addLines(pen, path.points, path.closed)
 
@@ -75,38 +81,61 @@ class PathViewer(QWidget):
          for tp in path.toolpaths:
             lastpt = self.addRapids(pen, tp, lastpt)
          return lastpt
+      if path.helical_entry:
+         self.addLines(pen, circle(*path.helical_entry), False)
       self.addLines(pen, [lastpt, path.points[0]], False)
       return path.points[0 if path.closed else -1]
       
    def renderDrawing(self):
       self.drawingOps = []
+      # Toolpaths
       for op in self.operations.operations:
          if op.paths:
             for stage in (1, 2):
-               for toolpath in op.flattened:
+               # Null passes (we should probably warn about these)
+               if op.props.start_depth <= op.props.depth:
+                  continue
+               # Draw tab-less version unless tabs are full height
+               if op.props.tab_depth is None:
+                  tab_alpha = 100
+               else:
+                  tab_alpha = 100 * (op.props.start_depth - op.props.tab_depth) / (op.props.start_depth - op.props.depth)
+               if op.props.tab_depth is not None and op.props.tab_depth < op.props.start_depth:
+                  for toolpath in op.flattened:
+                     if stage == 1:
+                        # Use the alpha for the tab depth
+                        pen = self.toolPen(toolpath, alpha=tab_alpha)
+                     if stage == 2:
+                        pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
+                     self.addToolpaths(pen, toolpath, stage)
+               for toolpath in op.tabbed:
                   if stage == 1:
-                     pen = QPen(QColor(192, 192, 192, 100), toolpath.tool.diameter)
-                     pen.setCapStyle(Qt.RoundCap)
-                     pen.setJoinStyle(Qt.RoundJoin)
+                     # Draw a cut line of the diameter of the cut
+                     alpha = tab_alpha if toolpath.is_tab else 100
+                     pen = self.toolPen(toolpath, alpha=tab_alpha)
                   else:
-                     pen = QPen(QColor(0, 0, 0, 64), 0)
+                     if toolpath.is_tab:
+                        pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
+                     else:
+                        pen = QPen(QColor(0, 0, 0, 100), 0)
                   #self.drawToolpaths(qp, self.paths, stage)
-                  self.addToolpaths(pen, op.paths, stage)
+                  self.addToolpaths(pen, toolpath, stage)
+      # Pink tint for cuts that are not tabs
       pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter)
       pen.setCapStyle(Qt.RoundCap)
       pen.setJoinStyle(Qt.RoundJoin)
       for op in self.operations.operations:
          if op.paths and op.tabs and op.tabs.tabs:
-            for toolpath in op.flattened:
-               subpaths = toolpath.eliminate_tabs2(op.tabs)
-               for is_tab, subpath in subpaths:
-                  if not is_tab:
-                     self.addLines(pen, subpath, False)
+            for subpath in op.tabbed:
+               if not subpath.is_tab:
+                  self.addLines(pen, subpath.transformed().points, False)
+      # Red rapid moves
       pen = QPen(QColor(255, 0, 0), 0)
       lastpt = (0, 0)
       for op in self.operations.operations:
          if op.paths:
             lastpt = self.addRapids(pen, op.paths, lastpt)
+      # Original shapes (before all the offsetting)
       penOutside = QPen(QColor(0, 0, 255), 0)
       penIslands = QPen(QColor(0, 255, 0), 0)
       for op in self.operations.operations:
