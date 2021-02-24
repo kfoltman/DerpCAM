@@ -60,22 +60,34 @@ class Gcode(object):
       cur_z = start_z
       delta_z = end_z - start_z
       if False: # generate 4 quadrants for a circle - seems unnecessary
-         self.arc_cw(x = x, y = y - r, i = -r, z = cur_z + 0.25 * delta_z)
-         self.arc_cw(x = x - r, y = y, j = r, z = cur_z + 0.5 * delta_z)
-         self.arc_cw(x = x, y = y + r, i = r, z = cur_z + 0.75 * delta_z)
-         self.arc_cw(x = x + r, y = y, j = -r, z = cur_z + delta_z)
+         self.arc_ccw(x = x, y = y + r, i = -r, z = cur_z + 0.25 * delta_z)
+         self.arc_ccw(x = x - r, y = y, j = -r, z = cur_z + 0.5 * delta_z)
+         self.arc_ccw(x = x, y = y - r, i = r, z = cur_z + 0.75 * delta_z)
+         self.arc_ccw(x = x + r, y = y, j = r, z = cur_z + delta_z)
       else:
-         self.arc_cw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
-         self.arc_cw(x = x + r, y = y, i = r, z = cur_z + delta_z)
+         ccw = True
+         if ccw:
+            self.arc_ccw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
+            self.arc_ccw(x = x + r, y = y, i = r, z = cur_z + delta_z)
+         else:
+            self.arc_cw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
+            self.arc_cw(x = x + r, y = y, i = r, z = cur_z + delta_z)
       
-   def move_z(self, new_z, old_z, tool, semi_safe_z):
+   def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
       if new_z == old_z:
          return
       if new_z < old_z:
-         self.feed(tool.vfeed)
          if old_z > semi_safe_z:
             self.rapid(z=semi_safe_z)
-            old_z = 1
+            old_z = semi_safe_z
+         if already_cut_z is not None:
+            # Plunge at hfeed mm/min right above the cut to avoid taking ages
+            if new_z < already_cut_z and old_z > already_cut_z:
+               self.feed(tool.hfeed)
+               self.linear(z=already_cut_z)
+               old_z = already_cut_z
+         # Use plunge rate for the last part
+         self.feed(tool.vfeed)
          self.linear(z=new_z)
          self.feed(tool.hfeed)
       else:
@@ -105,37 +117,41 @@ class Gcode(object):
             lastpt = pt
       return lastpt
 
-   def helical_move_z(self, new_z, old_z, helical_entry, slope, semi_safe_z):
+   def prepare_move_z(self, new_z, old_z, semi_safe_z, already_cut_z):
+      if old_z > semi_safe_z:
+         self.rapid(z=semi_safe_z)
+         old_z = semi_safe_z
+      if already_cut_z is not None and new_z < already_cut_z and old_z > already_cut_z:
+         self.linear(z=already_cut_z)
+         old_z = already_cut_z
+      return old_z
+
+   def helical_move_z(self, new_z, old_z, helical_entry, tool, semi_safe_z, already_cut_z=None):
       x, y, r = helical_entry
       if new_z >= old_z:
          self.rapid(z=new_z)
          return
-      if old_z > semi_safe_z:
-         self.rapid(z=semi_safe_z)
-         old_z = semi_safe_z
+      old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
       cur_z = old_z
       while cur_z > new_z:
-         next_z = max(new_z, cur_z - 2 * pi * r / slope)
+         next_z = max(new_z, cur_z - 2 * pi * r / tool.slope())
          self.helix_turn(x, y, r, cur_z, next_z)
          cur_z = next_z
       self.helix_turn(x, y, r, next_z, next_z)
       self.linear(x=x, y=y, z=new_z)
       return (x, y)
 
-   def ramped_move_z(self, new_z, old_z, subpath, slope, semi_safe_z):
+   def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z):
       if False:
          # If doing it properly proves to be too hard
          subpath = CircleFitter.interpolate_arcs(subpath, False, 1)
       if new_z >= old_z:
          self.rapid(z=new_z)
-         # ???
          return
-      if old_z > semi_safe_z:
-         self.rapid(z=semi_safe_z)
-         old_z = semi_safe_z
+      old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
       # Always positive
       z_diff = old_z - new_z
-      xy_diff = z_diff * slope
+      xy_diff = z_diff * tool.slope()
       tlengths = path_lengths(subpath)
       npasses = xy_diff / tlengths[-1]
       if debug_ramp:
@@ -143,7 +159,7 @@ class Gcode(object):
       subpath_reverse = reverse_path(subpath)
       self.linear(x=subpath[0][0], y=subpath[0][1])
       lastpt = subpath[0]
-      per_level = tlengths[-1] / slope
+      per_level = tlengths[-1] / tool.slope()
       cur_z = old_z
       for i in range(ceil(npasses)):
          if i == floor(npasses):
@@ -164,20 +180,32 @@ class Gcode(object):
          next_z = max(new_z, pass_z - per_level)
          if debug_ramp:
             self.add("(Pass %d base level %0.2f min %0.2f)" % (i, pass_z, next_z))
-         lastpt = self.apply_subpath(subpath, lastpt, next_z, cur_z, tlengths[-1])
-         cur_z = next_z
-         lastpt = self.apply_subpath(subpath_reverse, lastpt)
+         if False:
+            # Simple progressive ramping (not tested!). It does not do lifting,
+            # so it's probably no better for non-centre cutting tools than the
+            # simple one.
+            dz = next_z - cur_z
+            lastpt = self.apply_subpath(subpath, lastpt, cur_z + dz * 0.5, cur_z, tlengths[-1])
+            lastpt = self.apply_subpath(subpath_reverse, lastpt, cur_z + dz, cur_z + dz * 0.5, tlengths[-1])
+            cur_z = next_z
+         else:
+            # This is one of the possible strategies: ramp at an angle, then
+            # come back straight. This is not ideal, especially for the non-centre
+            # cutting tools.
+            lastpt = self.apply_subpath(subpath, lastpt, next_z, cur_z, tlengths[-1])
+            cur_z = next_z
+            lastpt = self.apply_subpath(subpath_reverse, lastpt)
       return lastpt
 
 def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, tabs, tab_depth):
    def simplifySubpaths(subpaths):
       return [subpath.lines_to_arcs() for subpath in subpaths]
+   z_margin = semi_safe_z - start_depth
    paths = path.flattened() if isinstance(path, Toolpaths) else [path]
    prev_depth = semi_safe_z
    depth = max(start_depth - doc, end_depth)
    curz = safe_z
    lastpt = None
-   slope = max(1, int(path.tool.hfeed / path.tool.vfeed))
    paths_out = []
    for p in paths:
       subpaths_full = [p.transformed()]
@@ -187,6 +215,8 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
          subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
          subpaths_full = simplifySubpaths(subpaths_full)
       paths_out.append((subpaths_tabbed, subpaths_full))
+   # When going over tabs, avoid touching the tab itself by going slightly above
+   over_tab_safety = 0.1
    while True:
       for subpaths_tabbed, subpaths_full in paths_out:
          subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
@@ -199,19 +229,26 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
             lastpt = firstpt
          for subpath in subpaths:
             is_tab = subpath.is_tab
-            newz = tab_depth if is_tab else depth
+            newz = tab_depth + over_tab_safety if is_tab else depth
             if is_tab and debug_tabs:
                gcode.add("(tab start)")
             if newz != curz:
+               z_above_cut = prev_depth + z_margin
                if newz < curz:
                   if not is_tab and prev_depth < curz:
-                     gcode.move_z(prev_depth, curz, p.tool, semi_safe_z)
+                     # Go back faster (at horizontal feed rate) when there is
+                     # a helical entry hole already made during the previous
+                     # passes
+                     if subpath.helical_entry:
+                        gcode.move_z(prev_depth, curz, p.tool, semi_safe_z, z_above_cut)
+                     else:
+                        gcode.move_z(prev_depth, curz, p.tool, semi_safe_z)
                      curz = prev_depth
                   gcode.feed(p.tool.hfeed)
                   if subpath.helical_entry:
-                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, slope, semi_safe_z)
+                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, p.tool, semi_safe_z, z_above_cut)
                   else:
-                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, slope, semi_safe_z)
+                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, p.tool, semi_safe_z, z_above_cut)
                else:
                   gcode.move_z(newz, curz, p.tool, semi_safe_z)
                curz = newz
@@ -223,7 +260,13 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
       if depth == end_depth:
          break
       prev_depth = depth
-      depth = max(depth - doc, end_depth)
+      # Make sure that the full tab depth is milled with non-interrupted
+      # paths before switching to the interrupted (tabbed) path. This is
+      # to prevent accidentally using a non-trochoidal path for the last pass
+      if depth > tab_depth:
+         depth = max(depth - doc, tab_depth)
+      else:
+         depth = max(depth - doc, end_depth)
    gcode.rapid(z=safe_z)
    return gcode
 
@@ -281,7 +324,7 @@ class Engrave(Operation):
 
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
-      min_dia = tool.diameter * tool.stepover
+      min_dia = tool.diameter * (1 + tool.stepover)
       if d < min_dia:
          raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, min_dia))
       shape = Shape.circle(x, y, r=0.5*d)
@@ -318,11 +361,12 @@ class HelicalDrill(Operation):
 # by side milling
 class HelicalDrillFullDepth(HelicalDrill):
    def to_gcode(self, gcode, safe_z, semi_safe_z):
-      if self.d < 2 * self.tool.diameter * self.tool.stepover:
+      min_d = self.tool.diameter + self.tool.diameter * self.tool.stepover
+      if self.d < min_d:
          self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
       else:
          # Mill initial hole by helical descent into desired depth
-         d = 2 * self.tool.diameter * self.tool.stepover
+         d = min_d
          self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
          # Bore it out at full depth to the final diameter
          while d < self.d:

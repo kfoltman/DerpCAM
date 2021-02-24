@@ -54,6 +54,12 @@ class Tool(object):
       self.maxdoc = maxdoc
       self.stepover = stepover
       self.stepover_fulldepth = stepover_fulldepth
+   @staticmethod
+   def calc_vfeed(hfeed, degrees):
+      return hfeed * tan(degrees * pi / 180)
+   # Path slope for ramp/helical entry
+   def slope(self):
+      return max(1, int(self.hfeed / self.vfeed))
       
 class Toolpath(object):
    def __init__(self, points, closed, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
