@@ -404,7 +404,8 @@ def trochoidal_transform(contour, nrad, nspeed):
       res.append((x, y))
       lastpt = pt
    res.append(path[-1])
-   if res and res[-1] == res[0]:
+   if res and contour.closed:
+      assert res[-1] == res[0]
       return Toolpath(points=res[:-1], closed=True, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)
    else:
       return Toolpath(points=res, closed=False, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)

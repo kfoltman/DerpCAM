@@ -254,7 +254,10 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
                curz = newz
             # First point was either equal to the most recent one, or
             # was reached using a rapid move, so omit it here.
-            lastpt = gcode.apply_subpath(subpath.points, lastpt)
+            if subpath.closed:
+               lastpt = gcode.apply_subpath(subpath.points + subpath.points[0:1], lastpt)
+            else:
+               lastpt = gcode.apply_subpath(subpath.points, lastpt)
             if is_tab and debug_tabs:
                gcode.add("(tab end)")
       if depth == end_depth:
