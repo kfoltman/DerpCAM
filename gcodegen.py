@@ -354,8 +354,10 @@ class HelicalDrill(Operation):
       curz = semi_safe_z
       gcode.rapid(z=semi_safe_z)
       gcode.feed(self.tool.hfeed)
+      dist = 2 * pi * r
+      doc = min(self.tool.maxdoc, dist / self.tool.slope())
       while curz > self.props.depth:
-         nextz = max(curz - self.tool.maxdoc, self.props.depth)
+         nextz = max(curz - doc, self.props.depth)
          gcode.helix_turn(self.x, self.y, r, curz, nextz)
          curz = nextz
       gcode.helix_turn(self.x, self.y, r, curz, curz)
