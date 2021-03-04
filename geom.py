@@ -19,7 +19,7 @@ def PtsToIntsPos(points):
 def circle(x, y, r, n=None, sa=0, ea=2*pi):
    if n is None:
       n = pi * r * RESOLUTION
-   n *= (ea - sa) / (2 * pi)
+   n *= abs((ea - sa) / (2 * pi))
    n = ceil(n)
    res = []
    for i in range(n + 1):
