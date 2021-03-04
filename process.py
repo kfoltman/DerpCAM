@@ -247,7 +247,9 @@ class Shape(object):
             return
          res2 = []
          for contour in res:
-            res2 += Shape._offset(contour, closed, dist - int(dist / 2))
+            offset = Shape._offset(contour, closed, dist - int(dist / 2))
+            if offset:
+               res2 += offset
          return res2
       pc = PyclipperOffset()
       pc.AddPath(points, JT_ROUND, ET_CLOSEDPOLYGON if closed else ET_OPENROUND)
