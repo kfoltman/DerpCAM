@@ -327,9 +327,9 @@ class Engrave(Operation):
 
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
-      min_dia = tool.diameter * (1 + tool.stepover)
-      if d < min_dia:
-         raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, min_dia))
+      self.min_dia = tool.diameter + tool.min_helix_diameter
+      if d < self.min_dia:
+         raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
       shape = Shape.circle(x, y, r=0.5*d)
       Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
       self.x = x
@@ -366,12 +366,11 @@ class HelicalDrill(Operation):
 # by side milling
 class HelicalDrillFullDepth(HelicalDrill):
    def to_gcode(self, gcode, safe_z, semi_safe_z):
-      min_d = self.tool.diameter + self.tool.diameter * self.tool.stepover
-      if self.d < min_d:
+      if self.d < self.min_dia:
          self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
       else:
          # Mill initial hole by helical descent into desired depth
-         d = min_d
+         d = self.min_dia
          self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
          # Bore it out at full depth to the final diameter
          while d < self.d:
