@@ -383,8 +383,8 @@ def interpolate_path(path):
    lastpt = path[0]
    res = [lastpt]
    for pt in path:
-      d = dist(lastpt, pt)
-      subdiv = ceil(max(10, d * RESOLUTION))
+      d = maxaxisdist(lastpt, pt)
+      subdiv = ceil(d * RESOLUTION + 1)
       for i in range(subdiv):
          if i > 0 and lastpt == pt:
             continue

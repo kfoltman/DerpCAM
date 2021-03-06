@@ -38,6 +38,9 @@ def dist_fast(a, b):
    dy = b[1] - a[1]
    return sqrt(dx * dx + dy * dy)
 
+def maxaxisdist(a, b):
+   return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+
 def dist(a, b):
    if len(a) == 7:
       a = a[2]
