@@ -203,6 +203,8 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
    z_margin = semi_safe_z - start_depth
    paths = path.flattened() if isinstance(path, Toolpaths) else [path]
    prev_depth = semi_safe_z
+   if tab_depth is not None and tab_depth < end_depth:
+      raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, end_depth))
    depth = max(start_depth - doc, end_depth)
    curz = safe_z
    lastpt = None
