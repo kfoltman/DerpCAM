@@ -72,11 +72,11 @@ for entity in texts:
             raise ValueError("Unknown CAM keyword: " + text)
 
 if tab_depth_mm is None:
-    tab_depth_mm = max(0, -material_depth_mm + 2)
+    tab_depth_mm = max(0, material_depth_mm - 2)
 if tool is None:
     raise ValueError("Tool not specified in the CAM layer.")
 
-props_fulldepth = OperationProps(depth=-material_depth_mm, tab_depth=tab_depth_mm)
+props_fulldepth = OperationProps(depth=-material_depth_mm, tab_depth=-tab_depth_mm)
 
 operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
 
@@ -120,13 +120,13 @@ for npass in (1, 2, ):
                 layer = doc.layers.get(entity.dxf.layer)
                 linetype = layer.dxf.linetype
                 #linetype = entity.dxf.layer
-            ntabs = min(6, max(2, path_length(points) // 100))
+            ntabs = int(min(6, max(2, path_length(points) // 100)))
             if linetype == 'DOTTINY':
                 if npass == 1:
                     operations.inside_contour(shape, tabs=ntabs)
             elif linetype == 'CONTINUOUS':
                 if npass == 2:
-                    operations.outside_contour(shape, tabs=0)
+                    operations.outside_contour(shape, tabs=ntabs)
             elif linetype == 'BORDER':
                 if npass == 1:
                     operations.pocket(shape)
