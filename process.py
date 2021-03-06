@@ -208,6 +208,8 @@ def joinClosePaths(tps):
    return res
 
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
+   boundary_path = IntPath(boundary)
+   boundary_path = boundary_path.force_orientation(False)
    for toolpath in toolpaths:
       if type(toolpath) is Toolpaths:
          findHelicalEntryPoints(toolpath.toolpaths)
@@ -215,15 +217,13 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
       startx, starty = toolpath.points[0]
       # Size of the helical entry hole
       d = tool.diameter * (1 + tool.stepover)
-      c = circle(startx, starty, d / 2)
-      if Orientation(PtsToInts(boundary)) == False:
-         boundary = list(reversed(boundary))
+      c = IntPath(circle(startx, starty, d / 2))
       # Check if it sticks outside of the final shape
       # XXXKF could be optimized by doing a simple bounds check first
-      if Shape._difference(c, boundary):
+      if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
          continue
       # Check for collision with islands
-      if islands and any([Shape._intersection(i, c) for i in islands]):
+      if islands and any([run_clipper_simple(CT_INTERSECTION, [IntPath(i)], [c], bool_only=True) for i in islands]):
          continue
       toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
 
@@ -268,13 +268,14 @@ class Shape(object):
       if subtract:
          res2 = []
          for i in res:
-            d = Shape._difference(i, *subtract)
+            d = Shape._difference(IntPath(i, True), *subtract, return_ints=True)
             if d:
                res2 += d
          if not res2:
             return None
-         res = res2
-      tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
+         tps = [Toolpath(path.real_points(), self.closed, tool) for path in res2]
+      else:
+         tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
       if len(tps) == 1:
          return tps[0]
       return Toolpaths(tps)
@@ -282,6 +283,7 @@ class Shape(object):
       if not self.closed:
          raise ValueError("Cannot mill pockets of open polylines")
       tps = []
+      boundary = IntPath(self.boundary)
       islands_transformed = []
       for island in self.islands:
          pc = PyclipperOffset()
@@ -289,9 +291,10 @@ class Shape(object):
          res = pc.Execute(tool.diameter * 0.5 * RESOLUTION)
          if not res:
             return None
+         res = [IntPath(it, True) for it in res]
          islands_transformed += res
          for path in res:
-            for ints in Shape._intersection(path, self.boundary):
+            for ints in Shape._intersection(path, boundary):
                tps += [Toolpath(ints, True, tool)]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
@@ -360,24 +363,12 @@ class Shape(object):
       return [Shape(PtsFromInts(i)) for i in res]
    # This works on lists of points
    @staticmethod
-   def _difference(*paths):
-      pc = Pyclipper()
-      for path in paths:
-         pc.AddPath(PtsToIntsPos(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
-      res = pc.Execute(CT_DIFFERENCE, fillMode, fillMode)
-      if not res:
-         return []
-      return [PtsFromInts(i) for i in res]
+   def _difference(*paths, return_ints=False):
+      return run_clipper_simple(CT_DIFFERENCE, paths[0:1], paths[1:], return_ints=return_ints)
    # This works on lists of points
    @staticmethod
-   def _intersection(*paths):
-      pc = Pyclipper()
-      for path in paths:
-         pc.AddPath(PtsToIntsPos(path), PT_SUBJECT if path is paths[0] else PT_CLIP, True)
-      res = pc.Execute(CT_INTERSECTION, fillMode, fillMode)
-      if not res:
-         return []
-      return [PtsFromInts(i) for i in res]
+   def _intersection(*paths, return_ints=False):
+      return run_clipper_simple(CT_INTERSECTION, paths[0:1], paths[1:], return_ints=return_ints)
 
 def interpolate_path(path):
    lastpt = path[0]

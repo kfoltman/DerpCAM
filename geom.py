@@ -383,3 +383,47 @@ class CircleFitter(object):
          else:
             pts.append((p[0], p[1]))
       return pts
+
+class IntPath(object):
+   def __init__(self, real_points, ints_already=False):
+      self.int_points = PtsToInts(real_points) if not ints_already else real_points
+   def real_points(self):
+      return PtsFromInts(self.int_points)
+   def orientation(self):
+      return Orientation(self.int_points)
+   def reversed(self):
+      return IntPath(list(reversed(self.int_points)), True)
+   def force_orientation(self, orientation):
+      if self.orientation() == orientation:
+         return self
+      else:
+         return self.reversed()
+   def area(self):
+      return Area(self.int_points)
+
+def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=False, return_ints=False):
+   pc = Pyclipper()
+   for path in subject_polys:
+      pc.AddPath(path.int_points, PT_SUBJECT, True)
+   for path in clipper_polys:
+      pc.AddPath(path.int_points, PT_CLIP, True)
+   res = pc.Execute(operation, fillMode, fillMode)
+   if bool_only:
+      return True if res else False
+   if not res:
+      return []
+   if return_ints:
+      return [IntPath(i, True) for i in res]
+   else:
+      return [PtsFromInts(i) for i in res]
+
+def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[]):
+   pc = Pyclipper()
+   for path in subject_polys:
+      pc.AddPath(path, PT_SUBJECT, True)
+   for path in subject_paths:
+      pc.AddPath(path, PT_SUBJECT, False)
+   for path in clipper_polys:
+      pc.AddPath(path, PT_CLIP, True)
+   tree = pc.Execute2(operation, fillMode, fillMode)
+   return tree
