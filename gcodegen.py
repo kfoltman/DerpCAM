@@ -67,11 +67,9 @@ class Gcode(object):
       else:
          ccw = True
          if ccw:
-            self.arc_ccw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
-            self.arc_ccw(x = x + r, y = y, i = r, z = cur_z + delta_z)
+            self.arc_ccw(i = -r, z = cur_z + 0.5 * delta_z)
          else:
-            self.arc_cw(x = x - r, y = y, i = -r, z = cur_z + 0.5 * delta_z)
-            self.arc_cw(x = x + r, y = y, i = r, z = cur_z + delta_z)
+            self.arc_cw(i = -r, z = cur_z + 0.5 * delta_z)
       
    def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
       if new_z == old_z:
