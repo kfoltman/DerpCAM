@@ -19,7 +19,8 @@ class Gcode(object):
    def add(self, line):
       self.gcode.append(line)
    def reset(self):
-      self.add("G17 G21 G90 G40")
+      accuracy = 0.5 / RESOLUTION
+      self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
    def finish(self):
       self.add("M2")
    def feed(self, feed):
