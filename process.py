@@ -158,7 +158,7 @@ class Toolpaths(object):
    def calc_bounds(self):
       return max_bounds(*[tp.bounds for tp in self.toolpaths])
 
-def fixPathNesting(tps):
+def findPathNesting(tps):
    nestings = []
    for tp in tps:
       contours = tp.toolpaths if isinstance(tp, Toolpaths) else [tp]
@@ -171,6 +171,10 @@ def fixPathNesting(tps):
          else:
             # Doesn't contain any earlier contour, so start a nesting.
             nestings.append([subtp])
+   return nestings
+
+def fixPathNesting(tps):
+   nestings = findPathNesting(tps)
    res = []
    nestings = sorted(nestings, key=len)
    for nesting in nestings:
@@ -226,6 +230,37 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
       if islands and any([run_clipper_simple(CT_INTERSECTION, [IntPath(i)], [c], bool_only=True) for i in islands]):
          continue
       toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
+
+def mergeToolpaths(tps, new, dia):
+   if type(new) is Toolpath:
+      new = [new]
+   else:
+      new = new.toolpaths
+   if not tps:
+      tps.append(Toolpaths(new))
+      return
+   last = tps[-1]
+   new2 = []
+   for i in new:
+      pt = i.points[0]
+      found = False
+      for l in last.toolpaths:
+         mindist = None
+         mdpos = None
+         for j, pt2 in enumerate(l.points):
+            d = dist(pt, pt2)
+            if mindist is None or d < mindist:
+               mindist = d
+               mdpos = j
+         if mindist <= dia:
+            l.points = l.points[:mdpos + 1] + i.points + i.points[0:1] + l.points[mdpos:]
+            found = True
+            break
+      if not found:
+         new2.append(i)
+   if new2:
+      tps.append(Toolpaths(new2))
+
 
 class Shape(object):
    def __init__(self, boundary, closed=True, islands=None):
@@ -283,9 +318,11 @@ class Shape(object):
       if not self.closed:
          raise ValueError("Cannot mill pockets of open polylines")
       tps = []
+      tps_islands = []
       boundary = IntPath(self.boundary)
       islands_transformed = []
-      for island in self.islands:
+      islands = self.islands
+      for island in islands:
          pc = PyclipperOffset()
          pc.AddPath(PtsToInts(island), JT_ROUND, ET_CLOSEDPOLYGON)
          res = pc.Execute(tool.diameter * 0.5 * RESOLUTION)
@@ -293,9 +330,12 @@ class Shape(object):
             return None
          res = [IntPath(it, True) for it in res]
          islands_transformed += res
-         for path in res:
-            for ints in Shape._intersection(path, boundary):
-               tps += [Toolpath(ints, True, tool)]
+      if islands_transformed:
+         islands_transformed = Shape._union(*[i.force_orientation(True) for i in islands_transformed], return_ints=True)
+      for path in islands_transformed:
+         for ints in Shape._intersection(path, boundary):
+            # diff with other islands
+            tps_islands += [Toolpath(ints, True, tool)]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
       while True:
@@ -303,10 +343,10 @@ class Shape(object):
          if not res:
             break
          displace += stepover
-         tps.append(res)
+         mergeToolpaths(tps, res, tool.diameter)
       if len(tps) == 0:
          raise ValueError("Empty contour")
-      tps = joinClosePaths(list(reversed(tps)))
+      tps = joinClosePaths(tps_islands + list(reversed(tps)))
       if self.closed:
          findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
       return Toolpaths(tps)
@@ -369,6 +409,10 @@ class Shape(object):
    @staticmethod
    def _intersection(*paths, return_ints=False):
       return run_clipper_simple(CT_INTERSECTION, paths[0:1], paths[1:], return_ints=return_ints)
+   # This works on lists of points
+   @staticmethod
+   def _union(*paths, return_ints=False):
+      return run_clipper_simple(CT_UNION, paths[0:1], paths[1:], return_ints=return_ints)
 
 def interpolate_path(path):
    lastpt = path[0]
