@@ -324,14 +324,17 @@ class Shape(object):
       islands = self.islands
       for island in islands:
          pc = PyclipperOffset()
-         pc.AddPath(PtsToInts(island), JT_ROUND, ET_CLOSEDPOLYGON)
+         pts = PtsToInts(island)
+         if not Orientation(pts):
+            pts = list(reversed(pts))
+         pc.AddPath(pts, JT_ROUND, ET_CLOSEDPOLYGON)
          res = pc.Execute(tool.diameter * 0.5 * RESOLUTION)
          if not res:
             return None
          res = [IntPath(it, True) for it in res]
          islands_transformed += res
       if islands_transformed:
-         islands_transformed = Shape._union(*[i.force_orientation(True) for i in islands_transformed], return_ints=True)
+         islands_transformed = Shape._union(*[i for i in islands_transformed], return_ints=True)
       for path in islands_transformed:
          for ints in Shape._intersection(path, boundary):
             # diff with other islands
