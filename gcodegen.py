@@ -336,6 +336,23 @@ class Engrave(Operation):
    def __init__(self, shape, tool, props):
       Operation.__init__(self, shape, tool, shape.engrave(tool), props)
 
+class PeckDrill(Operation):
+   def __init__(self, x, y, tool, props):
+      shape = Shape.circle(x, y, r=0.5 * tool.diameter)
+      Operation.__init__(self, shape, tool, Toolpath([(x, y)], True, tool), props)
+      self.x = x
+      self.y = y
+   def to_gcode(self, gcode, safe_z, semi_safe_z):
+      gcode.rapid(z=semi_safe_z)
+      gcode.feed(self.tool.vfeed)
+      curz = self.props.start_depth
+      doc = self.tool.maxdoc
+      while curz > self.props.depth:
+         nextz = max(curz - doc, self.props.depth)
+         gcode.linear(z=nextz)
+         gcode.rapid(z=semi_safe_z)
+         curz = nextz
+
 class HelicalDrill(Operation):
    def __init__(self, x, y, d, tool, props):
       self.min_dia = tool.diameter + tool.min_helix_diameter
@@ -413,6 +430,8 @@ class Operations(object):
       self.add(Engrave(shape, self.tool, props or self.props))
    def pocket(self, shape, props=None):
       self.add(Pocket(shape, self.tool, props or self.props))
+   def peck_drill(self, x, y, props=None):
+      self.add(PeckDrill(x, y, self.tool, props or self.props))
    def helical_drill(self, x, y, d, props=None):
       self.add(HelicalDrill(x, y, d, self.tool, props or self.props))
    def helical_drill_full_depth(self, x, y, d, props=None):
