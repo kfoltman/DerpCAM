@@ -82,7 +82,7 @@ class PathViewer(QWidget):
             lastpt = self.addRapids(pen, tp, lastpt)
          return lastpt
       if path.helical_entry:
-         self.addLines(pen, circle(*path.helical_entry), False)
+         self.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False)
       self.addLines(pen, [lastpt, path.points[0]], False)
       return path.points[0 if path.closed else -1]
       

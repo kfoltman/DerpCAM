@@ -152,6 +152,10 @@ class Gcode(object):
       z_diff = old_z - new_z
       xy_diff = z_diff * tool.slope()
       tlengths = path_lengths(subpath)
+      max_ramp_length = max(20, 10 * tool.diameter)
+      if tlengths[-1] > max_ramp_length:
+         subpath = calc_subpath(subpath, 0, max_ramp_length)
+         tlengths = path_lengths(subpath)
       npasses = xy_diff / tlengths[-1]
       if debug_ramp:
          self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
@@ -226,6 +230,8 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
          if lastpt is None or dist(lastpt, firstpt) > 1 / RESOLUTION:
             gcode.rapid(z=safe_z)
             curz = safe_z
+            # Note: it's not ideal because of the helical entry, but it's
+            # good enough.
             gcode.rapid(x=firstpt[0], y=firstpt[1])
             lastpt = firstpt
          for subpath in subpaths:
@@ -248,6 +254,10 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
                   gcode.feed(p.tool.hfeed)
                   if subpath.helical_entry:
                      lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, p.tool, semi_safe_z, z_above_cut)
+                     if subpath.helical_entry != subpath.points[0]:
+                        # The helical entry ends somewhere else in the pocket, so feed to the right spot
+                        lastpt = subpath.points[0]
+                        gcode.linear(x=lastpt[0], y=lastpt[1])
                   else:
                      lastpt = gcode.ramped_move_z(newz, curz, subpath.points, p.tool, semi_safe_z, z_above_cut)
                else:

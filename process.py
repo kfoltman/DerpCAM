@@ -18,7 +18,6 @@ class Tab(object):
       if elen >= self.end:
          segs.append((self.end, elen))
       return segs
-   
 
 class Tabs(object):
    def __init__(self, tabs):
@@ -195,23 +194,35 @@ def joinClosePaths(tps):
 
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
    boundary_path = IntPath(boundary)
-   boundary_path = boundary_path.force_orientation(False)
+   boundary_path = boundary_path.force_orientation(True)
+   island_paths = [IntPath(i).force_orientation(True) for i in islands]
    for toolpath in toolpaths:
       if type(toolpath) is Toolpaths:
-         findHelicalEntryPoints(toolpath.toolpaths)
+         findHelicalEntryPoints(toolpath.toolpaths, tool, boundary, islands)
          continue
-      startx, starty = toolpath.points[0]
-      # Size of the helical entry hole
-      d = tool.diameter * (1 + tool.stepover)
-      c = IntPath(circle(startx, starty, d / 2))
-      # Check if it sticks outside of the final shape
-      # XXXKF could be optimized by doing a simple bounds check first
-      if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
-         continue
-      # Check for collision with islands
-      if islands and any([run_clipper_simple(CT_INTERSECTION, [IntPath(i)], [c], bool_only=True) for i in islands]):
-         continue
-      toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
+      candidates = [toolpath.points[0]]
+      if len(toolpath.points) > 1:
+         p1 = toolpath.points[0]
+         p2 = toolpath.points[1]
+         mid = p1
+         angle = atan2(p2[1] - p1[1], p2[0] - p1[0]) + pi / 2
+         d = tool.diameter * 0.5
+         candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
+         d = tool.diameter * -0.5
+         candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
+      for startx, starty in candidates:
+         # Size of the helical entry hole
+         d = tool.diameter * (1 + tool.stepover)
+         c = IntPath(circle(startx, starty, d / 2))
+         # Check if it sticks outside of the final shape
+         # XXXKF could be optimized by doing a simple bounds check first
+         if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
+            continue
+         # Check for collision with islands
+         if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
+            continue
+         toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
+         break
 
 def mergeToolpaths(tps, new, dia):
    if type(new) is Toolpath:
@@ -219,11 +230,12 @@ def mergeToolpaths(tps, new, dia):
    else:
       new = new.toolpaths
    if not tps:
-      tps.append(Toolpaths(new))
+      tps.insert(0, Toolpaths(new))
       return
    last = tps[-1]
    new2 = []
    for i in new:
+      assert i.closed
       pt = i.points[0]
       found = False
       for l in last.toolpaths:
@@ -235,7 +247,8 @@ def mergeToolpaths(tps, new, dia):
                mindist = d
                mdpos = j
          if mindist <= dia:
-            l.points = l.points[:mdpos + 1] + i.points + i.points[0:1] + l.points[mdpos:]
+            #l.points = l.points[:mdpos + 1] + i.points + i.points[0:1] + l.points[mdpos:]
+            l.points = i.points + i.points[0:1] + l.points[mdpos:] + l.points[:mdpos + 1] + i.points[0:1]
             found = True
             break
       if not found:
@@ -323,6 +336,8 @@ class Shape(object):
             tps_islands += [Toolpath(ints, True, tool)]
       displace = 0.0
       stepover = tool.stepover * tool.diameter
+      for island in tps_islands:
+         mergeToolpaths(tps, island, tool.diameter)
       while True:
          res = self.contour(tool, False, displace, islands_transformed)
          if not res:
@@ -331,9 +346,8 @@ class Shape(object):
          mergeToolpaths(tps, res, tool.diameter)
       if len(tps) == 0:
          raise ValueError("Empty contour")
-      tps = joinClosePaths(tps_islands + list(reversed(tps)))
-      if self.closed:
-         findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
+      tps = joinClosePaths(tps_islands + tps)
+      findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
       return Toolpaths(tps)
    def warp(self, transform):
       def interpolate(pts):
