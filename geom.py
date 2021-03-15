@@ -420,10 +420,10 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
 def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[]):
    pc = Pyclipper()
    for path in subject_polys:
-      pc.AddPath(path, PT_SUBJECT, True)
+      pc.AddPath(path.int_points, PT_SUBJECT, True)
    for path in subject_paths:
-      pc.AddPath(path, PT_SUBJECT, False)
+      pc.AddPath(path.int_points, PT_SUBJECT, False)
    for path in clipper_polys:
-      pc.AddPath(path, PT_CLIP, True)
+      pc.AddPath(path.int_points, PT_CLIP, True)
    tree = pc.Execute2(operation, fillMode, fillMode)
    return tree

@@ -55,6 +55,8 @@ class Gcode(object):
       if k is not None:
          res += (" K%0.3f" % k)
       return res
+   def dwell(self, millis):
+      self.add("G4 P%0.0f" % millis)
 
    def helix_turn(self, x, y, r, start_z, end_z):
       self.linear(x = x + r, y = y)
@@ -336,12 +338,37 @@ class Engrave(Operation):
    def __init__(self, shape, tool, props):
       Operation.__init__(self, shape, tool, shape.engrave(tool), props)
 
+class FaceMill(Operation):
+   def __init__(self, shape, angle, margin, zigzag, tool, props):
+      Operation.__init__(self, shape, tool, shape.face_mill(tool, angle, margin, zigzag), props)
+
+class RetractSchedule(object):
+   pass
+
+class RetractToSemiSafe(RetractSchedule):
+   def get(self, z, props, semi_safe_z):
+      return max(z, semi_safe_z)
+
+class RetractToStart(RetractSchedule):
+   def get(self, z, props, semi_safe_z):
+      return max(z, props.start_depth)
+
+class RetractBy(RetractSchedule):
+   def __init__(self, peck_depth):
+      self.peck_depth = peck_depth
+   def get(self, z, props, semi_safe_z):
+      return min(z + self.peck_depth, props.start_depth)
+
 class PeckDrill(Operation):
-   def __init__(self, x, y, tool, props):
+   def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
       shape = Shape.circle(x, y, r=0.5 * tool.diameter)
       Operation.__init__(self, shape, tool, Toolpath([(x, y)], True, tool), props)
       self.x = x
       self.y = y
+      self.dwell_bottom = dwell_bottom
+      self.dwell_retract = dwell_retract
+      self.retract = retract or RetractToSemiSafe()
+      self.slow_retract = slow_retract
    def to_gcode(self, gcode, safe_z, semi_safe_z):
       gcode.rapid(z=semi_safe_z)
       gcode.feed(self.tool.vfeed)
@@ -350,7 +377,15 @@ class PeckDrill(Operation):
       while curz > self.props.depth:
          nextz = max(curz - doc, self.props.depth)
          gcode.linear(z=nextz)
-         gcode.rapid(z=semi_safe_z)
+         if self.dwell_bottom:
+            gcode.dwell(1000 * self.dwell_bottom)
+         retrz = self.retract.get(nextz, self.props, semi_safe_z)
+         if self.slow_retract:
+            gcode.linear(z=retrz)
+         else:
+            gcode.rapid(z=retrz)
+         if self.dwell_retract:
+            gcode.dwell(1000 * self.dwell_retract)
          curz = nextz
 
 class HelicalDrill(Operation):
@@ -430,6 +465,8 @@ class Operations(object):
       self.add(Engrave(shape, self.tool, props or self.props))
    def pocket(self, shape, props=None):
       self.add(Pocket(shape, self.tool, props or self.props))
+   def face_mill(self, shape, angle, margin, zigzag, props=None):
+      self.add(FaceMill(shape, angle, margin, zigzag, self.tool, props or self.props))
    def peck_drill(self, x, y, props=None):
       self.add(PeckDrill(x, y, self.tool, props or self.props))
    def helical_drill(self, x, y, d, props=None):

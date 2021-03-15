@@ -162,6 +162,7 @@ def fixPathNesting(tps):
       res += nesting
    return res
 
+# XXXKF this may cut corners sometimes, need to add collision checking
 def joinClosePaths(tps):
    tps = fixPathNesting(tps)
    last = None
@@ -348,6 +349,44 @@ class Shape(object):
          raise ValueError("Empty contour")
       tps = joinClosePaths(tps_islands + tps)
       findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
+      return Toolpaths(tps)
+   def face_mill(self, tool, angle, margin, zigzag):
+      offset_dist = (0.5 * tool.diameter - margin) * RESOLUTION
+      boundary = PtsToInts(self.boundary)
+      res = Shape._offset(boundary, self.closed, -offset_dist)
+      if not res:
+         return None
+      boundary_paths = [IntPath(bp, True) for bp in res]
+
+      coords = sum(res, [])
+      xcoords = [p[0] / RESOLUTION for p in coords]
+      ycoords = [p[1] / RESOLUTION for p in coords]
+      sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
+
+      stepover = tool.diameter * tool.stepover
+      tps = []
+      maxlen = dist((sx, sy), (ex, ey))
+      #p = (ex + tool.diameter / 2 * cos(angle + pi / 2), sy + tool.diameter / 2 * sin(angle + pi / 2))
+      p = (ex, sy + 1 / RESOLUTION)
+      fsteps = maxlen / stepover
+      nsteps = int(ceil(fsteps))
+      for i in range(nsteps):
+         p1 = (p[0] - maxlen * cos(angle), p[1] - maxlen * sin(angle))
+         p2 = (p[0] + maxlen * cos(angle), p[1] + maxlen * sin(angle))
+         if zigzag and (i & 1):
+            p2, p1 = p1, p2
+         path = IntPath([p1, p2])
+         tree = run_clipper_advanced(CT_INTERSECTION, [], boundary_paths, [path])
+         for path2 in OpenPathsFromPolyTree(tree):
+            tps.append(Toolpath(PtsFromInts(path2), False, tool))
+         if i == nsteps - 1:
+            frac = fsteps - nsteps
+            p = (p[0] + frac * stepover * cos(angle + pi / 2), p[1] + frac * stepover * sin(angle + pi / 2))
+         else:
+            p = (p[0] + stepover * cos(angle + pi / 2), p[1] + stepover * sin(angle + pi / 2))
+      if not tps:
+         raise ValueError("Milled area is empty")
+      tps = joinClosePaths(tps)
       return Toolpaths(tps)
    def warp(self, transform):
       def interpolate(pts):

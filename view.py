@@ -52,7 +52,10 @@ class PathViewer(QWidget):
          path.moveTo(*polyline[0])
          for point in polyline[1:]:
             path.lineTo(*point)
-         self.drawingOps.append((pen, path, path.boundingRect()))
+         if polyline[0] == polyline[-1]:
+            self.drawingOps.append((pen, path, path.boundingRect()))
+         else:
+            self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1))))
 
    def toolPen(self, path, alpha=100):
       pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
@@ -171,14 +174,14 @@ class PathViewer(QWidget):
                continue
             qp.setPen(pen)
             # Do not anti-alias very long segments
-            if pen.widthF() and path.elementCount() > 1000:
+            is_slow = pen.widthF() and path.elementCount() > 1000
+            if is_slow:
                qp.setRenderHint(1, False)
                qp.setRenderHint(8, False)
-               qp.drawPath(path)
+            qp.drawPath(path)
+            if is_slow:
                qp.setRenderHint(1, True)
                qp.setRenderHint(8, True)
-            else:
-               qp.drawPath(path)
       qp.end()
 
    def scalingFactor(self):
