@@ -7,10 +7,19 @@ debug_ramp = False
 debug_tabs = False
 
 class OperationProps(object):
-   def __init__(self, depth, start_depth = 0, tab_depth = None):
+   def __init__(self, depth, start_depth = 0, tab_depth = None, margin = 0):
       self.depth = depth
       self.start_depth = start_depth
       self.tab_depth = tab_depth
+      self.margin = margin
+   def clone(self, **attrs):
+      res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin)
+      for k, v in attrs.items():
+         assert hasattr(res, k), "Unknown attribute %s" % k
+         setattr(res, k, v)
+      return res
+   def with_finish_pass(self, margin = 0):
+      return self.clone(start_depth=self.depth, margin=margin)
 
 class Gcode(object):
    def __init__(self):
@@ -313,7 +322,7 @@ class Operation(object):
 
 class Contour(Operation):
    def __init__(self, shape, outside, tool, props, tabs):
-      Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside), props, tabs=tabs)
+      Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside, displace=props.margin), props, tabs=tabs)
 
 class TrochoidalContour(Operation):
    def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
@@ -322,7 +331,7 @@ class TrochoidalContour(Operation):
       self.nspeed = nspeed
       if not outside:
          nrad = -nrad
-      contour = shape.contour(tool, outside=outside, displace=nrad)
+      contour = shape.contour(tool, outside=outside, displace=nrad + props.margin)
       trochoidal_func = lambda contour: trochoidal_transform(contour, nrad, nspeed)
       contour = Toolpath(contour.points, contour.closed, tool, transform=trochoidal_func)
       Operation.__init__(self, shape, tool, contour, props, tabs=tabs)
@@ -332,7 +341,7 @@ class TrochoidalContour(Operation):
 
 class Pocket(Operation):
    def __init__(self, shape, tool, props):
-      Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
+      Operation.__init__(self, shape, tool, shape.pocket_contour(tool, displace=props.margin), props)
 
 class Engrave(Operation):
    def __init__(self, shape, tool, props):

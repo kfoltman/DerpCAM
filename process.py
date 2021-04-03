@@ -175,7 +175,7 @@ class Shape(object):
       if len(tps) == 1:
          return tps[0]
       return Toolpaths(tps)
-   def pocket_contour(self, tool):
+   def pocket_contour(self, tool, displace=0):
       if not self.closed:
          raise ValueError("Cannot mill pockets of open polylines")
       tps = []
@@ -189,7 +189,7 @@ class Shape(object):
          if not Orientation(pts):
             pts = list(reversed(pts))
          pc.AddPath(pts, JT_ROUND, ET_CLOSEDPOLYGON)
-         res = pc.Execute(tool.diameter * 0.5 * RESOLUTION)
+         res = pc.Execute((tool.diameter * 0.5 + displace) * RESOLUTION)
          if not res:
             return None
          res = [IntPath(it, True) for it in res]
@@ -200,15 +200,15 @@ class Shape(object):
          for ints in Shape._intersection(path, boundary):
             # diff with other islands
             tps_islands += [Toolpath(ints, True, tool)]
-      displace = 0.0
+      displace_now = displace
       stepover = tool.stepover * tool.diameter
       for island in tps_islands:
          mergeToolpaths(tps, island, tool.diameter)
       while True:
-         res = self.contour(tool, False, displace, islands_transformed)
+         res = self.contour(tool, False, displace_now, islands_transformed)
          if not res:
             break
-         displace += stepover
+         displace_now += stepover
          mergeToolpaths(tps, res, tool.diameter)
       if len(tps) == 0:
          raise ValueError("Empty contour")

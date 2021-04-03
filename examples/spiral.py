@@ -34,8 +34,9 @@ for i in range(249, 21, -1):
 
 outside = Shape(points)
 
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=OperationProps(depth=depth, tab_depth=tab_depth))
+operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=OperationProps(depth=depth, tab_depth=tab_depth, margin=0.2))
 operations.outside_contour(outside, tabs=4)
+operations.outside_contour(outside, tabs=4, props=operations.props.with_finish_pass())
 operations.to_gcode_file("spiral.ngc")
 
 viewer_modal(operations)
