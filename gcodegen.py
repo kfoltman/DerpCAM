@@ -600,7 +600,20 @@ class HelicalDrillFullDepth(HelicalDrill):
          r = max(0, (self.d - self.tool.diameter) / 2)
          gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
       gcode.rapid(z=machine_params.safe_z)
-         
+
+def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
+   draft = tan(draft_angle_deg * pi / 180)
+   height = props.start_depth - props.depth
+   assert height > 0
+   z = props.start_depth
+   cut_so_far = 0
+   nlayer = 0
+   while z > props.depth:
+      this_layer = min(layer_thickness, height - cut_so_far)
+      end_z = z - this_layer
+      func(z, end_z, cut_so_far * draft)
+      z = end_z
+      cut_so_far += this_layer
 
 class Operations(object):
    def __init__(self, machine_params, tool=None, props=None):
@@ -614,12 +627,22 @@ class Operations(object):
       self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
       self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
+   def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
+      props = props or self.props
+      def addWithDraft(z, end_z, draft_margin):
+         self.outside_contour(shape, tabs=None, props=props.clone(depth=end_z, margin=props.margin + draft_margin))
+      makeWithDraft(addWithDraft, shape, draft_angle_deg, layer_thickness, props)
    def inside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
    def engrave(self, shape, props=None):
       self.add(Engrave(shape, self.tool, props or self.props))
    def pocket(self, shape, props=None):
       self.add(Pocket(shape, self.tool, props or self.props))
+   def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
+      props = props or self.props
+      def addWithDraft(z, end_z, draft_margin):
+         self.pocket(shape, props.clone(start_depth=z, depth=end_z, margin=props.margin + draft_margin))
+      makeWithDraft(addWithDraft, shape, draft_angle_deg, layer_thickness, props)
    def face_mill(self, shape, angle, margin, zigzag, props=None):
       self.add(FaceMill(shape, angle, margin, zigzag, self.tool, props or self.props))
    def peck_drill(self, x, y, props=None):

@@ -58,7 +58,7 @@ def joinClosePaths(tps):
       last = tp
    return res
 
-def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
+def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
    boundary_path = IntPath(boundary)
    boundary_path = boundary_path.force_orientation(True)
    island_paths = [IntPath(i).force_orientation(True) for i in islands]
@@ -67,7 +67,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
          findHelicalEntryPoints(toolpath.toolpaths, tool, boundary, islands)
          continue
       candidates = [toolpath.points[0]]
-      if len(toolpath.points) > 1:
+      if len(toolpath.points) > 1 and False:
          p1 = toolpath.points[0]
          p2 = toolpath.points[1]
          mid = p1
@@ -78,7 +78,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
          candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
       for startx, starty in candidates:
          # Size of the helical entry hole
-         d = tool.diameter * (1 + tool.stepover)
+         d = tool.diameter * (1 + 2 * tool.stepover) + margin
          c = IntPath(circle(startx, starty, d / 2))
          # Check if it sticks outside of the final shape
          # XXXKF could be optimized by doing a simple bounds check first
@@ -87,7 +87,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands):
          # Check for collision with islands
          if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
             continue
-         toolpath.helical_entry = (startx, starty, (d - tool.diameter) / 2)
+         toolpath.helical_entry = (startx, starty, tool.diameter * tool.stepover / 2)
          break
 
 def mergeToolpaths(tps, new, dia):
@@ -213,7 +213,7 @@ class Shape(object):
       if len(tps) == 0:
          raise ValueError("Empty contour")
       tps = joinClosePaths(tps_islands + tps)
-      findHelicalEntryPoints(tps, tool, self.boundary, self.islands)
+      findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
       return Toolpaths(tps)
    def face_mill(self, tool, angle, margin, zigzag):
       offset_dist = (0.5 * tool.diameter - margin) * RESOLUTION
