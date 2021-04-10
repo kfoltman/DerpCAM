@@ -281,7 +281,7 @@ class Cut2D(Cut):
       self.enter_or_leave_cut(gcode, subpath, newz, is_tab)
       points = subpath.points + subpath.points[0:1] if subpath.closed else subpath.points
       assert self.lastpt is not None
-      self.lastpt = gcode.apply_subpath(subpath.points, self.lastpt)
+      self.lastpt = gcode.apply_subpath(points, self.lastpt)
       if is_tab and debug_tabs:
          gcode.add("(tab end)")
 
