@@ -226,6 +226,8 @@ class Cut(object):
 # A bit unfortunate name, might be changed in future
 class CutPath2D(object):
    def __init__(self, p, tabs):
+      def simplifySubpaths(subpaths):
+         return [subpath.lines_to_arcs() for subpath in subpaths]
       self.subpaths_full = [p.transformed()]
       self.subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
       self.subpaths_tabbed = [subpath.transformed() for subpath in self.subpaths_tabbed]
