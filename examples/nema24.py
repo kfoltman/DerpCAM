@@ -9,16 +9,18 @@ from view import *
 # 47.1 or 50 depending on the model
 hole_spacing = 50
 
-tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2)
-depth = -7
-recess_depth = -2
-tab_depth = -5
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
 safe_z = 5
 # Use slower downward moves/ramping/helical entry below this height
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
+machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
+
+tool = Tool(diameter = 2.5, hfeed = 300, vfeed = 50, maxdoc = 0.2)
+depth = -7
+recess_depth = -2
+tab_depth = -5
 # Best kept at False, because it's unfinished and untested on a real machine.
 use_trochoidal_for_contour = False
 
@@ -30,7 +32,7 @@ recess = Shape.circle(30, 30, d = 38.3)
 props_recess = OperationProps(depth=recess_depth)
 props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
 
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
+operations = Operations(machine_params=machine_params, tool=tool, props=props_fulldepth)
 operations.helical_drill_full_depth(x=30, y=30, d=10.2)
 #operations.pocket(shaft))
 #operations.helical_drill_full_depth(x=30, y=30, d=38.3, props=OperationProps(depth=recess_depth))

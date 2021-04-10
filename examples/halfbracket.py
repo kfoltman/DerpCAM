@@ -9,7 +9,7 @@ from view import *
 width = 30
 length = 60
 
-tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2)
+tool = Tool(diameter = 2.5, hfeed = 300, vfeed = 50, maxdoc = 0.2)
 depth = -4
 tab_depth = -2
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
@@ -18,6 +18,8 @@ safe_z = 5
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
+machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
+
 hole_diameter = 4.2
 
 outside = Shape.union(
@@ -48,7 +50,7 @@ holes = Shape._scale_points(holes, 1 + shrinkage)
 
 props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
 
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
+operations = Operations(machine_params=machine_params, tool=tool, props=props_fulldepth)
 for x, y in holes:
     operations.helical_drill(x=x, y=y, d=hole_diameter)
 operations.outside_contour(outside, tabs=4)

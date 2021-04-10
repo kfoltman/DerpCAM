@@ -21,7 +21,7 @@ safe_z = 5
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
-hole_diameter = 4.2
+machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
 
 #frame = circle(width / 2, -length, sqrt((width / 2) ** 2 + (2 * length) ** 2), sa = atan2(2 * length, width / 2), ea = pi - atan2(2 * length, width / 2)) + \
 #    [( 0, 0), (width, 0)]
@@ -56,7 +56,7 @@ label = [shape.warp(curve_transform) for shape in label]
 
 props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
 props_engrave = OperationProps(depth=engrave_depth)
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
+operations = Operations(machine_params=machine_params, tool=tool, props=props_fulldepth)
 for label_item in label + label2:
     operations.pocket(label_item, props=props_engrave)
 operations.engrave(inner_frame, props=props_engrave)

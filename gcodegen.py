@@ -151,13 +151,13 @@ class Gcode(object):
       self.linear(x=x, y=y, z=new_z)
       return (x, y)
 
-   def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z):
+   def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
       if False:
          # If doing it properly proves to be too hard
          subpath = CircleFitter.interpolate_arcs(subpath, False, 1)
       if new_z >= old_z:
          self.rapid(z=new_z)
-         return
+         return lastpt
       old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
       # Always positive
       z_diff = old_z - new_z
@@ -211,16 +211,162 @@ class Gcode(object):
             lastpt = self.apply_subpath(subpath_reverse, lastpt)
       return lastpt
 
-def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, tabs, tab_depth):
+class MachineParams(object):
+   def __init__(self, safe_z, semi_safe_z):
+      self.safe_z = safe_z
+      self.semi_safe_z = semi_safe_z
+      self.over_tab_safety = 0.1
+
+class Cut(object):
+   def __init__(self, machine_params, props, tool):
+      self.machine_params = machine_params
+      self.props = props
+      self.tool = tool
+
+# A bit unfortunate name, might be changed in future
+class CutPath2D(object):
+   def __init__(self, p, tabs):
+      self.subpaths_full = [p.transformed()]
+      self.subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
+      self.subpaths_tabbed = [subpath.transformed() for subpath in self.subpaths_tabbed]
+      if simplify_arcs:
+         self.subpaths_tabbed = simplifySubpaths(self.subpaths_tabbed)
+         self.subpaths_full = simplifySubpaths(self.subpaths_full)
+
+# Simple tabbed 2D toolpath
+class Cut2D(Cut):
+   def __init__(self, machine_params, props, tool, toolpaths, tabs):
+      Cut.__init__(self, machine_params, props, tool)
+      if props.tab_depth is not None and props.tab_depth < props.depth:
+         raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (props.tab_depth, props.depth))
+      self.tabs = tabs
+      self.prepare_paths(toolpaths)
+      self.tab_depth = self.props.tab_depth if self.props.tab_depth is not None else self.props.depth
+      self.over_tab_z = self.tab_depth + self.machine_params.over_tab_safety
+
+   def prepare_paths(self, toolpaths):
+      # Convert to an array of single Toolpath objects
+      flattened = toolpaths.flattened() if isinstance(toolpaths, Toolpaths) else [toolpaths]
+      self.cutpaths = [CutPath2D(p, self.tabs) for p in flattened]
+
+   def build(self, gcode):
+      for cutpath in self.cutpaths:
+         self.build_cutpath(gcode, cutpath)
+
+   def build_cutpath(self, gcode, cutpath):
+      self.start_cutpath(gcode)
+      while self.next_depth():
+         self.build_layer(gcode, cutpath)
+      self.end_cutpath(gcode)
+
+   def build_layer(self, gcode, cutpath):
+      subpaths = cutpath.subpaths_tabbed if self.depth < self.tab_depth else cutpath.subpaths_full
+      # Not a continuous path, need to jump to a new place
+      firstpt = subpaths[0].points[0]
+      if self.lastpt is None or dist(self.lastpt, firstpt) > 1 / RESOLUTION:
+         self.go_to_safe_z(gcode)
+         # Note: it's not ideal because of the helical entry, but it's
+         # good enough.
+         gcode.rapid(x=firstpt[0], y=firstpt[1])
+         self.lastpt = firstpt
+      for subpath in subpaths:
+         self.build_subpath(gcode, subpath)
+
+   def build_subpath(self, gcode, subpath):
+      # This will always be false for subpaths_full.
+      is_tab = subpath.is_tab
+      newz = self.over_tab_z if is_tab else self.depth
+      if is_tab and debug_tabs:
+         gcode.add("(tab start)")
+      self.enter_or_leave_cut(gcode, subpath, newz, is_tab)
+      points = subpath.points + subpath.points[0:1] if subpath.closed else subpath.points
+      assert self.lastpt is not None
+      self.lastpt = gcode.apply_subpath(subpath.points, self.lastpt)
+      if is_tab and debug_tabs:
+         gcode.add("(tab end)")
+
+   def enter_or_leave_cut(self, gcode, subpath, newz, is_tab):
+      if newz != self.curz:
+         if newz < self.curz:
+            self.enter_cut(gcode, subpath, newz, is_tab)
+         else:
+            gcode.move_z(newz, self.curz, subpath.tool, self.machine_params.semi_safe_z)
+            self.curz = newz
+
+   def enter_cut(self, gcode, subpath, newz, is_tab):
+      # Z slightly above the previous cuts. There will be no ramping or helical
+      # entry above that, just a straight plunge. However, the speed of the
+      # plunge will be dependent on whether a ramped or helical entry is used
+      # for the rest of the descent. In case of ramped entry, we go slow, at
+      # plunge feed rate. For helical entry, there is already a hole milled
+      # up to prev_depth, so we can descend faster, at horizontal feed rate.
+
+      # For tabs, do not consider anything lower than tab_depth as milled, because
+      # it is not, as there is a tab there!
+      z_already_cut_here = max(self.tab_depth, self.prev_depth) if is_tab else self.prev_depth
+      z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
+      if self.prev_depth < self.curz:
+         z_to_plunge_to = max(newz, self.tab_depth if is_tab else self.prev_depth)
+         if subpath.helical_entry:
+            gcode.move_z(z_to_plunge_to, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
+         else:
+            gcode.move_z(z_to_plunge_to, self.curz, subpath.tool, self.machine_params.semi_safe_z)
+         self.curz = z_to_plunge_to
+      gcode.feed(subpath.tool.hfeed)
+      if subpath.helical_entry is not None:
+         # Descend helically to the indicated helical entry point
+         self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
+         if subpath.helical_entry != subpath.points[0]:
+            # The helical entry ends somewhere else in the pocket, so feed to the right spot
+            self.lastpt = subpath.points[0]
+            gcode.linear(x=self.lastpt[0], y=self.lastpt[1])
+         assert self.lastpt is not None
+      else:
+         if newz < self.curz:
+            self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.points, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
+         assert self.lastpt is not None
+      self.curz = newz
+
+   def start_cutpath(self, gcode):
+      self.curz = self.machine_params.safe_z
+      self.depth = self.props.start_depth
+      self.lastpt = None
+
+   def end_cutpath(self, gcode):
+      self.go_to_safe_z(gcode)
+
+   def go_to_safe_z(self, gcode):
+      gcode.rapid(z=self.machine_params.safe_z)
+      self.curz = self.machine_params.safe_z
+
+   def next_depth(self):
+      if self.depth == self.props.depth:
+         return False
+      doc = self.doc(self.depth)
+      self.prev_depth = self.depth
+      # Is there a tab depth in between the current and the new depth?
+      if self.depth > self.tab_depth and self.depth - doc < self.tab_depth:
+         # Make sure that the full tab depth is milled with non-interrupted
+         # paths before switching to the interrupted (tabbed) path. This is
+         # to prevent accidentally using a non-trochoidal path for the last pass
+         self.depth = max(self.props.depth, self.tab_depth)
+      else:
+         self.depth = max(self.props.depth, self.depth - doc)
+      return True
+   def doc(self, depth):
+      # XXXKF add provisions for finish passes here
+      return self.tool.maxdoc
+
+def oldPathToGcode(gcode, path, machine_params, start_depth, end_depth, doc, tabs, tab_depth):
    def simplifySubpaths(subpaths):
       return [subpath.lines_to_arcs() for subpath in subpaths]
-   z_margin = semi_safe_z - start_depth
+   z_margin = machine_params.semi_safe_z - start_depth
    paths = path.flattened() if isinstance(path, Toolpaths) else [path]
-   prev_depth = semi_safe_z
+   prev_depth = machine_params.semi_safe_z
    if tab_depth is not None and tab_depth < end_depth:
       raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, end_depth))
    depth = max(start_depth - doc, end_depth)
-   curz = safe_z
+   curz = machine_params.safe_z
    lastpt = None
    paths_out = []
    for p in paths:
@@ -231,23 +377,21 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
          subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
          subpaths_full = simplifySubpaths(subpaths_full)
       paths_out.append((subpaths_tabbed, subpaths_full))
-   # When going over tabs, avoid touching the tab itself by going slightly above
-   over_tab_safety = 0.1
    while True:
       for subpaths_tabbed, subpaths_full in paths_out:
          subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
          # Not a continuous path, need to jump to a new place
          firstpt = subpaths[0].points[0]
          if lastpt is None or dist(lastpt, firstpt) > 1 / RESOLUTION:
-            gcode.rapid(z=safe_z)
-            curz = safe_z
+            gcode.rapid(z=machine_params.safe_z)
+            curz = machine_params.safe_z
             # Note: it's not ideal because of the helical entry, but it's
             # good enough.
             gcode.rapid(x=firstpt[0], y=firstpt[1])
             lastpt = firstpt
          for subpath in subpaths:
             is_tab = subpath.is_tab
-            newz = tab_depth + over_tab_safety if is_tab else depth
+            newz = tab_depth + machine_params.over_tab_safety if is_tab else depth
             if is_tab and debug_tabs:
                gcode.add("(tab start)")
             if newz != curz:
@@ -258,21 +402,21 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
                      # a helical entry hole already made during the previous
                      # passes
                      if subpath.helical_entry:
-                        gcode.move_z(prev_depth, curz, p.tool, semi_safe_z, z_above_cut)
+                        gcode.move_z(prev_depth, curz, p.tool, machine_params.semi_safe_z, z_above_cut)
                      else:
-                        gcode.move_z(prev_depth, curz, p.tool, semi_safe_z)
+                        gcode.move_z(prev_depth, curz, p.tool, machine_params.semi_safe_z)
                      curz = prev_depth
                   gcode.feed(p.tool.hfeed)
                   if subpath.helical_entry:
-                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, p.tool, semi_safe_z, z_above_cut)
+                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, p.tool, machine_params.semi_safe_z, z_above_cut)
                      if subpath.helical_entry != subpath.points[0]:
                         # The helical entry ends somewhere else in the pocket, so feed to the right spot
                         lastpt = subpath.points[0]
                         gcode.linear(x=lastpt[0], y=lastpt[1])
                   else:
-                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, p.tool, semi_safe_z, z_above_cut)
+                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, p.tool, machine_params.semi_safe_z, z_above_cut)
                else:
-                  gcode.move_z(newz, curz, p.tool, semi_safe_z)
+                  gcode.move_z(newz, curz, p.tool, machine_params.semi_safe_z)
                curz = newz
             # First point was either equal to the most recent one, or
             # was reached using a rapid move, so omit it here.
@@ -292,7 +436,7 @@ def pathToGcode(gcode, path, safe_z, semi_safe_z, start_depth, end_depth, doc, t
          depth = max(depth - doc, tab_depth)
       else:
          depth = max(depth - doc, end_depth)
-   gcode.rapid(z=safe_z)
+   gcode.rapid(z=machine_params.safe_z)
    return gcode
 
 class Operation(object):
@@ -311,14 +455,15 @@ class Operation(object):
          self.tabbed = self.flattened
    def tabs_width(self):
       return 1
-   def to_gcode(self, gcode, safe_z, semi_safe_z):
+   def to_gcode(self, gcode, machine_params):
       tab_depth = self.props.tab_depth
       if tab_depth is None:
          tab_depth = self.props.depth
       for path in self.flattened:
-         pathToGcode(gcode, path=path, safe_z=safe_z, semi_safe_z=semi_safe_z,
-            start_depth=self.props.start_depth, end_depth=self.props.depth,
-            doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
+         Cut2D(machine_params, self.props, self.tool, path, self.tabs).build(gcode)
+         #pathToGcode(gcode, path=path, machine_params=machine_params,
+         #   start_depth=self.props.start_depth, end_depth=self.props.depth,
+         #   doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
 
 class Contour(Operation):
    def __init__(self, shape, outside, tool, props, tabs):
@@ -378,8 +523,8 @@ class PeckDrill(Operation):
       self.dwell_retract = dwell_retract
       self.retract = retract or RetractToSemiSafe()
       self.slow_retract = slow_retract
-   def to_gcode(self, gcode, safe_z, semi_safe_z):
-      gcode.rapid(z=semi_safe_z)
+   def to_gcode(self, gcode, machine_params):
+      gcode.rapid(z=machine_params.semi_safe_z)
       gcode.feed(self.tool.vfeed)
       curz = self.props.start_depth
       doc = self.tool.maxdoc
@@ -388,7 +533,7 @@ class PeckDrill(Operation):
          gcode.linear(z=nextz)
          if self.dwell_bottom:
             gcode.dwell(1000 * self.dwell_bottom)
-         retrz = self.retract.get(nextz, self.props, semi_safe_z)
+         retrz = self.retract.get(nextz, self.props, machine_params.semi_safe_z)
          if self.slow_retract:
             gcode.linear(z=retrz)
          else:
@@ -408,23 +553,23 @@ class HelicalDrill(Operation):
       self.y = y
       self.d = d
 
-   def to_gcode(self, gcode, safe_z, semi_safe_z):
+   def to_gcode(self, gcode, machine_params):
       if self.d < 2 * self.tool.diameter * self.tool.stepover:
-         self.to_gcode_ring(gcode, safe_z, self.d, semi_safe_z)
+         self.to_gcode_ring(gcode, self.d, machine_params)
       else:
          d = 2 * self.tool.diameter * self.tool.stepover
          while d < self.d:
-            self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
+            self.to_gcode_ring(gcode, d, machine_params)
             d += self.tool.diameter * self.tool.stepover
-         self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
-      gcode.rapid(z=safe_z)
+         self.to_gcode_ring(gcode, self.d, machine_params)
+      gcode.rapid(z=machine_params.safe_z)
          
-   def to_gcode_ring(self, gcode, d, safe_z, semi_safe_z):
+   def to_gcode_ring(self, gcode, d, machine_params):
       r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
-      gcode.rapid(z=safe_z)
+      gcode.rapid(z=machine_params.safe_z)
       gcode.rapid(x=self.x + r, y=self.y)
-      curz = semi_safe_z
-      gcode.rapid(z=semi_safe_z)
+      curz = machine_params.semi_safe_z
+      gcode.rapid(z=machine_params.semi_safe_z)
       gcode.feed(self.tool.hfeed)
       dist = 2 * pi * r
       doc = min(self.tool.maxdoc, dist / self.tool.slope())
@@ -437,13 +582,13 @@ class HelicalDrill(Operation):
 # First make a helical entry and then enlarge to the target diameter
 # by side milling
 class HelicalDrillFullDepth(HelicalDrill):
-   def to_gcode(self, gcode, safe_z, semi_safe_z):
+   def to_gcode(self, gcode, machine_params):
       if self.d < self.min_dia:
-         self.to_gcode_ring(gcode, self.d, safe_z, semi_safe_z)
+         self.to_gcode_ring(gcode, self.d, machine_params)
       else:
          # Mill initial hole by helical descent into desired depth
          d = self.min_dia
-         self.to_gcode_ring(gcode, d, safe_z, semi_safe_z)
+         self.to_gcode_ring(gcode, d, machine_params)
          # Bore it out at full depth to the final diameter
          while d < self.d:
             r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
@@ -452,13 +597,12 @@ class HelicalDrillFullDepth(HelicalDrill):
             d += self.tool.diameter * self.tool.stepover_fulldepth
          r = max(0, (self.d - self.tool.diameter) / 2)
          gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
-      gcode.rapid(z=safe_z)
+      gcode.rapid(z=machine_params.safe_z)
          
 
 class Operations(object):
-   def __init__(self, safe_z, semi_safe_z, tool=None, props=None):
-      self.safe_z = safe_z
-      self.semi_safe_z = semi_safe_z
+   def __init__(self, machine_params, tool=None, props=None):
+      self.machine_params = machine_params
       self.tool = tool
       self.props = props
       self.operations = []
@@ -485,10 +629,10 @@ class Operations(object):
    def to_gcode(self):
       gcode = Gcode()
       gcode.reset()
-      gcode.rapid(z=self.safe_z)
+      gcode.rapid(z=self.machine_params.safe_z)
       gcode.rapid(x=0, y=0)
       for operation in self.operations:
-         operation.to_gcode(gcode, self.safe_z, self.semi_safe_z)
+         operation.to_gcode(gcode, self.machine_params)
       gcode.rapid(x=0, y=0)
       gcode.finish()
       return gcode

@@ -13,6 +13,7 @@ safe_z = 5
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
+machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
 
 if len(sys.argv) < 2:
     print ("Usage: python3 examples/dxf.py <input.dxf> [<output.ngc>]")
@@ -88,7 +89,7 @@ if tool is None:
 
 props_fulldepth = OperationProps(depth=-material_depth_mm, tab_depth=-tab_depth_mm)
 
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=props_fulldepth)
+operations = Operations(machine_params=machine_params, tool=tool, props=props_fulldepth)
 
 def polyline_to_points(entity):
     points = []

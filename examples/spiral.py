@@ -19,7 +19,7 @@ safe_z = 5
 # (ideally, that should be zero, but this makes up for any material unevenness
 # or slightly tilted workpieces)
 semi_safe_z = 1
-hole_diameter = 4.2
+machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
 
 points = []
 
@@ -34,7 +34,7 @@ for i in range(249, 21, -1):
 
 outside = Shape(points)
 
-operations = Operations(safe_z=safe_z, semi_safe_z=semi_safe_z, tool=tool, props=OperationProps(depth=depth, tab_depth=tab_depth, margin=0.2))
+operations = Operations(machine_params=machine_params, tool=tool, props=OperationProps(depth=depth, tab_depth=tab_depth, margin=0.2))
 operations.outside_contour(outside, tabs=4)
 operations.outside_contour(outside, tabs=4, props=operations.props.with_finish_pass())
 operations.to_gcode_file("spiral.ngc")
