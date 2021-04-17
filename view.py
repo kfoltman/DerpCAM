@@ -124,10 +124,10 @@ class PathViewer(QWidget):
                   #self.drawToolpaths(qp, self.paths, stage)
                   self.addToolpaths(pen, toolpath, stage)
       # Pink tint for cuts that are not tabs
-      pen = QPen(QColor(128, 0, 128, 32), toolpath.tool.diameter)
-      pen.setCapStyle(Qt.RoundCap)
-      pen.setJoinStyle(Qt.RoundJoin)
       for op in self.operations.operations:
+         pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
+         pen.setCapStyle(Qt.RoundCap)
+         pen.setJoinStyle(Qt.RoundJoin)
          if op.paths and op.tabs and op.tabs.tabs:
             for subpath in op.tabbed:
                if not subpath.is_tab:

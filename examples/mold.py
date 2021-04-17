@@ -6,13 +6,10 @@ from geom import *
 from gcodegen import *
 from view import *
 
-width = 30
-length = 60
-
-
 tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2)
 depth = -12
 recess = -6
+tab_depth = -10
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
 safe_z = 5
 # Use slower downward moves/ramping/helical entry below this height
@@ -39,13 +36,14 @@ layer_height = 0.2
 layer_height_outside = 0.4
 
 props = OperationProps(depth=depth)
+props_contour = props.clone(tab_depth=tab_depth)
 props_recess = props.clone(depth=recess)
 operations = Operations(machine_params=machine_params, tool=tool, props=props)
 for pocket_points in pockets:
     pocket_points = list(reversed(pocket_points))
     operations.pocket_with_draft(Shape(pocket_points), draft_angle_deg, layer_height, props = props_recess)
     #operations.pocket(Shape(pocket_points))
-operations.outside_contour_with_draft(Shape(outside_points), draft_angle_deg, layer_height_outside)
+operations.outside_contour_with_draft(Shape(outside_points), draft_angle_deg, layer_height_outside, tabs = 5, props = props_contour)
 operations.to_gcode_file("mold.ngc")
 
 viewer_modal(operations)

@@ -29,6 +29,17 @@ def fixPathNesting(tps):
 
 # XXXKF this may cut corners sometimes, need to add collision checking
 def joinClosePaths(tps):
+   def findClosest(points, lastpt, diameter):
+      mindist = None
+      closest = 0
+      for i, pt in enumerate(points):
+         if i == 0 or dist(lastpt, pt) < mindist:
+            closest = i
+            mindist = dist(lastpt, pt)
+      if closest > 0 and mindist <= diameter:
+         points = points[closest:] + points[:closest]
+      return points, mindist
+
    tps = fixPathNesting(tps)
    last = None
    res = []
@@ -39,15 +50,23 @@ def joinClosePaths(tps):
          continue
       if last is not None and last.tool is tp.tool:
          points = tp.points
+         found = False
          if tp.closed:
-            maxdist = None
-            closest = 0
-            for i, pt in enumerate(points):
-               if i == 0 or dist(lastpt, pt) < maxdist:
-                  closest = i
-                  maxdist = dist(lastpt, pt)
-            if closest > 0:
-               points = points[closest:] + points[:closest]
+            points, mindist = findClosest(points, lastpt, tp.tool.diameter)
+            if mindist > tp.tool.diameter:
+               # Desperate second-chance joining by retracing the already milled path
+               # XXXKF this is rather bad, O(N^2), needs rethinking
+               for j in range(len(last.points) - 1, 0, -1):
+                  points, mindist = findClosest(points, last.points[j], tp.tool.diameter)
+                  if mindist <= tp.tool.diameter:
+                     print ("Found a backtrack")
+                     res[-1] = Toolpath(last.points + list(reversed(last.points[j:])) + points + points[0:1], False, tp.tool)
+                     last = res[-1]
+                     lastpt = last.points[-1]
+                     found = True
+                     break
+         if found:
+            continue
          if dist(lastpt, points[0]) <= tp.tool.diameter:
             res[-1] = Toolpath(last.points + (last.points[0:1] if last.closed else []) + points + (points[0:1] if tp.closed else []), False, tp.tool)
             last = res[-1]
@@ -64,7 +83,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
    island_paths = [IntPath(i).force_orientation(True) for i in islands]
    for toolpath in toolpaths:
       if type(toolpath) is Toolpaths:
-         findHelicalEntryPoints(toolpath.toolpaths, tool, boundary, islands)
+         findHelicalEntryPoints(toolpath.toolpaths, tool, boundary, islands, margin)
          continue
       candidates = [toolpath.points[0]]
       if len(toolpath.points) > 1 and False:
@@ -212,6 +231,7 @@ class Shape(object):
          mergeToolpaths(tps, res, tool.diameter)
       if len(tps) == 0:
          raise ValueError("Empty contour")
+      tps = list(reversed(tps))
       tps = joinClosePaths(tps_islands + tps)
       findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
       return Toolpaths(tps)
