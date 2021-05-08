@@ -285,32 +285,3 @@ def viewer_modal(operations):
    app = None
    return retcode
 
-#shape1 = Shape.circle(-20, -20, d = 50)
-#shape2 = Shape.circle(20, -20, d = 50)
-#shape1 = Shape.rectangle((80, 20), (120, 180))
-#shape3 = Shape.rectangle((-20, -20), (20, 20))
-#shape = Shape.union(Shape.union(shape1, shape3), shape2)
-#shape = Shape.union(shape1, shape2)
-#shape = Shape.rectangle((0, 0), (20, 20))
-#shape = Shape.circle(0, 0, d = 16)
-#shape = Shape.rectangle(0, 0, 160, 40)
-
-#tool = Tool(diameter = 3, hfeed = 500, vfeed = 100, maxdoc = 0.2)
-#tool = Tool(diameter = 3, hfeed = 1500, vfeed = 1000, maxdoc = 1)
-#contour = shape.contour(tool, outside=True)
-#contour = shape.pocket_contour(tool)
-
-# tabs = Tabs([]) #contour.autotabs(4)
-# gcode = Gcode()
-# gcode.reset()
-# pathToGcode(gcode, path=contour, safe_z=5, start_depth=0, end_depth=-15, doc=1, tabs=tabs, tab_depth=-6)
-# gcode.rapid(z=5)
-# gcode.rapid(x=0, y=0)
-# gcode.finish()
-# for line in gcode.gcode:
-#    print (line)
-
-#def main():
-#   viewer_modal(shape, contour, tabs)
-    
-#sys.exit(main())
