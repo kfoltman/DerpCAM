@@ -455,7 +455,8 @@ class Cut2DWithDraft(BaseCut2D):
       for i in range(nslices):
          height = min(self.layer_thickness * (nslices - i), max_height)
          depth = self.props.start_depth - height
-         contour = self.shape.contour(self.tool, self.outside, displace=self.props.margin+self.draft * height)
+         draftval = self.draft * height
+         contour = self.shape.contour(self.tool, self.outside, displace=self.props.margin+draftval)
          flattened = contour.flattened() if isinstance(contour, Toolpaths) else [contour]
          paths = [CutPath2D(p, None) for p in flattened]
          assert len(paths) == 1
@@ -572,10 +573,20 @@ class Operation(object):
          #pathToGcode(gcode, path=path, machine_params=machine_params,
          #   start_depth=self.props.start_depth, end_depth=self.props.depth,
          #   doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
+   def to_text(self):
+      if self.props.start_depth != 0:
+         return self.operation_name() + ", " + ("%0.2fmm deep at %0.2fmm" % (self.props.start_depth - self.props.depth, -self.props.start_depth))
+      else:
+         return self.operation_name() + ", " + ("%0.2fmm deep" % (self.props.start_depth - self.props.depth))
+   def operation_name(self):
+      return self.__class__.__name__
 
 class Contour(Operation):
    def __init__(self, shape, outside, tool, props, tabs):
+      self.outside = outside
       Operation.__init__(self, shape, tool, shape.contour(tool, outside=outside, displace=props.margin), props, tabs=tabs)
+   def operation_name(self):
+      return "Contour/Outside" if self.outside else "Contour/Inside"
 
 class TrochoidalContour(Operation):
    def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
@@ -746,20 +757,26 @@ class Operations(object):
       self.operations = []
    def add(self, operation):
       self.operations.append(operation)
+   def add_all(self, operations):
+      self.operations += operations
    def outside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
       self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
    def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
+      self.contour_with_draft(shape, True, draft_angle_deg, layer_thickness, tabs, props)
+   def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
+      self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
+   def contour_with_draft(self, shape, outside, draft_angle_deg, layer_thickness, tabs, props=None):
       props = props or self.props
       if tabs:
          draft = tan(draft_angle_deg * pi / 180)
          draft_height = props.start_depth - props.tab_depth
-         self.add(ContourWithDraft(shape, True, self.tool, props.clone(depth=props.tab_depth), draft_angle_deg, layer_thickness))
+         self.add(ContourWithDraft(shape, outside, self.tool, props.clone(depth=props.tab_depth), draft_angle_deg, layer_thickness))
          if props.depth < props.tab_depth:
-            self.add(Contour(shape, True, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
+            self.add(Contour(shape, outside, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
       else:
-         self.add(ContourWithDraft(shape, True, self.tool, props, draft_angle_deg, layer_thickness))
+         self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
    def inside_contour(self, shape, tabs, props=None):
       self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
    def engrave(self, shape, props=None):

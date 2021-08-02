@@ -7,20 +7,9 @@ from gcodegen import *
 import sys
 import time
 
-class PathViewer(QWidget):
+class OperationsRenderer(object):
    def __init__(self, operations):
-      QWidget.__init__(self)
       self.operations = operations
-      sx, sy, ex, ey = self.bounds()
-      self.zero = QPointF(0, 0)
-      self.zoom_level = 0
-      self.click_data = None
-      self.draft_time = None
-      if ex > sx and ey > sy:
-         self.zero = QPointF(0.5 * (sx + ex), 0.5 * (sy + ey))
-         self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
-      self.renderDrawing()
-      self.startTimer(50)
    def bounds(self):
       b = None
       for op in self.operations.operations:
@@ -32,65 +21,12 @@ class PathViewer(QWidget):
          else:
             b = max_bounds(b, opb)
       return b
-   def initUI(self):
-      self.setMinimumSize(500, 500)
-      self.setMouseTracking(True)
-      self.updateCursor()
-
-   def adjustScale(self, pt, delta):
-      vpt = self.unproject(pt)
-      self.zoom_level += delta
-      scale = self.scalingFactor()
-      vpt2 = self.unproject(pt)
-      self.zero += vpt - vpt2
-      self.repaint()
-
-   def addPath(self, pen, *polylines):
-      paths = []
-      for polyline in polylines:
-         path = QPainterPath()
-         path.moveTo(*polyline[0])
-         for point in polyline[1:]:
-            path.lineTo(*point)
-         if polyline[0] == polyline[-1]:
-            self.drawingOps.append((pen, path, path.boundingRect()))
-         else:
-            self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1))))
-
    def toolPen(self, path, alpha=100):
       pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
       pen.setCapStyle(Qt.RoundCap)
       pen.setJoinStyle(Qt.RoundJoin)
       return pen
-
-   def addToolpaths(self, pen, path, stage):
-      if isinstance(path, Toolpaths):
-         for tp in path.toolpaths:
-            self.addToolpaths(pen, tp, stage)
-         return
-      path = path.transformed()
-      if simplify_arcs:
-         path = path.lines_to_arcs()
-         if stage == 1:
-            pen = self.toolPen(path)
-         else:
-            pen = QPen(QColor(160, 160, 160) if path.is_tab else QColor(0, 128, 128), 0)
-         self.addLines(pen, path.points, path.closed, True)
-      else:
-         self.addLines(pen, path.points, path.closed)
-
-   def addRapids(self, pen, path, lastpt):
-      if isinstance(path, Toolpaths):
-         for tp in path.toolpaths:
-            lastpt = self.addRapids(pen, tp, lastpt)
-         return lastpt
-      if path.helical_entry:
-         self.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False)
-      self.addLines(pen, [lastpt, path.points[0]], False)
-      return path.points[0 if path.closed else -1]
-      
-   def renderDrawing(self):
-      self.drawingOps = []
+   def renderToolpaths(self, owner):
       # Toolpaths
       for op in self.operations.operations:
          if op.paths:
@@ -110,7 +46,7 @@ class PathViewer(QWidget):
                         pen = self.toolPen(toolpath, alpha=tab_alpha)
                      if stage == 2:
                         pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
-                     self.addToolpaths(pen, toolpath, stage)
+                     self.addToolpaths(owner, pen, toolpath, stage)
                for toolpath in op.tabbed:
                   if stage == 1:
                      # Draw a cut line of the diameter of the cut
@@ -122,7 +58,8 @@ class PathViewer(QWidget):
                      else:
                         pen = QPen(QColor(0, 0, 0, 100), 0)
                   #self.drawToolpaths(qp, self.paths, stage)
-                  self.addToolpaths(pen, toolpath, stage)
+                  self.addToolpaths(owner, pen, toolpath, stage)
+   def renderNotTabs(self, owner):
       # Pink tint for cuts that are not tabs
       for op in self.operations.operations:
          pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
@@ -131,21 +68,104 @@ class PathViewer(QWidget):
          if op.paths and op.tabs and op.tabs.tabs:
             for subpath in op.tabbed:
                if not subpath.is_tab:
-                  self.addLines(pen, subpath.transformed().points, False)
+                  owner.addLines(pen, subpath.transformed().points, False)
+   def renderRapids(self, owner, lastpt = (0, 0)):
       # Red rapid moves
       pen = QPen(QColor(255, 0, 0), 0)
-      lastpt = (0, 0)
       for op in self.operations.operations:
          if op.paths:
-            lastpt = self.addRapids(pen, op.paths, lastpt)
-      # Original shapes (before all the offsetting)
+            lastpt = self.addRapids(owner, pen, op.paths, lastpt)
+      return lastpt
+   def renderShapes(self, owner):
       penOutside = QPen(QColor(0, 0, 255), 0)
       penIslands = QPen(QColor(0, 255, 0), 0)
       for op in self.operations.operations:
          p = op.shape.boundary
-         self.addLines(penOutside, p, op.shape.closed)
+         owner.addLines(penOutside, p, op.shape.closed)
          for p in op.shape.islands:
-            self.addLines(penIslands, p, True)
+            owner.addLines(penIslands, p, True)
+   def renderDrawing(self, owner):
+      self.renderToolpaths(owner)
+      self.renderNotTabs(owner)
+      self.renderRapids(owner)
+      self.renderShapes(owner)
+   def addRapids(self, owner, pen, path, lastpt):
+      if isinstance(path, Toolpaths):
+         for tp in path.toolpaths:
+            lastpt = self.addRapids(owner, pen, tp, lastpt)
+         return lastpt
+      if path.helical_entry:
+         owner.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False)
+      owner.addLines(pen, [lastpt, path.points[0]], False)
+      return path.points[0 if path.closed else -1]
+   def addToolpaths(self, owner, pen, path, stage):
+      if isinstance(path, Toolpaths):
+         for tp in path.toolpaths:
+            self.addToolpaths(owner, pen, tp, stage)
+         return
+      path = path.transformed()
+      if simplify_arcs:
+         path = path.lines_to_arcs()
+         if stage == 1:
+            pen = self.toolPen(path)
+         else:
+            pen = QPen(QColor(160, 160, 160) if path.is_tab else QColor(0, 128, 128), 0)
+         owner.addLines(pen, path.points, path.closed, True)
+      else:
+         owner.addLines(pen, path.points, path.closed)
+
+class PathViewer(QWidget):
+   coordsUpdated = pyqtSignal([float, float])
+
+   def __init__(self, renderer):
+      QWidget.__init__(self)
+      self.renderer = renderer
+      self.click_data = None
+      self.draft_time = None
+      self.majorUpdate()
+      self.startTimer(50)
+   def majorUpdate(self):
+      self.resetZoom()
+      self.renderDrawing()
+      self.repaint()
+   def resetZoom(self):
+      sx, sy, ex, ey = self.bounds()
+      self.zero = QPointF(0, 0)
+      self.zoom_level = 0
+      if ex > sx and ey > sy:
+         self.zero = QPointF(0.5 * (sx + ex), 0.5 * (sy + ey))
+         self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
+   def bounds(self):
+      b = self.renderer.bounds()
+      if b is None:
+         return (0, 0, 1, 1)
+      return b
+   def initUI(self):
+      self.setMinimumSize(500, 500)
+      self.setMouseTracking(True)
+      self.updateCursor()
+   def adjustScale(self, pt, delta):
+      vpt = self.unproject(pt)
+      self.zoom_level += delta
+      scale = self.scalingFactor()
+      vpt2 = self.unproject(pt)
+      self.zero += vpt - vpt2
+      self.repaint()
+   def addPath(self, pen, *polylines):
+      paths = []
+      for polyline in polylines:
+         path = QPainterPath()
+         path.moveTo(*polyline[0])
+         for point in polyline[1:]:
+            path.lineTo(*point)
+         if polyline[0] == polyline[-1]:
+            self.drawingOps.append((pen, path, path.boundingRect()))
+         else:
+            self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1))))
+
+   def renderDrawing(self):
+      self.drawingOps = []
+      self.renderer.renderDrawing(self)
 
    def isDraft(self):
       return self.click_data or self.draft_time
@@ -230,6 +250,8 @@ class PathViewer(QWidget):
    def mouseMoveEvent(self, e):
       if self.click_data:
          self.processMove(e)
+      p = self.unproject(e.localPos())
+      self.coordsUpdated.emit(p.x(), p.y())
 
    def wheelEvent(self, e):
       delta = e.angleDelta().y()
@@ -276,7 +298,7 @@ def viewer_modal(operations):
    global app
    init_app()
    w = QMainWindow()
-   w.viewer = PathViewer(operations)
+   w.viewer = PathViewer(OperationsRenderer(operations))
    w.viewer.initUI()
    w.setCentralWidget(w.viewer)
    w.show()

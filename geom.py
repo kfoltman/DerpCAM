@@ -69,6 +69,30 @@ def inside_bounds(b1, b2):
    sx2, sy2, ex2, ey2 = b2
    return sx1 >= sx2 and ex1 <= ex2 and sy1 >= sy2 and ey1 <= ey2
 
+def point_inside_bounds(b, p):
+   sx, sy, ex, ey = b
+   return p[0] >= sx and p[0] <= ex and p[1] >= sy and p[1] <= ey
+
+def dist_line_to_point(p1, p2, p):
+   xlen = p2[0] - p1[0]
+   ylen = p2[1] - p1[1]
+   llen2 = xlen ** 2 + ylen ** 2
+   dotp = (p[0] - p1[0]) * xlen + (p[1] - p1[1]) * ylen
+   if llen2 > 0:
+      t = min(1, max(0, dotp / llen2))
+      pcross = (p1[0] + t * xlen, p1[1] + t * ylen)
+   else:
+      pcross = p1
+   return dist(pcross, p)
+
+def expand_bounds(b1, amount):
+   sx, sy, ex, ey = b1
+   sx -= amount
+   sy -= amount
+   ex += amount
+   ey += amount
+   return (sx, sy, ex, ey)
+
 def max_bounds(b1, *b2etc):
    sx, sy, ex, ey = b1
    for b2 in b2etc:
@@ -177,6 +201,10 @@ class CandidateCircle(object):
       return atan2(p[1] - self.cy, p[0] - self.cx)
    def at_angle(self, angle):
       return (self.cx + self.r * cos(angle), self.cy + self.r * sin(angle))
+   def translated(self, dx, dy):
+      return CandidateCircle(self.cx + dx, self.cy + dy, self.r)
+   def scaled(self, cx, cy, scale):
+      return CandidateCircle(*scale_point((self.cx, self.cy), cx, cy, scale), self.r * scale)
    def calc_error(self, points):
       minerr = 0
       maxerr = 0
@@ -427,3 +455,23 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
       pc.AddPath(path.int_points, PT_CLIP, True)
    tree = pc.Execute2(operation, fillMode, fillMode)
    return tree
+
+def translate_point(point, dx, dy):
+   return (point[0] + dx, point[1] + dy)
+def translate_gen_point(point, dx, dy):
+   if len(point) == 2:
+      return (point[0] + dx, point[1] + dy)
+   else:
+      assert len(point) == 7
+      tag, p1, p2, c, points, sstart, sspan = point
+      return (tag, translate_point(p1, dx, dy), translate_point(p2, dx, dy), c.translated(dx, dy), points, sstart, sspan)
+
+def scale_point(point, cx, cy, scale):
+   return (point[0] - cx) * scale + cx, (point[1] - cy) * scale + cy
+def scale_gen_point(point, cx, cy, scale):
+   if len(point) == 2:
+      return scale_point(point, cx, cy, scale)
+   else:
+      assert len(point) == 7
+      tag, p1, p2, c, points, sstart, sspan = point
+      return (tag, scale_point(p1, cx, cy, scale), scale_point(p2, dx, dy), c.scaled(cx, cy, r), points, sstart, sspan)
