@@ -7,6 +7,7 @@ from gcodegen import *
 from view import *
 from propsheet import *
 import ezdxf
+import json
 
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
 safe_z = 5
@@ -196,6 +197,9 @@ def polyline_to_points(entity):
     return points, entity.closed
 
 class CAMTreeItem(QStandardItem):
+    def __init__(self, name=None):
+        QStandardItem.__init__(self, name)
+        self.setEditable(False)
     def properties(self):
         return []
 
@@ -215,7 +219,7 @@ class DrawingItemTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(self.item.textDescription())
-        return None
+        return CAMTreeItem.data(self, role)
         
 class ToolTreeItem(CAMTreeItem):
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
@@ -316,7 +320,6 @@ class MaterialTreeItem(CAMTreeItem):
         self.document = document
         self.material = MaterialType.WOOD
         self.thickness = 3
-        self.setEditable(False)
     def properties(self):
         return [self.prop_material, self.prop_thickness]
     def data(self, role):
@@ -360,10 +363,11 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_depth = FloatEditableProperty("Tab Depth", "tab_depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
-    def __init__(self, document, shape, operation):
+    def __init__(self, document, shape_source, operation):
         CAMTreeItem.__init__(self)
         self.document = document
-        self.shape = shape
+        self.shape_source = shape_source
+        self.shape = shape_source.toShape()
         self.depth = None
         self.start_depth = 0
         self.tab_depth = None
@@ -371,6 +375,17 @@ class OperationTreeItem(CAMTreeItem):
         self.offset = 0
         self.operation = operation
         self.updateCAM()
+    def isDropEnabled(self):
+        return False
+    def store(self):
+        dump = {}
+        dump['shape_index'] = self.document.drawing.drawing.items.index(self.shape_source)
+        for prop in self.properties():
+            dump[prop.attribute] = getattr(self, prop.attribute)
+        return dump
+    def load(self, dump):
+        for prop in self.properties():
+            setattr(self, prop.attribute, dump[prop.attribute])
     def properties(self):
         return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_depth, self.prop_tab_count, self.prop_offset]
     def onPropertyValueSet(self, name):
@@ -379,7 +394,7 @@ class OperationTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(OperationType.toString(self.operation) + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
-        return None
+        return CAMTreeItem.data(self, role)
     def updateCAM(self):
         thickness = self.document.material.thickness
         if thickness is None:
@@ -399,6 +414,43 @@ class OperationTreeItem(CAMTreeItem):
             elif self.operation == OperationType.POCKET:
                 self.cam.pocket(self.shape)
 
+MIMETYPE = 'application/x-derpcam-operations'
+
+class OperationsModel(QStandardItemModel):
+    def __init__(self, document):
+        QStandardItemModel.__init__(self)
+        self.document = document
+    def supportedDropActions(self):
+        return Qt.MoveAction
+    def canDropMimeData(self, data, action, row, column, parent):
+        return data.hasFormat(MIMETYPE)
+    def dropMimeData(self, data, action, row, column, parent):
+        if data.hasFormat(MIMETYPE):
+            data = json.loads(data.data(MIMETYPE).data())
+            if row == -1:
+                row = self.rowCount(parent)
+            for i in data:
+                shape_source = self.document.drawing.drawing.items[i['shape_index']]
+                item = OperationTreeItem(self.document, shape_source, i['operation'])
+                item.load(i)
+                self.insertRow(row, item)
+                row += 1
+            return True
+        return False
+    def mimeData(self, indexes):
+        data = []
+        for i in indexes:
+            data.append(self.itemFromIndex(i).store())
+        mime = QMimeData()
+        mime.setData(MIMETYPE, json.dumps(data).encode("utf-8"))
+        return mime
+    def flags(self, index):
+        defaultFlags = QStandardItemModel.flags(self, index) &~ Qt.ItemIsDropEnabled
+        if index.isValid():
+            return Qt.ItemIsDragEnabled | defaultFlags
+        else:
+            return Qt.ItemIsDropEnabled | defaultFlags
+
 class DocumentModel(QObject):
     def __init__(self):
         QObject.__init__(self)
@@ -413,7 +465,7 @@ class DocumentModel(QObject):
         self.shapeModel.appendRow(self.tool)
         self.shapeModel.appendRow(self.drawing)
 
-        self.operModel = QStandardItemModel()
+        self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
         
     def make_tool(self):
@@ -456,9 +508,14 @@ class CAMObjectTreeDockWidget(QDockWidget):
         tree.setSelectionBehavior(QAbstractItemView.SelectRows)
         tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         tree.setModel(self.document.operModel)
+        tree.setDragEnabled(True)
+        #tree.setAcceptDrops(True)
+        tree.setDropIndicatorShown(True)
+        tree.setDragDropOverwriteMode(False)
+        tree.setDragDropMode(QAbstractItemView.InternalMove)
         tree.selectionModel().selectionChanged.connect(self.operationSelectionChanged)
         self.operTree = tree
-        self.tabs.addTab(tree, "&Operations")        
+        self.tabs.addTab(tree, "&Operations")
         self.tabs.setTabPosition(QTabWidget.South)
         self.tabs.currentChanged.connect(self.tabSelectionChanged)
         self.setWidget(self.tabs)
@@ -559,6 +616,9 @@ class CAMMainWindow(QMainWindow):
             None,
             ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
         ])
+        self.fileMenu = self.addMenu("&Edit", [
+            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
+        ])
         self.millMenu = self.addMenu("&Mill", [
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
@@ -596,6 +656,13 @@ class CAMMainWindow(QMainWindow):
             self.propsDW.setSelection(items)
         else:
             self.propsDW.setSelection(items)
+    def editDelete(self):
+        selType, items = self.projectDW.activeSelection()
+        if selType == 'o':
+            for item in items:
+                index = self.document.operModel.indexFromItem(item)
+                self.document.operModel.removeRow(index.row())
+            self.viewer.majorUpdate()
     def millSelectedShapes(self, checkFunc, operType):
         selection = self.viewer.selection
         newSelection = QItemSelection()
@@ -603,7 +670,7 @@ class CAMMainWindow(QMainWindow):
         for i in selection:
             shape = i.toShape()
             if checkFunc(shape):
-                item = OperationTreeItem(self.document, shape, operType)
+                item = OperationTreeItem(self.document, i, operType)
                 self.document.operModel.appendRow(item)
                 index = self.document.operModel.index(rowCount, 0)
                 newSelection.select(index, index)

@@ -31,6 +31,8 @@ class EditableProperty(object):
         return value
     def createEditor(self, parent):
         return None
+    def setEditorData(self, editor, value):
+        pass
 
 class EnumEditableProperty(EditableProperty):
     def __init__(self, name, attribute, enum_class, allow_none = False, none_value = "none"):
@@ -49,12 +51,31 @@ class EnumEditableProperty(EditableProperty):
             return None
         raise ValueError("Incorrect value: %s" % (value))
     def createEditor(self, parent):
-        widget = QComboBox(parent)
+        widget = QListWidget(parent)
+        widget.setMinimumSize(200, 100)
         for data in self.enum_class.descriptions:
             id, description = data[0 : 2]
-            widget.addItem(description, id)
-        widget.showPopup()
+            widget.addItem(description)
+        widget.itemPressed.connect(lambda: self.destroyEditor(widget))
         return widget
+    def getEditorData(self, editor):
+        row = editor.currentRow()
+        if row >= 0:
+            return self.enum_class.descriptions[row][0]
+        return None
+    def setEditorData(self, editor, value):
+        if type(value) is int:
+            for row, item in enumerate(self.enum_class.descriptions):
+                if item[0] == value:
+                    editor.setCurrentRow(row)
+                    return
+        if type(value) is str:
+            for row, item in enumerate(self.enum_class.descriptions):
+                if str(item[0]) == value or item[1] == value:
+                    editor.setCurrentRow(row)
+                    return
+    def destroyEditor(self, widget):
+        widget.close()
 
 class FloatEditableProperty(EditableProperty):
     def __init__(self, name, attribute, format, min = None, max = None, allow_none = False, none_value = "none"):
@@ -145,15 +166,25 @@ class PropertyTableWidgetItem(QTableWidgetItem):
         return QTableWidgetItem.data(self, role)
 
 class PropertySheetItemDelegate(QStyledItemDelegate):
-    def __init__(self, properties):
+    def __init__(self, properties, props_widget):
         QStyledItemDelegate.__init__(self)
         self.properties = properties
+        self.props_widget = props_widget
     def createEditor(self, parent, option, index):
         row = index.row()
         editor = self.properties[row].createEditor(parent)
         if editor is not None:
             return editor
         return QStyledItemDelegate.createEditor(self, parent, option, index)
+    def setEditorData(self, editor, index):
+        row = index.row()
+        value = index.data(Qt.EditRole)
+        self.properties[row].setEditorData(editor, value)
+    def setModelData(self, editor, model, index):
+        row = index.row()
+        value = self.properties[row].getEditorData(editor)
+        model.setData(index, value)
+        #self.props_widget.itemFromIndex(index).prop.setData(value)
 
 class PropertySheetWidget(QTableWidget):
     propertyChanged = pyqtSignal([list])
@@ -172,7 +203,7 @@ class PropertySheetWidget(QTableWidget):
         self.cellChanged.connect(self.onCellChanged)
     def setProperties(self, properties):
         self.properties = properties
-        self.delegate = PropertySheetItemDelegate(properties)
+        self.delegate = PropertySheetItemDelegate(properties, self)
         self.setRowCount(0)
         self.setItemDelegate(self.delegate)
         if self.properties:
