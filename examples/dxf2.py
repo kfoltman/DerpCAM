@@ -53,8 +53,8 @@ class DrawingPolyline(DrawingItem):
     def __init__(self, points, closed):
         self.points = points
         if points:
-            xcoords = [p[0] for p in self.points]
-            ycoords = [p[1] for p in self.points]
+            xcoords = [p[0] for p in self.points if len(p) == 2]
+            ycoords = [p[1] for p in self.points if len(p) == 2]
             self.bounds = (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
         else:
             self.bounds = None
@@ -80,11 +80,18 @@ class DrawingPolyline(DrawingItem):
     def scaled(self, cx, cy, scale):
         return DrawingPolyline([scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path), self.points, self.closed)
+        path.addLines(self.penForPath(path), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def textDescription(self):
+        if len(self.points) == 2:
+            if len(self.points[1]) == 2:
+                return "LINE(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1])
+            elif len(self.points[1]) == 7:
+                arc = self.points[1]
+                c = arc[3]
+                return "ARC(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)
         return "POLYGON(%0.2f, %0.2f)-(%0.2f, %0.2f)" % self.bounds
     def toShape(self):
-        return Shape(self.points, self.closed)
+        return Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
 
 class SourceDrawing(object):
     def __init__(self):
@@ -111,7 +118,8 @@ class SourceDrawing(object):
         found = []
         for item in self.items:
             if point_inside_bounds(expand_bounds(item.bounds, margin), xy):
-                if item.distanceTo(xy) < margin:
+                distance = item.distanceTo(xy)
+                if distance is not None and distance < margin:
                     found.append(item)
         return found
     def loadFile(self, name):
@@ -119,11 +127,34 @@ class SourceDrawing(object):
         self.reset()
         msp = doc.modelspace()
         for entity in msp:
-            if entity.dxftype() == 'LWPOLYLINE':
+            dxftype = entity.dxftype()
+            if dxftype == 'LWPOLYLINE':
                 points, closed = polyline_to_points(entity)
                 self.addItem(DrawingPolyline(points, closed))
-            if entity.dxftype() == 'CIRCLE':
+            elif dxftype == 'LINE':
+                start = tuple(entity.dxf.start)[0:2]
+                end = tuple(entity.dxf.end)[0:2]
+                self.addItem(DrawingPolyline([start, end], False))
+            elif dxftype == 'CIRCLE':
                 self.addItem(DrawingCircle(entity.dxf.center, entity.dxf.radius))
+            elif dxftype == 'ARC':
+                start = tuple(entity.start_point)[0:2]
+                end = tuple(entity.end_point)[0:2]
+                centre = tuple(entity.dxf.center)[0:2]
+                c = CandidateCircle(*centre, entity.dxf.radius)
+                print (repr(start), repr(end), c, entity.dxf.start_angle, entity.dxf.end_angle)
+                sangle = entity.dxf.start_angle * pi / 180
+                eangle = entity.dxf.end_angle * pi / 180
+                if eangle < sangle:
+                    sspan = eangle - sangle + 2 * pi
+                else:
+                    sspan = eangle - sangle
+                tag = "ARC_CCW"
+                # tag, p1, p2, c, points, sstart, sspan
+                points = [start, ( tag, start, end, c, 50, sangle, sspan)]
+                self.addItem(DrawingPolyline(points, False))
+            else:
+                print ("Ignoring DXF entity: %s" % dxftype)
 
 class DocumentRenderer(object):
     def __init__(self, document):
