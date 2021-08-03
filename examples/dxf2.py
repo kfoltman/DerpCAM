@@ -350,10 +350,12 @@ class OperationType(EnumClass):
     OUTSIDE_CONTOUR = 1
     INSIDE_CONTOUR = 2
     POCKET = 3
+    ENGRAVE = 4
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
         (POCKET, "Pocket"),
+        (ENGRAVE, "Engrave"),
     ]
 
 class OperationTreeItem(CAMTreeItem):
@@ -413,6 +415,8 @@ class OperationTreeItem(CAMTreeItem):
                 self.cam.inside_contour(self.shape, tabs=tabs)
             elif self.operation == OperationType.POCKET:
                 self.cam.pocket(self.shape)
+            elif self.operation == OperationType.ENGRAVE:
+                self.cam.engrave(self.shape)
 
 MIMETYPE = 'application/x-derpcam-operations'
 
@@ -623,6 +627,7 @@ class CAMMainWindow(QMainWindow):
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
+            ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
         ])
         self.coordLabel = QLabel("X=? Y=?")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -686,6 +691,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(lambda shape: shape.closed, OperationType.INSIDE_CONTOUR)
     def millPocket(self):
         self.millSelectedShapes(lambda shape: shape.closed, OperationType.POCKET)
+    def millEngrave(self):
+        self.millSelectedShapes(lambda shape: True, OperationType.ENGRAVE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def loadFile(self, fn):
