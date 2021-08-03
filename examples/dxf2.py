@@ -142,7 +142,6 @@ class SourceDrawing(object):
                 end = tuple(entity.end_point)[0:2]
                 centre = tuple(entity.dxf.center)[0:2]
                 c = CandidateCircle(*centre, entity.dxf.radius)
-                print (repr(start), repr(end), c, entity.dxf.start_angle, entity.dxf.end_angle)
                 sangle = entity.dxf.start_angle * pi / 180
                 eangle = entity.dxf.end_angle * pi / 180
                 if eangle < sangle:
