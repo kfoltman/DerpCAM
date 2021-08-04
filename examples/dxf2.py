@@ -426,6 +426,12 @@ class OperationTreeItem(CAMTreeItem):
         self.updateCAM()
     def isDropEnabled(self):
         return False
+    def isPropertyValid(self, name):
+        if self.operation == OperationType.POCKET and name in ['tab_depth', 'tab_count']:
+            return False
+        if self.operation == OperationType.ENGRAVE and name in ['tab_depth', 'tab_count', 'offset']:
+            return False
+        return True
     def store(self):
         dump = {}
         dump['shape_index'] = self.document.drawing.drawing.items.index(self.shape_source)

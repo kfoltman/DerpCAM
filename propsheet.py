@@ -135,15 +135,23 @@ class MultipleItem(object):
         return "(multiple)"
 
 class PropertyTableWidgetItem(QTableWidgetItem):
-    def __init__(self, prop, value, def_value=None):
-        self.prop = prop
-        self.value = value
-        self.def_value = def_value
+    def __init__(self, table, prop, value, def_value=None):
         if value is MultipleItem:
             QTableWidgetItem.__init__(self, "")
         else:
             QTableWidgetItem.__init__(self, prop.toEditString(value))
+        self.table = table
+        self.prop = prop
+        self.value = value
+        self.def_value = def_value
     def data(self, role):
+        if not (self.flags() & Qt.ItemIsEditable):
+            if role == Qt.DisplayRole:
+                return "N/A"
+            if role == Qt.ForegroundRole:
+                return QBrush(QColor("black"))
+            if role == Qt.BackgroundRole:
+                return QBrush(QColor("lightgray"))
         if self.value is MultipleItem:
             if role == Qt.DisplayRole:
                 return "(multiple)"
@@ -230,7 +238,8 @@ class PropertySheetWidget(QTableWidget):
             except Exception as e:
                 print (e)
             finally:
-                self.refreshRow(row)
+                #self.refreshRow(row)
+                self.refreshAll()
             self.propertyChanged.emit(changed)
     def refreshRow(self, row):
         if self.objects is None:
@@ -253,7 +262,18 @@ class PropertySheetWidget(QTableWidget):
                 v = values[0]
             try:
                 self.updating = True
-                self.setItem(row, 0, PropertyTableWidgetItem(prop, v, defValue))
+                isValid = True
+                for obj in self.objects:
+                    if hasattr(obj, 'isPropertyValid'):
+                        if not obj.isPropertyValid(prop.attribute):
+                            isValid = False
+                            break
+                item = PropertyTableWidgetItem(self, prop, v, defValue)
+                if isValid:
+                    item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+                else:
+                    item.setFlags(item.flags() &~ (Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled ))
+                self.setItem(row, 0, item)
             finally:
                 self.updating = False
         else:
