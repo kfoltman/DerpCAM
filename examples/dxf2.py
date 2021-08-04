@@ -457,7 +457,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_depth = FloatEditableProperty("Depth", "depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
     prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
-    prop_tab_depth = FloatEditableProperty("Tab Depth", "tab_depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
+    prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     def __init__(self, document, shape_source, operation):
@@ -467,7 +467,7 @@ class OperationTreeItem(CAMTreeItem):
         self.shape = shape_source.translated(*self.document.drawing.translation()).toShape()
         self.depth = None
         self.start_depth = 0
-        self.tab_depth = None
+        self.tab_height = None
         self.tab_count = None
         self.offset = 0
         self.operation = operation
@@ -475,9 +475,9 @@ class OperationTreeItem(CAMTreeItem):
     def isDropEnabled(self):
         return False
     def isPropertyValid(self, name):
-        if self.operation == OperationType.POCKET and name in ['tab_depth', 'tab_count']:
+        if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count']:
             return False
-        if self.operation == OperationType.ENGRAVE and name in ['tab_depth', 'tab_count', 'offset']:
+        if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset']:
             return False
         return True
     def store(self):
@@ -490,7 +490,7 @@ class OperationTreeItem(CAMTreeItem):
         for prop in self.properties():
             setattr(self, prop.attribute, dump[prop.attribute])
     def properties(self):
-        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_depth, self.prop_tab_count, self.prop_offset]
+        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset]
     def onPropertyValueSet(self, name):
         self.updateCAM()
         self.emitDataChanged()
@@ -504,7 +504,7 @@ class OperationTreeItem(CAMTreeItem):
             thickness = 0
         depth = self.depth if self.depth is not None else thickness
         start_depth = self.start_depth if self.start_depth is not None else 0
-        tab_depth = self.tab_depth if self.tab_depth is not None else depth
+        tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = OperationProps(-depth, -start_depth, -tab_depth, self.offset)
         self.cam = Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
         self.renderer = OperationsRenderer(self.cam)
