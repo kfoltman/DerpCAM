@@ -286,7 +286,7 @@ class BaseCut2D(Cut):
       subpaths = layer.subpaths
       # Not a continuous path, need to jump to a new place
       firstpt = subpaths[0].points[0]
-      if self.lastpt is None or dist(self.lastpt, firstpt) > 1 / RESOLUTION:
+      if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
          if layer.force_join:
             gcode.linear(x=firstpt[0], y=firstpt[1])
          else:
