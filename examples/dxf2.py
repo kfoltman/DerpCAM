@@ -211,7 +211,7 @@ class DrawingViewer(PathViewer):
                 self.selectionChanged.emit()
                 self.renderDrawing()
                 self.repaint()
-                self.start_point = None
+                self.start_point = e.localPos()
             else:
                 self.start_point = e.localPos()
                 if self.selection and not (e.modifiers() & Qt.ControlModifier):
