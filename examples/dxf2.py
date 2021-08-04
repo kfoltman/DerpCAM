@@ -9,13 +9,6 @@ from propsheet import *
 import ezdxf
 import json
 
-# Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
-safe_z = 5
-# Use slower downward moves/ramping/helical entry below this height
-# (ideally, that should be zero, but this makes up for any material unevenness
-# or slightly tilted workpieces)
-semi_safe_z = 1
-machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
 default_props = OperationProps(depth=-12)
 
 if len(sys.argv) < 2:
@@ -362,13 +355,17 @@ class MaterialType(EnumClass):
 class MaterialTreeItem(CAMTreeItem):
     prop_material = EnumEditableProperty("Material", "material", MaterialType, allow_none=True, none_value="Unknown")
     prop_thickness = FloatEditableProperty("Thickness", "thickness", "%0.2f mm", min=0, max=100, allow_none=True)
+    prop_clearance = FloatEditableProperty("Clearance", "clearance", "%0.2f mm", min=0, max=100, allow_none=True)
+    prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, "Material")
         self.document = document
         self.material = MaterialType.WOOD
         self.thickness = 3
+        self.clearance = 5
+        self.safe_entry_z = 1
     def properties(self):
-        return [self.prop_material, self.prop_thickness]
+        return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
     def data(self, role):
         if role == Qt.DisplayRole:
             if self.thickness is not None:
@@ -376,20 +373,11 @@ class MaterialTreeItem(CAMTreeItem):
             else:
                 return QVariant("Material: ? %s" % (MaterialType.toString(self.material)))
         return CAMTreeItem.data(self, role)
-    def getPropertyValue(self, name):
-        if name == 'thickness':
-            return self.thickness
+    def onPropertyValueSet(self, name):
         if name == 'material':
-            return self.material
-        assert False, "Unknown attribute: " + repr(name)
-    def setPropertyValue(self, name, value):
-        if name == 'thickness':
-            self.thickness = value
-        elif name == 'material':
-            self.material = value
             self.document.make_tool()
-        else:
-            assert False, "Unknown attribute: " + repr(name)
+        if name in ('clearance', 'safe_entry_z'):
+            self.document.make_machine_params()
         self.emitDataChanged()
 
 
@@ -458,7 +446,7 @@ class OperationTreeItem(CAMTreeItem):
         start_depth = self.start_depth if self.start_depth is not None else 0
         tab_depth = self.tab_depth if self.tab_depth is not None else depth
         self.gcode_props = OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-        self.cam = Operations(machine_params, self.document.gcode_tool, self.gcode_props)
+        self.cam = Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
         self.renderer = OperationsRenderer(self.cam)
         if self.shape:
             tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
@@ -514,6 +502,7 @@ class DocumentModel(QObject):
         self.material = MaterialTreeItem(self)
         self.tool = ToolTreeItem(self)
         self.drawing = DrawingTreeItem()
+        self.make_machine_params()
         self.make_tool()
 
         self.shapeModel = QStandardItemModel()
@@ -524,7 +513,8 @@ class DocumentModel(QObject):
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
-        
+    def make_machine_params(self):
+        self.gcode_machine_params = MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def make_tool(self):
         self.gcode_material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
         self.gcode_coating = carbide_uncoated
@@ -537,7 +527,17 @@ class DocumentModel(QObject):
         for i in range(self.operModel.rowCount()):
             func(self.operModel.item(i))
     def updateCAM(self):
+        self.make_machine_params()
+        self.make_tool()
         self.forEachOperation(lambda item: item.updateCAM())
+    def validateForOutput(self):
+        def validateOperation(item):
+            if item.depth is None:
+                if self.material.thickness is None or self.material.thickness == 0:
+                    raise ValueError("Default material thickness not set")
+        self.forEachOperation(validateOperation)
+        if self.material.material is None:
+            raise ValueError("Material type not set")
 
 document = DocumentModel()
 
@@ -770,12 +770,12 @@ class CAMMainWindow(QMainWindow):
             fn = dlg.selectedFiles()[0]
             self.loadFile(fn)
     def fileExportGcode(self):
-        if self.document.material.thickness is None or self.document.material.thickness == 0:
-            QMessageBox.critical(self, None, "Material thickness not set")
+        try:
+            self.document.validateForOutput()
+        except ValueError as e:
+            QMessageBox.critical(self, None, str(e))
             return
-        if self.document.material.material is None:
-            QMessageBox.critical(self, None, "Material type not set")
-            return
+        self.document.updateCAM()
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
         path = self.windowFilePath()
         path = path.replace(".dxf", ".ngc") # XXXKF too crude
@@ -787,7 +787,7 @@ class CAMMainWindow(QMainWindow):
             fn = dlg.selectedFiles()[0]
             self.exportGcode(fn)
     def exportGcode(self, fn):
-        operations = Operations(machine_params)
+        operations = Operations(self.document.gcode_machine_params)
         self.document.forEachOperation(lambda item: operations.add_all(item.cam.operations))
         operations.to_gcode_file(fn)
     def fileExit(self):
