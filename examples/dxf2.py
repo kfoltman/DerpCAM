@@ -119,6 +119,17 @@ class SourceDrawing(object):
                 if distance is not None and distance < margin:
                     found.append(item)
         return found
+    def objectsWithin(self, xs, ys, xe, ye):
+        xs += self.origin[0]
+        ys += self.origin[1]
+        xe += self.origin[0]
+        ye += self.origin[1]
+        bounds = (xs, ys, xe, ye)
+        found = []
+        for item in self.items:
+            if inside_bounds(item.bounds, bounds):
+                found.append(item)
+        return found
     def loadFile(self, name):
         doc = ezdxf.readfile(name)
         self.reset()
@@ -174,23 +185,72 @@ class DrawingViewer(PathViewer):
     def __init__(self, document):
         self.document = document
         self.selection = set([])
+        self.dragging = False
+        self.rubberband_rect = None
+        self.start_point = None
         PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
+    def paintOverlays(self, e, qp):
+        if self.rubberband_rect:
+            qp.setOpacity(0.33)
+            qp.drawRect(self.rubberband_rect)
+            qp.setOpacity(1.0)
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
+            self.rubberband_rect = None
+            self.dragging = False
             pos = self.unproject(e.localPos())
             objs = self.document.drawing.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            if objs:
+                if e.modifiers() & Qt.ControlModifier:
+                    self.selection ^= set(objs)
+                else:
+                    self.selection = set(objs)
+                self.selectionChanged.emit()
+                self.renderDrawing()
+                self.repaint()
+                self.start_point = None
+            else:
+                self.start_point = e.localPos()
+                if self.selection and not (e.modifiers() & Qt.ControlModifier):
+                    self.selection = set()
+                    self.selectionChanged.emit()
+                    self.renderDrawing()
+                    self.repaint()
+        else:
+            PathViewer.mousePressEvent(self, e)
+    def mouseMoveEvent(self, e):
+        if not self.dragging and self.start_point:
+            dist = e.localPos() - self.start_point
+            if dist.manhattanLength() > 5:
+                self.dragging = True
+        if self.dragging:
+            self.rubberband_rect = QRectF(self.start_point, e.localPos())
+            self.startDeferredRepaint()
+            self.repaint()
+        PathViewer.mouseMoveEvent(self, e)
+    def mouseReleaseEvent(self, e):
+        if self.dragging:
+            pt1 = self.unproject(self.rubberband_rect.bottomLeft())
+            pt2 = self.unproject(self.rubberband_rect.topRight())
+            objs = self.document.drawing.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())
             if e.modifiers() & Qt.ControlModifier:
                 self.selection ^= set(objs)
             else:
                 self.selection = set(objs)
+            self.dragging = False
+            self.start_point = None
+            self.rubberband_rect = None
             self.selectionChanged.emit()
             self.renderDrawing()
             self.repaint()
         else:
-            PathViewer.mousePressEvent(self, e)
+            self.dragging = False
+            self.start_point = None
+            self.rubberband_rect = None
+        PathViewer.mouseReleaseEvent(self, e)
     def setSelection(self, selection):
         self.selection = set(selection)
         self.renderDrawing()

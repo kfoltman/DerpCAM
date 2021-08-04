@@ -73,6 +73,9 @@ def point_inside_bounds(b, p):
    sx, sy, ex, ey = b
    return p[0] >= sx and p[0] <= ex and p[1] >= sy and p[1] <= ey
 
+def point_is_arc(p):
+   return len(p) == 7
+
 def dist_line_to_point(p1, p2, p):
    xlen = p2[0] - p1[0]
    ylen = p2[1] - p1[1]

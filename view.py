@@ -170,18 +170,16 @@ class PathViewer(QWidget):
    def isDraft(self):
       return self.click_data or self.draft_time
 
-   def paintEvent(self, e):
-      qp = QPainter()
-      qp.begin(self)
-      qp.setRenderHint(1, True)
-      qp.setRenderHint(8, True)
-
+   def paintAxis(self, e, qp):
       size = self.size()
       zeropt = self.project(QPointF())
       qp.setPen(QPen(QColor(128, 128, 128)))
       qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
       qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
+
+   def paintDrawingOps(self, e, qp):
       scale = self.scalingFactor()
+      zeropt = self.project(QPointF())
       transform = QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
       qp.setTransform(transform)
       drawingArea = QRectF(self.rect())
@@ -202,6 +200,20 @@ class PathViewer(QWidget):
             if is_slow:
                qp.setRenderHint(1, True)
                qp.setRenderHint(8, True)
+      qp.setTransform(QTransform())
+
+   def paintOverlays(self, e, qp):
+      pass
+
+   def paintEvent(self, e):
+      qp = QPainter()
+      qp.begin(self)
+      qp.setRenderHint(1, True)
+      qp.setRenderHint(8, True)
+
+      self.paintAxis(e, qp)
+      self.paintDrawingOps(e, qp)
+      self.paintOverlays(e, qp)
       qp.end()
 
    def scalingFactor(self):
@@ -256,16 +268,19 @@ class PathViewer(QWidget):
    def wheelEvent(self, e):
       delta = e.angleDelta().y()
       if delta != 0:
-         self.draft_time = time.time() + 0.5
+         self.startDeferredRepaint()
       if delta > 0:
          self.adjustScale(e.position(), 1)
       if delta < 0:
          self.adjustScale(e.position(), -1)
       if delta != 0:
          # do it again to account for repainting time
-         self.draft_time = time.time() + 0.5
+         self.startDeferredRepaint()
       if self.click_data:
          self.click_data = (self.zero, e.position())
+
+   def startDeferredRepaint(self):
+      self.draft_time = time.time() + 0.5
 
    def resizeEvent(self, e):
       sx, sy, ex, ey = self.bounds()
