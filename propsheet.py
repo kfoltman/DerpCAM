@@ -182,8 +182,11 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
         self.properties[row].setEditorData(editor, value)
     def setModelData(self, editor, model, index):
         row = index.row()
-        value = self.properties[row].getEditorData(editor)
-        model.setData(index, value)
+        if hasattr(self.properties[row], 'getEditorData'):
+            value = self.properties[row].getEditorData(editor)
+            model.setData(index, value)
+        else:
+            return QStyledItemDelegate.setModelData(self, editor, model, index)
         #self.props_widget.itemFromIndex(index).prop.setData(value)
 
 class PropertySheetWidget(QTableWidget):
