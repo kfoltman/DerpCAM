@@ -17,9 +17,12 @@ if len(sys.argv) < 2:
 
 class DrawingItem(object):
     defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
-    selectedDrawingPen = QPen(QColor(255, 0, 255, 255), 0)
+    selectedItemDrawingPen = QPen(QColor(0, 64, 128, 255), 2)
+    def selectedItemPenFunc(self, item, scale):
+        # avoid draft behaviour of thick lines
+        return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
     def penForPath(self, path):
-        return self.selectedDrawingPen if self.untransformed in path.selection else self.defaultDrawingPen
+        return self.selectedItemPenFunc if self.untransformed in path.selection else self.defaultDrawingPen
 
 class DrawingCircle(DrawingItem):
     def __init__(self, centre, r, untransformed = None):
@@ -179,6 +182,13 @@ class DocumentRenderer(object):
         self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner))
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
+
+class OperationsRendererWithSelection(OperationsRenderer):
+    def __init__(self, owner):
+        OperationsRenderer.__init__(self, owner.cam)
+        self.owner = owner
+    def isHighlighted(self, operation):
+        return self.owner.isSelected
 
 class DrawingViewer(PathViewer):
     selectionChanged = pyqtSignal()
@@ -471,6 +481,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_count = None
         self.offset = 0
         self.operation = operation
+        self.isSelected = False
         self.updateCAM()
     def isDropEnabled(self):
         return False
@@ -507,7 +518,7 @@ class OperationTreeItem(CAMTreeItem):
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = OperationProps(-depth, -start_depth, -tab_depth, self.offset)
         self.cam = Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
-        self.renderer = OperationsRenderer(self.cam)
+        self.renderer = OperationsRendererWithSelection(self)
         if self.shape:
             tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
             if self.operation == OperationType.OUTSIDE_CONTOUR:
@@ -584,8 +595,10 @@ class DocumentModel(QObject):
         self.drawing.drawing.loadFile(fn)
         self.make_tool()
     def forEachOperation(self, func):
+        res = []
         for i in range(self.operModel.rowCount()):
-            func(self.operModel.item(i))
+            res.append(func(self.operModel.item(i)))
+        return res
     def updateCAM(self):
         self.make_machine_params()
         self.make_tool()
@@ -598,6 +611,14 @@ class DocumentModel(QObject):
         self.forEachOperation(validateOperation)
         if self.material.material is None:
             raise ValueError("Material type not set")
+    def setOperSelection(self, selection):
+        changes = []
+        def setSelected(operation):
+            isIn = (operation in selection)
+            if operation.isSelected != isIn:
+                operation.isSelected = isIn
+                return True
+        return any(self.forEachOperation(setSelected))
 
 document = DocumentModel()
 
@@ -654,11 +675,15 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.selectionChanged.emit()
     def selectTab(self, tabIndex):
         self.tabs.setCurrentIndex(tabIndex)
+    def shapeSelection(self):
+        return [self.document.shapeModel.itemFromIndex(idx) for idx in self.shapeTree.selectionModel().selectedIndexes()]
+    def operSelection(self):
+        return [self.document.operModel.itemFromIndex(idx) for idx in self.operTree.selectionModel().selectedIndexes()]
     def activeSelection(self):
         if self.tabs.currentIndex() == 0:
-            return "s", [self.document.shapeModel.itemFromIndex(idx) for idx in self.shapeTree.selectionModel().selectedIndexes()]
+            return "s", self.shapeSelection()
         if self.tabs.currentIndex() == 1:
-            return "o", [self.document.operModel.itemFromIndex(idx) for idx in self.operTree.selectionModel().selectedIndexes()]
+            return "o", self.operSelection()
         assert False
 
 class CAMPropertiesDockWidget(QDockWidget):
@@ -753,6 +778,8 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.updateShapeSelection(self.viewer.selection)
     def shapeTreeSelectionChanged(self):
         self.updateSelection()
+        if self.document.setOperSelection(self.projectDW.operSelection()):
+            self.viewer.majorUpdate()
     def shapeModelChanged(self, index):
         item = self.document.shapeModel.itemFromIndex(index)
         if type(item) == MaterialTreeItem:
@@ -774,7 +801,7 @@ class CAMMainWindow(QMainWindow):
     def drawingChanged(self):
         self.viewer.majorUpdate()
     def operChanged(self):
-        self.viewer.majorUpdate()
+            self.viewer.majorUpdate()
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':

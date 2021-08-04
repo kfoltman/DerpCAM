@@ -21,8 +21,13 @@ class OperationsRenderer(object):
          else:
             b = max_bounds(b, opb)
       return b
-   def toolPen(self, path, alpha=100):
-      pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
+   def highlightPen(self, path):
+      return QPen(QColor(0, 128, 192, 255), path.tool.diameter)
+   def toolPen(self, path, alpha=100, isHighlighted=False):
+      if isHighlighted:
+         pen = self.highlightPen(path)
+      else:
+         pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
       pen.setCapStyle(Qt.RoundCap)
       pen.setJoinStyle(Qt.RoundJoin)
       return pen
@@ -43,26 +48,31 @@ class OperationsRenderer(object):
                   for toolpath in op.flattened:
                      if stage == 1:
                         # Use the alpha for the tab depth
-                        pen = self.toolPen(toolpath, alpha=tab_alpha)
+                        pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
                      if stage == 2:
                         pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
-                     self.addToolpaths(owner, pen, toolpath, stage)
+                     self.addToolpaths(owner, pen, toolpath, stage, op)
                for toolpath in op.tabbed:
                   if stage == 1:
                      # Draw a cut line of the diameter of the cut
                      alpha = tab_alpha if toolpath.is_tab else 100
-                     pen = self.toolPen(toolpath, alpha=tab_alpha)
+                     pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
                   else:
                      if toolpath.is_tab:
                         pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
                      else:
                         pen = QPen(QColor(0, 0, 0, 100), 0)
                   #self.drawToolpaths(qp, self.paths, stage)
-                  self.addToolpaths(owner, pen, toolpath, stage)
+                  self.addToolpaths(owner, pen, toolpath, stage, op)
+   def isHighlighted(self, operation):
+      return False
    def renderNotTabs(self, owner):
       # Pink tint for cuts that are not tabs
       for op in self.operations.operations:
-         pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
+         if self.isHighlighted(op):
+            pen = self.highlightPen(op)
+         else:
+            pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
          pen.setCapStyle(Qt.RoundCap)
          pen.setJoinStyle(Qt.RoundJoin)
          if op.paths and op.tabs and op.tabs.tabs:
@@ -98,7 +108,7 @@ class OperationsRenderer(object):
          owner.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False)
       owner.addLines(pen, [lastpt, path.points[0]], False)
       return path.points[0 if path.closed else -1]
-   def addToolpaths(self, owner, pen, path, stage):
+   def addToolpaths(self, owner, pen, path, stage, operation):
       if isinstance(path, Toolpaths):
          for tp in path.toolpaths:
             self.addToolpaths(owner, pen, tp, stage)
@@ -107,7 +117,7 @@ class OperationsRenderer(object):
       if simplify_arcs:
          path = path.lines_to_arcs()
          if stage == 1:
-            pen = self.toolPen(path)
+            pen = self.toolPen(path, isHighlighted = self.isHighlighted(operation))
          else:
             pen = QPen(QColor(160, 160, 160) if path.is_tab else QColor(0, 128, 128), 0)
          owner.addLines(pen, path.points, path.closed, True)
@@ -188,11 +198,14 @@ class PathViewer(QWidget):
          if bounds.intersects(drawingArea):
             # Skip all the thick lines when drawing during an interactive
             # operation like panning and zooming
-            if self.isDraft() and pen.widthF():
+            if not isinstance(pen, QPen):
+               pen, is_slow = pen(path, scale)
+            else:
+               is_slow = pen.widthF() and path.elementCount() > 1000
+            if self.isDraft() and is_slow:
                continue
             qp.setPen(pen)
             # Do not anti-alias very long segments
-            is_slow = pen.widthF() and path.elementCount() > 1000
             if is_slow:
                qp.setRenderHint(1, False)
                qp.setRenderHint(8, False)
