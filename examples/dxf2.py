@@ -23,16 +23,17 @@ if len(sys.argv) < 2:
     sys.exit(0)
 
 class DrawingItem(object):
-    defaultDrawingPen = QPen(QColor(0, 0, 0, 128), 0)
-    selectedDrawingPen = QPen(QColor(255, 0, 0, 192), 0)
+    defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
+    selectedDrawingPen = QPen(QColor(255, 0, 255, 255), 0)
     def penForPath(self, path):
-        return self.selectedDrawingPen if self in path.selection else self.defaultDrawingPen
+        return self.selectedDrawingPen if self.untransformed in path.selection else self.defaultDrawingPen
 
 class DrawingCircle(DrawingItem):
-    def __init__(self, centre, r):
+    def __init__(self, centre, r, untransformed = None):
         self.centre = (centre[0], centre[1])
         self.r = r
         self.calcBounds()
+        self.untransformed = untransformed if untransformed is not None else self
     def calcBounds(self):
         self.bounds = (self.centre[0] - self.r, self.centre[1] - self.r,
             self.centre[0] + self.r, self.centre[1] + self.r)
@@ -45,12 +46,12 @@ class DrawingCircle(DrawingItem):
     def toShape(self):
         return Shape.circle(*self.centre, self.r)
     def translated(self, dx, dy):
-        return DrawingCircle(translate_point(self.centre, dx, dy), self.r)
+        return DrawingCircle(translate_point(self.centre, dx, dy), self.r, self.untransformed)
     def scaled(self, cx, cy, scale):
-        return DrawingCircle(scale_point(self.centre, cx, cy, scale), self.r * scale)
+        return DrawingCircle(scale_point(self.centre, cx, cy, scale), self.r * scale, self.untransformed)
 
 class DrawingPolyline(DrawingItem):
-    def __init__(self, points, closed):
+    def __init__(self, points, closed, untransformed = None):
         self.points = points
         if points:
             xcoords = [p[0] for p in self.points if len(p) == 2]
@@ -59,6 +60,7 @@ class DrawingPolyline(DrawingItem):
         else:
             self.bounds = None
         self.closed = closed
+        self.untransformed = untransformed if untransformed is not None else self
     def distanceTo(self, pt):
         if not self.points:
             return None
@@ -76,9 +78,9 @@ class DrawingPolyline(DrawingItem):
                     mindist = min(dist, mindist)
         return mindist
     def translated(self, dx, dy):
-        return DrawingPolyline([translate_gen_point(p, dx, dy) for p in self.points], self.closed)
+        return DrawingPolyline([translate_gen_point(p, dx, dy) for p in self.points], self.closed, self.untransformed)
     def scaled(self, cx, cy, scale):
-        return DrawingPolyline([scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed)
+        return DrawingPolyline([scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def textDescription(self):
@@ -96,6 +98,7 @@ class DrawingPolyline(DrawingItem):
 class SourceDrawing(object):
     def __init__(self):
         self.items = []
+        self.origin = (0, 0)
     def bounds(self):
         b = None
         for item in self.items:
@@ -104,17 +107,18 @@ class SourceDrawing(object):
             else:
                 b = max_bounds(b, item.bounds)
         if b is None:
-            return (0, 0, 1, 1)
-        return b
+            return (-1, -1, 1, 1)
+        margin = 5
+        return (b[0] - self.origin[0] - margin, b[1] - self.origin[1] - margin, b[2] - self.origin[0] + margin, b[3] - self.origin[1] + margin)
     def reset(self):
         self.items = []
     def addItem(self, item):
         self.items.append(item)
     def renderTo(self, path, modeData):
         for i in self.items:
-            i.renderTo(path, modeData)
+            i.translated(-self.origin[0], -self.origin[1]).renderTo(path, modeData)
     def objectsNear(self, pos, margin):
-        xy = (pos.x(), pos.y())
+        xy = (pos.x() + self.origin[0], pos.y() + self.origin[1])
         found = []
         for item in self.items:
             if point_inside_bounds(expand_bounds(item.bounds, margin), xy):
@@ -234,9 +238,20 @@ class CAMTreeItem(QStandardItem):
         return []
 
 class DrawingTreeItem(CAMTreeItem):
+    prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
+    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
     def __init__(self):
         CAMTreeItem.__init__(self, "Drawing")
         self.drawing = SourceDrawing()
+        self.x_offset = 0
+        self.y_offset = 0
+    def properties(self):
+        return [self.prop_x_offset, self.prop_y_offset]
+    def translation(self):
+        return (-self.x_offset, -self.y_offset)
+    def onPropertyValueSet(self, name):
+        self.drawing.origin = (self.x_offset, self.y_offset)
+        self.emitDataChanged()
     def updateFromDrawing(self):
         self.removeRows(0, self.rowCount())
         for item in self.drawing.items:
@@ -246,6 +261,8 @@ class DrawingItemTreeItem(CAMTreeItem):
     def __init__(self, item):
         CAMTreeItem.__init__(self)
         self.item = item
+    def onPropertyValueSet(self, name):
+        self.emitDataChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(self.item.textDescription())
@@ -399,7 +416,7 @@ class OperationTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self)
         self.document = document
         self.shape_source = shape_source
-        self.shape = shape_source.toShape()
+        self.shape = shape_source.translated(*self.document.drawing.translation()).toShape()
         self.depth = None
         self.start_depth = 0
         self.tab_depth = None
@@ -638,9 +655,7 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
         self.propsDW = CAMPropertiesDockWidget()
-        # XXXKF those are wrong, it's the same model
-        self.document.material.model().dataChanged.connect(self.materialChanged)
-        self.document.tool.model().dataChanged.connect(self.toolChanged)
+        self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
@@ -672,6 +687,14 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.updateShapeSelection(self.viewer.selection)
     def shapeTreeSelectionChanged(self):
         self.updateSelection()
+    def shapeModelChanged(self, index):
+        item = self.document.shapeModel.itemFromIndex(index)
+        if type(item) == MaterialTreeItem:
+            self.materialChanged()
+        elif type(item) == ToolTreeItem:
+            self.toolChanged()
+        elif type(item) == DrawingTreeItem:
+            self.drawingChanged()
     def materialChanged(self):
         if self.document.material.thickness is not None:
             default_props.depth = -self.document.material.thickness
@@ -681,6 +704,8 @@ class CAMMainWindow(QMainWindow):
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.updateCAM()
+        self.viewer.majorUpdate()
+    def drawingChanged(self):
         self.viewer.majorUpdate()
     def operChanged(self):
         self.viewer.majorUpdate()
@@ -702,8 +727,9 @@ class CAMMainWindow(QMainWindow):
         selection = self.viewer.selection
         newSelection = QItemSelection()
         rowCount = self.document.operModel.rowCount()
+        translation = self.document.drawing.translation()
         for i in selection:
-            shape = i.toShape()
+            shape = i.translated(*translation).toShape()
             if checkFunc(shape):
                 item = OperationTreeItem(self.document, i, operType)
                 self.document.operModel.appendRow(item)
