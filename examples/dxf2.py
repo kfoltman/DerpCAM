@@ -18,6 +18,24 @@ if len(sys.argv) < 2:
 class DrawingItem(object):
     defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
     selectedItemDrawingPen = QPen(QColor(0, 64, 128, 255), 2)
+    next_drawing_item_id = 1
+    def __init__(self):
+        self.shape_id = DrawingItem.next_drawing_item_id
+        DrawingItem.next_drawing_item_id += 1
+    def store(self):
+        return { '_type' : type(self).__name__, 'shape_id' : self.shape_id }
+    @classmethod
+    def load(klass, dump):
+        rtype = dump['_type']
+        if rtype == 'DrawingPolyline':
+            item = DrawingPolyline(dump['points'], dump.get('closed', True))
+        elif rtype == 'DrawingCircle':
+            item = DrawingCircle((dump['cx'], dump['cy']), dump['r'])
+        else:
+            raise ValueError("Unexpected type: %s" % rtype)
+        item.shape_id = dump['shape_id']
+        klass.next_drawing_item_id = max(item.shape_id + 1, klass.next_drawing_item_id)
+        return item
     def selectedItemPenFunc(self, item, scale):
         # avoid draft behaviour of thick lines
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
@@ -26,6 +44,7 @@ class DrawingItem(object):
 
 class DrawingCircle(DrawingItem):
     def __init__(self, centre, r, untransformed = None):
+        DrawingItem.__init__(self)
         self.centre = (centre[0], centre[1])
         self.r = r
         self.calcBounds()
@@ -45,9 +64,16 @@ class DrawingCircle(DrawingItem):
         return DrawingCircle(translate_point(self.centre, dx, dy), self.r, self.untransformed)
     def scaled(self, cx, cy, scale):
         return DrawingCircle(scale_point(self.centre, cx, cy, scale), self.r * scale, self.untransformed)
+    def store(self):
+        res = DrawingItem.store(self)
+        res['cx'] = self.centre[0]
+        res['cy'] = self.centre[1]
+        res['r'] = self.r
+        return res
 
 class DrawingPolyline(DrawingItem):
     def __init__(self, points, closed, untransformed = None):
+        DrawingItem.__init__(self)
         self.points = points
         if points:
             xcoords = [p[0] for p in self.points if len(p) == 2]
@@ -57,6 +83,11 @@ class DrawingPolyline(DrawingItem):
             self.bounds = None
         self.closed = closed
         self.untransformed = untransformed if untransformed is not None else self
+    def store(self):
+        res = DrawingItem.store(self)
+        res['points'] = [ i for i in self.points ]
+        res['closed'] = self.closed
+        return res
     def distanceTo(self, pt):
         if not self.points:
             return None
@@ -93,8 +124,7 @@ class DrawingPolyline(DrawingItem):
 
 class SourceDrawing(object):
     def __init__(self):
-        self.items = []
-        self.origin = (0, 0)
+        self.reset()
     def bounds(self):
         b = None
         for item in self.items:
@@ -108,8 +138,13 @@ class SourceDrawing(object):
         return (b[0] - self.origin[0] - margin, b[1] - self.origin[1] - margin, b[2] - self.origin[0] + margin, b[3] - self.origin[1] + margin)
     def reset(self):
         self.items = []
+        self.items_by_id = {}
+        self.origin = (0, 0)
     def addItem(self, item):
         self.items.append(item)
+        self.items_by_id[item.shape_id] = item
+    def itemById(self, shape_id):
+        return self.items_by_id.get(shape_id, None)
     def renderTo(self, path, modeData):
         for i in self.items:
             i.translated(-self.origin[0], -self.origin[1]).renderTo(path, modeData)
@@ -133,7 +168,7 @@ class SourceDrawing(object):
             if inside_bounds(item.bounds, bounds):
                 found.append(item)
         return found
-    def loadFile(self, name):
+    def importDrawing(self, name):
         doc = ezdxf.readfile(name)
         self.reset()
         msp = doc.modelspace()
@@ -294,17 +329,52 @@ def polyline_to_points(entity):
     return points, entity.closed
 
 class CAMTreeItem(QStandardItem):
-    def __init__(self, name=None):
+    def __init__(self, document, name=None):
         QStandardItem.__init__(self, name)
+        self.document = document
         self.setEditable(False)
+    def store(self):
+        dump = {}
+        dump['_type'] = type(self).__name__
+        for prop in self.properties():
+            dump[prop.attribute] = getattr(self, prop.attribute)
+        return dump
+    def class_specific_load(self, dump):
+        pass
+    def reload(self, dump):
+        rtype = dump['_type']
+        if rtype != type(self).__name__:
+            raise ValuError("Unexpected type: %s" % rtype)
+        for prop in self.properties():
+            if prop.attribute in dump:
+                setattr(self, prop.attribute, dump[prop.attribute])
+        self.class_specific_load(dump)
+
+    @staticmethod
+    def load(document, dump):
+        rtype = dump['_type']
+        if rtype == 'DrawingTreeItem':
+            res = DrawingTreeItem(document)
+        elif rtype == 'DrawingItemTreeItem':
+            res = DrawingItemTreeItem(document)
+        elif rtype == 'MaterialTreeItem':
+            res = MaterialTreeItem(document)
+        elif rtype == 'ToolTreeItem':
+            res = ToolTreeItem(document)
+        elif rtype == 'OperationTreeItem':
+            res = OperationTreeItem(document)
+        else:
+            raise ValueError("Unexpected item type: %s" % rtype)
+        res.reload(dump)
+        return res
     def properties(self):
         return []
 
 class DrawingTreeItem(CAMTreeItem):
     prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
     prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
-    def __init__(self):
-        CAMTreeItem.__init__(self, "Drawing")
+    def __init__(self, document):
+        CAMTreeItem.__init__(self, document, "Drawing")
         self.drawing = SourceDrawing()
         self.x_offset = 0
         self.y_offset = 0
@@ -318,11 +388,13 @@ class DrawingTreeItem(CAMTreeItem):
     def updateFromDrawing(self):
         self.removeRows(0, self.rowCount())
         for item in self.drawing.items:
-            self.appendRow([DrawingItemTreeItem(item)])
+            self.appendRow([DrawingItemTreeItem(self.document, item)])
+    def shapeById(self, item_id):
+        return self.drawing.itemById(item_id)
         
 class DrawingItemTreeItem(CAMTreeItem):
-    def __init__(self, item):
-        CAMTreeItem.__init__(self)
+    def __init__(self, document, item=None):
+        CAMTreeItem.__init__(self, document)
         self.item = item
     def onPropertyValueSet(self, name):
         self.emitDataChanged()
@@ -340,9 +412,8 @@ class ToolTreeItem(CAMTreeItem):
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     def __init__(self, document):
-        CAMTreeItem.__init__(self, "Tool")
+        CAMTreeItem.__init__(self, document, "Tool")
         self.setEditable(False)
-        self.document = document
         self.diameter = 3.2
         self.flutes = 2
         self.cel = 22
@@ -428,8 +499,7 @@ class MaterialTreeItem(CAMTreeItem):
     prop_clearance = FloatEditableProperty("Clearance", "clearance", "%0.2f mm", min=0, max=100, allow_none=True)
     prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
-        CAMTreeItem.__init__(self, "Material")
-        self.document = document
+        CAMTreeItem.__init__(self, document, "Material")
         self.material = MaterialType.WOOD
         self.thickness = 3
         self.clearance = 5
@@ -470,17 +540,16 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
-    def __init__(self, document, shape_source, operation):
-        CAMTreeItem.__init__(self)
-        self.document = document
-        self.shape_source = shape_source
-        self.shape = shape_source.translated(*self.document.drawing.translation()).toShape()
+    def __init__(self, document):
+        CAMTreeItem.__init__(self, document)
+        self.shape_id = None
+        self.shape = None
         self.depth = None
         self.start_depth = 0
         self.tab_height = None
         self.tab_count = None
         self.offset = 0
-        self.operation = operation
+        self.operation = OperationType.OUTSIDE_CONTOUR
         self.isSelected = False
         self.updateCAM()
     def isDropEnabled(self):
@@ -492,14 +561,12 @@ class OperationTreeItem(CAMTreeItem):
             return False
         return True
     def store(self):
-        dump = {}
-        dump['shape_index'] = self.document.drawing.drawing.items.index(self.shape_source)
-        for prop in self.properties():
-            dump[prop.attribute] = getattr(self, prop.attribute)
+        dump = CAMTreeItem.store(self)
+        dump['shape_id'] = self.shape_id
         return dump
-    def load(self, dump):
-        for prop in self.properties():
-            setattr(self, prop.attribute, dump[prop.attribute])
+    def class_specific_load(self, dump):
+        self.shape_id = dump.get('shape_id', None)
+        self.updateCAM()
     def properties(self):
         return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset]
     def onPropertyValueSet(self, name):
@@ -510,6 +577,10 @@ class OperationTreeItem(CAMTreeItem):
             return QVariant(OperationType.toString(self.operation) + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
         return CAMTreeItem.data(self, role)
     def updateCAM(self):
+        self.shape = self.document.drawing.shapeById(self.shape_id) if self.shape_id is not None else None
+        if self.shape:
+            translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+            self.shape = self.shape.translated(*translation).toShape()
         thickness = self.document.material.thickness
         if thickness is None:
             thickness = 0
@@ -546,9 +617,9 @@ class OperationsModel(QStandardItemModel):
             if row == -1:
                 row = self.rowCount(parent)
             for i in data:
-                shape_source = self.document.drawing.drawing.items[i['shape_index']]
-                item = OperationTreeItem(self.document, shape_source, i['operation'])
-                item.load(i)
+                #shape_source = self.document.drawing.drawing.items[i['shape_index']]
+                item = CAMTreeItem.load(self.document, i)
+                #OperationTreeItem(self.document, shape_source, i['operation'])
                 self.insertRow(row, item)
                 row += 1
             return True
@@ -572,7 +643,9 @@ class DocumentModel(QObject):
         QObject.__init__(self)
         self.material = MaterialTreeItem(self)
         self.tool = ToolTreeItem(self)
-        self.drawing = DrawingTreeItem()
+        self.drawing = DrawingTreeItem(self)
+        self.filename = None
+        self.drawingFilename = None
         self.make_machine_params()
         self.make_tool()
 
@@ -584,6 +657,25 @@ class DocumentModel(QObject):
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
+    def store(self):
+        data = {}
+        data['material'] = self.material.store()
+        data['tool'] = self.tool.store()
+        data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.drawing.items] }
+        data['operations'] = self.forEachOperation(lambda op: op.store())
+        return data
+    def load(self, data):
+        self.material.reload(data['material'])
+        self.tool.reload(data['tool'])
+        self.drawing.reload(data['drawing']['header'])
+        self.drawing.drawing.reset()
+        for i in data['drawing']['items']:
+            self.drawing.drawing.addItem(DrawingItem.load(i))
+        for i in data['operations']:
+            operation = CAMTreeItem.load(self, i)
+            self.operModel.appendRow(operation)
+        self.drawing.updateFromDrawing()
+        self.updateCAM()
     def make_machine_params(self):
         self.gcode_machine_params = MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def make_tool(self):
@@ -591,8 +683,10 @@ class DocumentModel(QObject):
         self.gcode_coating = carbide_uncoated
         self.gcode_tool_orig = standard_tool(self.tool.diameter, self.tool.flutes, self.gcode_material, self.gcode_coating)
         self.gcode_tool = self.gcode_tool_orig.clone_with_overrides(self.tool.hfeed, self.tool.vfeed, self.tool.depth, self.tool.rpm)
-    def loadFile(self, fn):
-        self.drawing.drawing.loadFile(fn)
+    def importDrawing(self, fn):
+        self.filename = None
+        self.drawingFilename = fn
+        self.drawing.drawing.importDrawing(fn)
         self.make_tool()
     def forEachOperation(self, func):
         res = []
@@ -750,7 +844,11 @@ class CAMMainWindow(QMainWindow):
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
-            ("&Open DXF...", self.fileOpen, QKeySequence.Open, "Open a drawing file"),
+            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
+            None,
+            ("&Open project...", self.fileOpen, QKeySequence.Open, "Open a project file"),
+            ("&Save project", self.fileSave, QKeySequence.Save, "Save a project file"),
+            ("Save project &as...", self.fileSaveAs, QKeySequence.SaveAs, "Save a project file under a different name"),
             None,
             ("&Export G-Code...", self.fileExportGcode, QKeySequence("Ctrl+G"), "Generate and export the G-Code"),
             None,
@@ -799,6 +897,7 @@ class CAMMainWindow(QMainWindow):
         self.document.updateCAM()
         self.viewer.majorUpdate()
     def drawingChanged(self):
+        self.document.updateCAM()
         self.viewer.majorUpdate()
     def operChanged(self):
             self.viewer.majorUpdate()
@@ -824,7 +923,7 @@ class CAMMainWindow(QMainWindow):
         for i in selection:
             shape = i.translated(*translation).toShape()
             if checkFunc(shape):
-                item = OperationTreeItem(self.document, i, operType)
+                item = CAMTreeItem.load(self.document, { '_type' : 'OperationTreeItem', 'shape_id' : i.shape_id, 'operation' : operType })
                 self.document.operModel.appendRow(item)
                 index = self.document.operModel.index(rowCount, 0)
                 newSelection.select(index, index)
@@ -844,18 +943,53 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(lambda shape: True, OperationType.ENGRAVE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
-    def loadFile(self, fn):
-        self.document.loadFile(fn)
+    def importDrawing(self, fn):
+        self.document.importDrawing(fn)
         self.projectDW.updateFromDrawing()
         self.viewer.majorUpdate()
         self.updateSelection()
         self.setWindowFilePath(fn)
-    def fileOpen(self):
-        dlg = QFileDialog(self, "Open a drawing", filter="Drawings (*.dxf);;All files (*)")
+    def fileImport(self):
+        dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.loadFile(fn)
+            self.importDrawing(fn)
+    def fileOpen(self):
+        dlg = QFileDialog(self, "Open a project", filter="DerpCAM project (*.dcp);;All files (*)")
+        dlg.setFileMode(QFileDialog.ExistingFile)
+        if dlg.exec_():
+            fn = dlg.selectedFiles()[0]
+            self.openProject(fn)
+    def fileSaveAs(self):
+        dlg = QFileDialog(self, "Save a project", filter="DerpCAM project (*.dcp);;All files (*)")
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setFileMode(QFileDialog.AnyFile)
+        if self.document.drawingFilename is not None:
+            path = self.document.drawingFilename.replace(".dxf", ".dcp") # XXXKF too crude
+            dlg.selectFile(path)
+        if dlg.exec_():
+            fn = dlg.selectedFiles()[0]
+            self.document.filename = fn
+            self.saveProject(fn)
+    def fileSave(self):
+        if self.document.filename is None:
+            self.fileSaveAs()
+        else:
+            self.saveProject(self.document.filename)
+    def saveProject(self, fn):
+        data = self.document.store()
+        f = open(fn, "w")
+        json.dump(data, f, indent=2)
+        f.close()
+    def loadProject(self, fn):
+        f = open(fn, "r")
+        data = json.load(f)
+        f.close()
+        self.document.filename = fn
+        self.document.drawingFilename = None
+        self.document.load(data)
+        self.drawingChanged()
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()
@@ -885,7 +1019,12 @@ app.setApplicationDisplayName("My CAM experiment")
 w = CAMMainWindow(document)
 w.initUI()
 if len(sys.argv) > 1:
-    w.loadFile(sys.argv[1])
+    fn = sys.argv[1]
+    fnl = fn.lower()
+    if fnl.endswith(".dxf"):
+        w.importDrawing(fn)
+    elif fnl.endswith(".dcp"):
+        w.loadProject(fn)
 
 w.show()
 retcode = app.exec_()
