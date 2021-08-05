@@ -590,6 +590,15 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset']:
             return False
         return True
+    def getValidEnumValues(self, name):
+        if name == 'operation':
+            if isinstance(self.orig_shape, DrawingCircle):
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
+            if isinstance(self.orig_shape, DrawingPolyline):
+                if self.shape.closed:
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE]
+                else:
+                    return [OperationType.ENGRAVE]
     def store(self):
         dump = CAMTreeItem.store(self)
         dump['shape_id'] = self.shape_id

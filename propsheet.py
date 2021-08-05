@@ -29,7 +29,7 @@ class EditableProperty(object):
         return self.toEditString(value)
     def validate(self, value):
         return value
-    def createEditor(self, parent):
+    def createEditor(self, parent, item):
         return None
     def setEditorData(self, editor, value):
         pass
@@ -50,19 +50,19 @@ class EnumEditableProperty(EditableProperty):
         if self.allow_none and value == self.none_value:
             return None
         raise ValueError("Incorrect value: %s" % (value))
-    def createEditor(self, parent):
+    def createEditor(self, parent, item):
         widget = QListWidget(parent)
         widget.setMinimumSize(200, 100)
         for data in self.enum_class.descriptions:
             id, description = data[0 : 2]
+            if item.valid_values is not None:
+                if id not in item.valid_values:
+                    continue
             widget.addItem(description)
         widget.itemPressed.connect(lambda: self.destroyEditor(widget))
         return widget
     def getEditorData(self, editor):
-        row = editor.currentRow()
-        if row >= 0:
-            return self.enum_class.descriptions[row][0]
-        return None
+        return editor.currentItem().data(Qt.DisplayRole)
     def setEditorData(self, editor, value):
         if type(value) is int:
             for row, item in enumerate(self.enum_class.descriptions):
@@ -76,6 +76,17 @@ class EnumEditableProperty(EditableProperty):
                     return
     def destroyEditor(self, widget):
         widget.close()
+    def getValidValues(self, objects):
+        validValues = None
+        for i in objects:
+            if hasattr(i, 'getValidEnumValues'):
+                values = i.getValidEnumValues(self.attribute)
+                if values is not None:
+                    if validValues is None:
+                        validValues = set(values)
+                    else:
+                        validValues &= set(values)
+        return validValues
 
 class FloatEditableProperty(EditableProperty):
     def __init__(self, name, attribute, format, min = None, max = None, allow_none = False, none_value = "none"):
@@ -135,7 +146,7 @@ class MultipleItem(object):
         return "(multiple)"
 
 class PropertyTableWidgetItem(QTableWidgetItem):
-    def __init__(self, table, prop, value, def_value=None):
+    def __init__(self, table, prop, value, def_value = None, valid_values = None):
         if value is MultipleItem:
             QTableWidgetItem.__init__(self, "")
         else:
@@ -144,6 +155,7 @@ class PropertyTableWidgetItem(QTableWidgetItem):
         self.prop = prop
         self.value = value
         self.def_value = def_value
+        self.valid_values = valid_values
     def data(self, role):
         if not (self.flags() & Qt.ItemIsEditable):
             if role == Qt.DisplayRole:
@@ -180,7 +192,7 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
         self.props_widget = props_widget
     def createEditor(self, parent, option, index):
         row = index.row()
-        editor = self.properties[row].createEditor(parent)
+        editor = self.properties[row].createEditor(parent, self.props_widget.itemFromIndex(index))
         if editor is not None:
             return editor
         return QStyledItemDelegate.createEditor(self, parent, option, index)
@@ -247,6 +259,9 @@ class PropertySheetWidget(QTableWidget):
             return
         prop = self.properties[row]
         values = [prop.getData(o) for o in self.objects]
+        validValues = None
+        if hasattr(prop, 'getValidValues'):
+           validValues = prop.getValidValues(self.objects)
         defValue = None
         if any([v2 is None for v2 in values]):
             defValues = [prop.getDefaultPropertyValue(o) for o in self.objects if prop.getData(o) is None]
@@ -268,7 +283,7 @@ class PropertySheetWidget(QTableWidget):
                         if not obj.isPropertyValid(prop.attribute):
                             isValid = False
                             break
-                item = PropertyTableWidgetItem(self, prop, v, defValue)
+                item = PropertyTableWidgetItem(self, prop, v, defValue, validValues)
                 if isValid:
                     item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
                 else:
