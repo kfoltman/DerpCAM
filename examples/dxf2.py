@@ -544,11 +544,13 @@ class OperationType(EnumClass):
     INSIDE_CONTOUR = 2
     POCKET = 3
     ENGRAVE = 4
+    INTERPOLATED_HOLE = 5
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
         (POCKET, "Pocket"),
         (ENGRAVE, "Engrave"),
+        (INTERPOLATED_HOLE, "Helix-interpolated hole"),
     ]
 
 class OperationTreeItem(CAMTreeItem):
@@ -595,10 +597,10 @@ class OperationTreeItem(CAMTreeItem):
             return QVariant(OperationType.toString(self.operation) + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
         return CAMTreeItem.data(self, role)
     def updateCAM(self):
-        self.shape = self.document.drawing.shapeById(self.shape_id) if self.shape_id is not None else None
-        if self.shape:
+        self.orig_shape = self.document.drawing.shapeById(self.shape_id) if self.shape_id is not None else None
+        if self.orig_shape:
             translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
-            self.shape = self.shape.translated(*translation).toShape()
+            self.shape = self.orig_shape.translated(*translation).toShape()
         thickness = self.document.material.thickness
         if thickness is None:
             thickness = 0
@@ -618,6 +620,8 @@ class OperationTreeItem(CAMTreeItem):
                 self.cam.pocket(self.shape)
             elif self.operation == OperationType.ENGRAVE:
                 self.cam.engrave(self.shape)
+            elif self.operation == OperationType.INTERPOLATED_HOLE:
+                self.cam.helical_drill(self.orig_shape.centre[0] + translation[0], self.orig_shape.centre[1] + translation[1], 2 * self.orig_shape.r)
 
 MIMETYPE = 'application/x-derpcam-operations'
 
@@ -904,6 +908,7 @@ class CAMMainWindow(QMainWindow):
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
+            ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
         ])
         self.coordLabel = QLabel("X=? Y=?")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -972,7 +977,7 @@ class CAMMainWindow(QMainWindow):
         newItems = 0
         for i in selection:
             shape = i.translated(*translation).toShape()
-            if checkFunc(shape):
+            if checkFunc(i, shape):
                 item = CAMTreeItem.load(self.document, { '_type' : 'OperationTreeItem', 'shape_id' : i.shape_id, 'operation' : operType })
                 self.document.operModel.appendRow(item)
                 index = self.document.operModel.index(rowCount, 0)
@@ -987,13 +992,15 @@ class CAMMainWindow(QMainWindow):
         self.updateOperations()
         self.propsDW.updateProperties()
     def millOutsideContour(self):
-        self.millSelectedShapes(lambda shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
     def millInsideContour(self):
-        self.millSelectedShapes(lambda shape: shape.closed, OperationType.INSIDE_CONTOUR)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
     def millPocket(self):
-        self.millSelectedShapes(lambda shape: shape.closed, OperationType.POCKET)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
     def millEngrave(self):
-        self.millSelectedShapes(lambda shape: True, OperationType.ENGRAVE)
+        self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
+    def millInterpolatedHole(self):
+        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircle), OperationType.INTERPOLATED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def importDrawing(self, fn):
