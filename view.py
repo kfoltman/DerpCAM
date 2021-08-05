@@ -280,17 +280,21 @@ class PathViewer(QWidget):
 
    def wheelEvent(self, e):
       delta = e.angleDelta().y()
+      if hasattr(e, 'position'):
+         pos = e.position()
+      else:
+         pos = e.posF()
       if delta != 0:
          self.startDeferredRepaint()
       if delta > 0:
-         self.adjustScale(e.position(), 1)
+         self.adjustScale(pos, 1)
       if delta < 0:
-         self.adjustScale(e.position(), -1)
+         self.adjustScale(pos, -1)
       if delta != 0:
          # do it again to account for repainting time
          self.startDeferredRepaint()
       if self.click_data:
-         self.click_data = (self.zero, e.position())
+         self.click_data = (self.zero, pos)
 
    def startDeferredRepaint(self):
       self.draft_time = time.time() + 0.5
