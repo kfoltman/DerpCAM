@@ -1,24 +1,26 @@
 from pyclipper import *
 from math import *
 
-RESOLUTION = 25.0
-fillMode = PFT_POSITIVE
+class GeometrySettings:
+   RESOLUTION = 25.0
+   fillMode = PFT_POSITIVE
+   simplify_arcs = False
 
 def PtsToInts(points):
-   return [(round(x * RESOLUTION), round(y * RESOLUTION)) for x, y in points]
+   return [(round(x * GeometrySettings.RESOLUTION), round(y * GeometrySettings.RESOLUTION)) for x, y in points]
 
 def PtsFromInts(points):
-   return [(x / RESOLUTION, y / RESOLUTION) for x, y in points]
+   return [(x / GeometrySettings.RESOLUTION, y / GeometrySettings.RESOLUTION) for x, y in points]
    
 def PtsToIntsPos(points):
-   res = [(round(x * RESOLUTION), round(y * RESOLUTION)) for x, y in points]
+   res = [(round(x * GeometrySettings.RESOLUTION), round(y * GeometrySettings.RESOLUTION)) for x, y in points]
    if Orientation(res) == False:
       res = list(reversed(res))
    return res
 
 def circle(x, y, r, n=None, sa=0, ea=2*pi):
    if n is None:
-      n = pi * r * RESOLUTION
+      n = pi * r * GeometrySettings.RESOLUTION
    n *= abs((ea - sa) / (2 * pi))
    n = ceil(n)
    res = []
@@ -163,7 +165,7 @@ def calc_subpath(path, start, end, closed=False):
    for p in path[1:]:
       if len(p) == 7: # Arc
          tag, p1, p2, c, points, sstart, sspan = p
-         assert dist(last, p1) < 1 / RESOLUTION
+         assert dist(last, p1) < 1 / GeometrySettings.RESOLUTION
          d = arc_length(p)
          if d == 0:
             continue
@@ -287,7 +289,7 @@ class CandidateCircle(object):
 # Should this be a mostly fake class with only static methods? No idea.
 # There's very little state to keep, just the points array I suppose.
 class CircleFitter(object):
-   error_threshold = 2.5 / RESOLUTION
+   error_threshold = 2.5 / GeometrySettings.RESOLUTION
    # Maximum distance between subsequent points to still describe a segment
    # and not just a straight line
    line_segment_threshold = 3.0
@@ -438,7 +440,7 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
       pc.AddPath(path.int_points, PT_SUBJECT, True)
    for path in clipper_polys:
       pc.AddPath(path.int_points, PT_CLIP, True)
-   res = pc.Execute(operation, fillMode, fillMode)
+   res = pc.Execute(operation, GeometrySettings.fillMode, GeometrySettings.fillMode)
    if bool_only:
       return True if res else False
    if not res:
@@ -456,7 +458,7 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
       pc.AddPath(path.int_points, PT_SUBJECT, False)
    for path in clipper_polys:
       pc.AddPath(path.int_points, PT_CLIP, True)
-   tree = pc.Execute2(operation, fillMode, fillMode)
+   tree = pc.Execute2(operation, GeometrySettings.fillMode, GeometrySettings.fillMode)
    return tree
 
 def translate_point(point, dx, dy):

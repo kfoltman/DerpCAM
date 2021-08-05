@@ -11,9 +11,27 @@ import json
 
 default_props = OperationProps(depth=-12)
 
-if len(sys.argv) < 2:
-    print ("Usage: python3 examples/dxf.py <input.dxf> [<output.ngc>]")
-    sys.exit(0)
+class ConfigSettings(object):
+    def __init__(self):
+        self.resolution = GeometrySettings.RESOLUTION
+        self.simplify_arcs = GeometrySettings.simplify_arcs
+        self.load()
+    def load(self):
+        settings = QSettings("kfoltman", "DerpCAM")
+        settings.sync()
+        self.resolution = int(settings.value("geometry/resolution", self.resolution))
+        self.simplify_arcs = settings.value("geometry/simplify_arcs", self.simplify_arcs) == 'true'
+    def save(self):
+        settings = QSettings("kfoltman", "DerpCAM")
+        settings.setValue("geometry/resolution", self.resolution)
+        settings.setValue("geometry/simplify_arcs", self.simplify_arcs)
+        settings.sync()
+    def update(self):
+        GeometrySettings.resolution = self.resolution
+        GeometrySettings.simplify_arcs = self.simplify_arcs
+
+configSettings = ConfigSettings()
+configSettings.update()
 
 class DrawingItem(object):
     defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
@@ -812,6 +830,28 @@ class CAMPropertiesDockWidget(QDockWidget):
             properties = [p for p in properties if p in all_have]
         self.propsheet.setObjects(selection, properties)
 
+class PreferencesDialog(QDialog):
+    def __init__(self, parent, config):
+        QDialog.__init__(self, parent)
+        self.config = config
+    def initUI(self):
+        self.form = QFormLayout(self)
+        self.resolutionSpin = QSpinBox()
+        self.resolutionSpin.setRange(10, 100)
+        self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs (experimental)")
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.form.addRow("&Resolution (pixels per mm):", self.resolutionSpin)
+        self.form.addRow(self.simplifyArcsCheck)
+        self.form.addRow(self.buttonBox)
+        self.resolutionSpin.setValue(self.config.resolution)
+        self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
+    def accepted(self):
+        self.config.resolution = self.resolutionSpin.value()
+        self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
+        QDialog.accepted()
+
 class CAMMainWindow(QMainWindow):
     def __init__(self, document):
         QMainWindow.__init__(self)
@@ -856,6 +896,8 @@ class CAMMainWindow(QMainWindow):
         ])
         self.fileMenu = self.addMenu("&Edit", [
             ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
+            None,
+            ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.millMenu = self.addMenu("&Mill", [
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
@@ -900,7 +942,7 @@ class CAMMainWindow(QMainWindow):
         self.document.updateCAM()
         self.viewer.majorUpdate()
     def operChanged(self):
-            self.viewer.majorUpdate()
+        self.viewer.majorUpdate()
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
@@ -915,6 +957,13 @@ class CAMMainWindow(QMainWindow):
                 index = self.document.operModel.indexFromItem(item)
                 self.document.operModel.removeRow(index.row())
             self.viewer.majorUpdate()
+    def editPreferences(self):
+        dlg = PreferencesDialog(self, configSettings)
+        self.prefDlg = dlg
+        dlg.initUI()
+        if dlg.exec():
+            configSettings.update()
+            configSettings.save()
     def millSelectedShapes(self, checkFunc, operType):
         selection = self.viewer.selection
         newSelection = QItemSelection()
@@ -1013,6 +1062,9 @@ class CAMMainWindow(QMainWindow):
         operations.to_gcode_file(fn)
     def fileExit(self):
         self.close()
+
+QCoreApplication.setOrganizationName("kfoltman")
+QCoreApplication.setApplicationName("DerpCAM")
 
 app = QApplication(sys.argv)
 app.setApplicationDisplayName("My CAM experiment")

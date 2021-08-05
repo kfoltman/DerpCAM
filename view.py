@@ -114,7 +114,7 @@ class OperationsRenderer(object):
             self.addToolpaths(owner, pen, tp, stage)
          return
       path = path.transformed()
-      if simplify_arcs:
+      if GeometrySettings.simplify_arcs:
          path = path.lines_to_arcs()
          if stage == 1:
             pen = self.toolPen(path, isHighlighted = self.isHighlighted(operation))

@@ -163,7 +163,7 @@ class Shape(object):
       return Toolpaths(tps)
    @staticmethod
    def _offset(points, closed, dist):
-      if abs(dist) > 10 * RESOLUTION:
+      if abs(dist) > 10 * GeometrySettings.RESOLUTION:
          res = Shape._offset(points, closed, int(dist / 2))
          if not res:
             return
@@ -177,7 +177,7 @@ class Shape(object):
       pc.AddPath(points, JT_ROUND, ET_CLOSEDPOLYGON if closed else ET_OPENROUND)
       return pc.Execute(dist)
    def contour(self, tool, outside=True, displace=0, subtract=None):
-      dist = (0.5 * tool.diameter + displace) * RESOLUTION
+      dist = (0.5 * tool.diameter + displace) * GeometrySettings.RESOLUTION
       boundary = PtsToInts(self.boundary)
       res = Shape._offset(boundary, self.closed, dist if outside else -dist)
       if not res:
@@ -211,7 +211,7 @@ class Shape(object):
          if not Orientation(pts):
             pts = list(reversed(pts))
          pc.AddPath(pts, JT_ROUND, ET_CLOSEDPOLYGON)
-         res = pc.Execute((tool.diameter * 0.5 + displace) * RESOLUTION)
+         res = pc.Execute((tool.diameter * 0.5 + displace) * GeometrySettings.RESOLUTION)
          if not res:
             return None
          res = [IntPath(it, True) for it in res]
@@ -239,7 +239,7 @@ class Shape(object):
       findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
       return Toolpaths(tps)
    def face_mill(self, tool, angle, margin, zigzag):
-      offset_dist = (0.5 * tool.diameter - margin) * RESOLUTION
+      offset_dist = (0.5 * tool.diameter - margin) * GeometrySettings.RESOLUTION
       boundary = PtsToInts(self.boundary)
       res = Shape._offset(boundary, self.closed, -offset_dist)
       if not res:
@@ -247,15 +247,15 @@ class Shape(object):
       boundary_paths = [IntPath(bp, True) for bp in res]
 
       coords = sum(res, [])
-      xcoords = [p[0] / RESOLUTION for p in coords]
-      ycoords = [p[1] / RESOLUTION for p in coords]
+      xcoords = [p[0] / GeometrySettings.RESOLUTION for p in coords]
+      ycoords = [p[1] / GeometrySettings.RESOLUTION for p in coords]
       sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
 
       stepover = tool.diameter * tool.stepover
       tps = []
       maxlen = dist((sx, sy), (ex, ey))
       #p = (ex + tool.diameter / 2 * cos(angle + pi / 2), sy + tool.diameter / 2 * sin(angle + pi / 2))
-      p = (ex, sy + 1 / RESOLUTION)
+      p = (ex, sy + 1 / GeometrySettings.RESOLUTION)
       fsteps = maxlen / stepover
       nsteps = int(ceil(fsteps))
       for i in range(nsteps):
@@ -321,7 +321,7 @@ class Shape(object):
       pc = Pyclipper()
       for path in paths:
          pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-      res = pc.Execute(CT_UNION, fillMode, fillMode)
+      res = pc.Execute(CT_UNION, GeometrySettings.fillMode, GeometrySettings.fillMode)
       if not res:
          return []
       if len(res) == 1:
@@ -345,7 +345,7 @@ def interpolate_path(path):
    res = [lastpt]
    for pt in path:
       d = maxaxisdist(lastpt, pt)
-      subdiv = ceil(d * RESOLUTION + 1)
+      subdiv = ceil(d * GeometrySettings.RESOLUTION + 1)
       for i in range(subdiv):
          if i > 0 and lastpt == pt:
             continue

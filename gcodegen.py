@@ -1,7 +1,6 @@
 from process import *
 
 # VERY experimental feature
-simplify_arcs = False
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
@@ -28,7 +27,7 @@ class Gcode(object):
    def add(self, line):
       self.gcode.append(line)
    def reset(self):
-      accuracy = 0.5 / RESOLUTION
+      accuracy = 0.5 / GeometrySettings.RESOLUTION
       self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
    def finish(self):
       self.add("M2")
@@ -104,14 +103,14 @@ class Gcode(object):
          self.rapid(z=new_z)
 
    def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
-      assert dist(lastpt, subpath[0]) < 1 / RESOLUTION
+      assert dist(lastpt, subpath[0]) < 1 / GeometrySettings.RESOLUTION
       tdist = 0
       for pt in subpath[1:]:
          if len(pt) > 2:
             # Arc
             tag, spt, ept, c, steps, sangle, sspan = pt
             cdist = (c.cx - spt[0], c.cy - spt[1])
-            assert dist(lastpt, spt) < 1 / RESOLUTION
+            assert dist(lastpt, spt) < 1 / GeometrySettings.RESOLUTION
             tdist += arc_length(pt)
             if new_z is not None:
                self.arc(1 if sspan > 0 else -1, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1], z=old_z + (new_z - old_z) * tdist / tlength)
@@ -179,7 +178,7 @@ class Gcode(object):
          if i == floor(npasses):
             # Last pass, do a shorter one
             newlength = (npasses - floor(npasses)) * tlengths[-1]
-            if newlength < 1 / RESOLUTION:
+            if newlength < 1 / GeometrySettings.RESOLUTION:
                # Very small delta, just plunge down
                self.linear(z=new_z)
                break
@@ -187,7 +186,7 @@ class Gcode(object):
                self.add("(Last pass, shortening to %d)" % newlength)
             subpath = calc_subpath(subpath, 0, newlength)
             real_length = path_length(subpath)
-            assert abs(newlength - real_length) < 1 / RESOLUTION
+            assert abs(newlength - real_length) < 1 / GeometrySettings.RESOLUTION
             subpath_reverse = reverse_path(subpath)
             tlengths = path_lengths(subpath)
          pass_z = max(new_z, old_z - i * per_level)
@@ -232,11 +231,11 @@ class CutPath2D(object):
       if tabs and tabs.tabs:
          self.subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
          self.subpaths_tabbed = [subpath.transformed() for subpath in self.subpaths_tabbed]
-         if simplify_arcs:
+         if GeometrySettings.simplify_arcs:
             self.subpaths_tabbed = simplifySubpaths(self.subpaths_tabbed)
             self.subpaths_full = simplifySubpaths(self.subpaths_full)
       else:
-         if simplify_arcs:
+         if GeometrySettings.simplify_arcs:
             self.subpaths_full = simplifySubpaths(self.subpaths_full)
          self.subpaths_tabbed = self.subpaths_full
 
@@ -482,7 +481,7 @@ def oldPathToGcode(gcode, path, machine_params, start_depth, end_depth, doc, tab
       subpaths_full = [p.transformed()]
       subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else subpaths_full
       subpaths_tabbed = [subpath.transformed() for subpath in subpaths_tabbed]
-      if simplify_arcs:
+      if GeometrySettings.simplify_arcs:
          subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
          subpaths_full = simplifySubpaths(subpaths_full)
       paths_out.append((subpaths_tabbed, subpaths_full))
@@ -491,7 +490,7 @@ def oldPathToGcode(gcode, path, machine_params, start_depth, end_depth, doc, tab
          subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
          # Not a continuous path, need to jump to a new place
          firstpt = subpaths[0].points[0]
-         if lastpt is None or dist(lastpt, firstpt) > 1 / RESOLUTION:
+         if lastpt is None or dist(lastpt, firstpt) > 1 / GeometrySettings.RESOLUTION:
             gcode.rapid(z=machine_params.safe_z)
             curz = machine_params.safe_z
             # Note: it's not ideal because of the helical entry, but it's
