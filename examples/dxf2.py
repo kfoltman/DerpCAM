@@ -851,10 +851,10 @@ class PreferencesDialog(QDialog):
         self.form.addRow(self.buttonBox)
         self.resolutionSpin.setValue(self.config.resolution)
         self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
-    def accepted(self):
+    def accept(self):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
-        QDialog.accepted()
+        QDialog.accept(self)
 
 class CAMMainWindow(QMainWindow):
     def __init__(self, document):
@@ -968,6 +968,8 @@ class CAMMainWindow(QMainWindow):
         dlg.initUI()
         if dlg.exec():
             configSettings.update()
+            self.document.updateCAM()
+            self.viewer.majorUpdate()
             configSettings.save()
     def millSelectedShapes(self, checkFunc, operType):
         selection = self.viewer.selection
