@@ -74,8 +74,10 @@ class DrawingCircle(DrawingItem):
         return abs(dist(self.centre, pt) - self.r)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path), circle(self.centre[0], self.centre[1], self.r), True)
+    def label(self):
+        return "Circle%d" % self.shape_id
     def textDescription(self):
-        return "CIRCLE(X=%0.2f, Y=%0.2f, D=%0.2f)" % (*self.centre, 2 * self.r)
+        return self.label() + ("(X=%0.2f, Y=%0.2f, D=%0.2f)" % (*self.centre, 2 * self.r))
     def toShape(self):
         return Shape.circle(*self.centre, self.r)
     def translated(self, dx, dy):
@@ -128,15 +130,22 @@ class DrawingPolyline(DrawingItem):
         return DrawingPolyline([scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+    def label(self):
+        if len(self.points) == 2:
+            if len(self.points[1]) == 2:
+                return "Line%d" % self.shape_id
+            else:
+                return "Arc%d" % self.shape_id
+        return "Polyline%d" % self.shape_id
     def textDescription(self):
         if len(self.points) == 2:
             if len(self.points[1]) == 2:
-                return "LINE(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1])
+                return self.label() + ("(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1]))
             elif len(self.points[1]) == 7:
                 arc = self.points[1]
                 c = arc[3]
-                return "ARC(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)
-        return "POLYGON(%0.2f, %0.2f)-(%0.2f, %0.2f)" % self.bounds
+                return self.label() + "(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)
+        return self.label() + "(%0.2f, %0.2f)-(%0.2f, %0.2f)" % self.bounds
     def toShape(self):
         return Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
 
@@ -550,7 +559,7 @@ class OperationType(EnumClass):
         (INSIDE_CONTOUR, "Inside contour"),
         (POCKET, "Pocket"),
         (ENGRAVE, "Engrave"),
-        (INTERPOLATED_HOLE, "Helix-interpolated hole"),
+        (INTERPOLATED_HOLE, "H-Hole"),
     ]
 
 class OperationTreeItem(CAMTreeItem):
@@ -563,6 +572,7 @@ class OperationTreeItem(CAMTreeItem):
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
         self.shape_id = None
+        self.orig_shape = None
         self.shape = None
         self.depth = None
         self.start_depth = 0
@@ -594,7 +604,7 @@ class OperationTreeItem(CAMTreeItem):
         self.emitDataChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant(OperationType.toString(self.operation) + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
+            return QVariant(OperationType.toString(self.operation) +": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
         return CAMTreeItem.data(self, role)
     def updateCAM(self):
         self.orig_shape = self.document.drawing.shapeById(self.shape_id) if self.shape_id is not None else None
