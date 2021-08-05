@@ -154,7 +154,7 @@ class Shape(object):
       return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
    def default_tab_count(self, min_tabs, max_tabs, distance):
       plen = path_length(self.boundary + (self.boundary[0:1] if self.closed else []))
-      return max(min_tabs, min(max_tabs, plen // distance))
+      return int(max(min_tabs, min(max_tabs, plen // distance)))
    def engrave(self, tool):
       tps = [Toolpath(self.boundary, self.closed, tool)] + [
          Toolpath(island, True, tool) for island in self.islands ]
