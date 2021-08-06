@@ -480,3 +480,30 @@ def scale_gen_point(point, cx, cy, scale):
       assert len(point) == 7
       tag, p1, p2, c, points, sstart, sspan = point
       return (tag, scale_point(p1, cx, cy, scale), scale_point(p2, dx, dy), c.scaled(cx, cy, r), points, sstart, sspan)
+
+def dxf_polyline_to_points(entity):
+    points = []
+    lastx, lasty = entity[-1][0:2]
+    lastbulge = entity[-1][4]
+    for point in entity:
+        x, y = point[0:2]
+        if lastbulge:
+            theta = 4 * atan(lastbulge)
+            dx, dy = x - lastx, y - lasty
+            mx, my = weighted((lastx, lasty), (x, y), 0.5)
+            angle = atan2(dy, dx)
+            dist = sqrt(dx * dx + dy * dy)
+            d = dist / 2
+            r = abs(d / sin(theta / 2))
+            c = d / tan(theta / 2)
+            cx = mx - c * sin(angle)
+            cy = my + c * cos(angle)
+            sa = atan2(lasty - cy, lastx - cx)
+            ea = sa + theta
+            points += circle(cx, cy, r, 1000, sa, ea)
+            points.append((x, y))
+        else:
+            points.append((x, y))
+        lastbulge = point[4]
+        lastx, lasty = x, y
+    return points, entity.closed

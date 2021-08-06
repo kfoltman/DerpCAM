@@ -34,6 +34,14 @@ class EditableProperty(object):
     def setEditorData(self, editor, value):
         pass
 
+class EnumClass(object):
+    @classmethod
+    def toString(classInst, value):
+        for data in classInst.descriptions:
+            if value == data[0]:
+                return data[1]
+        return None
+
 class EnumEditableProperty(EditableProperty):
     def __init__(self, name, attribute, enum_class, allow_none = False, none_value = "none"):
         EditableProperty.__init__(self, name, attribute, "%s")
