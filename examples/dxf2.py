@@ -9,8 +9,6 @@ from propsheet import *
 import ezdxf
 import json
 
-default_props = OperationProps(depth=-12)
-
 class ConfigSettings(object):
     def __init__(self):
         self.resolution = GeometrySettings.RESOLUTION
@@ -231,7 +229,6 @@ class SourceDrawing(object):
 class DocumentRenderer(object):
     def __init__(self, document):
         self.document = document
-        # Operations(machine_params=machine_params, tool=document.gcode_tool, props=default_props)        
     def bounds(self):
         return self.document.drawing.drawing.bounds()
     def renderDrawing(self, owner):
@@ -953,10 +950,6 @@ class CAMMainWindow(QMainWindow):
         elif type(item) == DrawingTreeItem:
             self.drawingChanged()
     def materialChanged(self):
-        if self.document.material.thickness is not None:
-            default_props.depth = -self.document.material.thickness
-        else:
-            default_props.depth = 0
         self.document.tool.model().itemChanged.emit(self.document.tool)
     def toolChanged(self):
         self.propsDW.updateProperties()
