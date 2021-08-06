@@ -36,13 +36,13 @@ def sort_polygons(polygons):
    return output
 
 def text_to_shapes(x, y, width, height, text, font_family, size, weight, italic):
-   font = QFont(font_family, size * RESOLUTION, weight, italic)
+   font = QFont(font_family, size * GeometrySettings.RESOLUTION, weight, italic)
    metrics = QFontMetrics(font)
-   twidth = metrics.horizontalAdvance(text) / RESOLUTION
-   theight = metrics.height() / RESOLUTION
+   twidth = metrics.horizontalAdvance(text) / GeometrySettings.RESOLUTION
+   theight = metrics.height() / GeometrySettings.RESOLUTION
    
    x += width / 2 - twidth / 2
-   y += height / 2 - metrics.capHeight() / 2 / RESOLUTION
+   y += height / 2 - metrics.capHeight() / 2 / GeometrySettings.RESOLUTION
    
    ppath = QPainterPath()
    ppath.addText(0, 0, font, text)
@@ -51,10 +51,10 @@ def text_to_shapes(x, y, width, height, text, font_family, size, weight, italic)
    shapes = []
    for outline, islands in sort_polygons(polygons):
       # print (outline, islands)
-      pts = [(x + q.x() / RESOLUTION, y - q.y() / RESOLUTION) for q in outline]
+      pts = [(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in outline]
       islands_out = []
       for i in islands:
-         islands_out.append([(x + q.x() / RESOLUTION, y - q.y() / RESOLUTION) for q in i])
+         islands_out.append([(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in i])
       if pts[0] == pts[-1]:
          shapes.append(Shape(pts[:-1], True, islands_out))
       else:
