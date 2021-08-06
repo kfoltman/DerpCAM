@@ -8,6 +8,7 @@ from view import *
 from propsheet import *
 import ezdxf
 import json
+import os.path
 
 class ConfigSettings(object):
     def __init__(self):
@@ -1072,8 +1073,12 @@ class CAMMainWindow(QMainWindow):
             return
         self.document.updateCAM()
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
-        path = self.windowFilePath()
-        path = path.replace(".dxf", ".ngc") # XXXKF too crude
+        if self.document.drawingFilename:
+            path = os.path.splitext(self.document.drawingFilename)[0] + ".ngc"
+        elif self.document.filename:
+            path = os.path.splitext(self.document.filename)[0] + ".ngc"
+        else:
+            path = ''
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
         dlg.setDefaultSuffix(".ngc")
