@@ -294,10 +294,10 @@ class DrawingTreeItem(CAMTreeItem):
                     found.append(item)
         return found
     def objectsWithin(self, xs, ys, xe, ye):
-        xs += self.origin[0]
-        ys += self.origin[1]
-        xe += self.origin[0]
-        ye += self.origin[1]
+        xs += self.x_offset
+        ys += self.y_offset
+        xe += self.x_offset
+        ye += self.y_offset
         bounds = (xs, ys, xe, ye)
         found = []
         for item in self.items():

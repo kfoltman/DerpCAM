@@ -93,7 +93,7 @@ class DrawingViewer(PathViewer):
     def mouseMoveEvent(self, e):
         if not self.dragging and self.start_point:
             dist = e.localPos() - self.start_point
-            if dist.manhattanLength() > 5:
+            if dist.manhattanLength() > QApplication.startDragDistance():
                 self.dragging = True
         if self.dragging:
             self.rubberband_rect = QRectF(self.start_point, e.localPos())
