@@ -402,6 +402,7 @@ class CAMMainWindow(QMainWindow):
         rowCount = self.document.operModel.rowCount()
         translation = self.document.drawing.translation()
         newItems = 0
+        anyLeft = False
         for i in selection:
             shape = i.translated(*translation).toShape()
             if checkFunc(i, shape):
@@ -411,13 +412,17 @@ class CAMMainWindow(QMainWindow):
                 newSelection.select(index, index)
                 rowCount += 1
                 newItems += 1
+                self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
+            else:
+                anyLeft = True
         if newItems == 0:
             QMessageBox.warning(self, None, "No objects created")
             return
-        self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
-        self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
-        if rowCount:
-            self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
+        if not anyLeft:
+            self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
+            self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
+            if rowCount:
+                self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
         self.updateOperations()
         self.propsDW.updateProperties()
     def millOutsideContour(self):
