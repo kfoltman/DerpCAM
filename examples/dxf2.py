@@ -196,6 +196,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 item_selection.select(item_idx, item_idx)
         self.shapeTree.setExpanded(self.document.shapeModel.indexFromItem(self.document.drawing), True)
         self.shapeTree.selectionModel().select(item_selection, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
+        if item_selection.indexes():
+            self.shapeTree.scrollTo(item_selection.indexes()[0])
     def tabSelectionChanged(self):
         self.selectionChanged.emit()
     def shapeSelectionChanged(self):
@@ -414,6 +416,8 @@ class CAMMainWindow(QMainWindow):
             return
         self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
         self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
+        if rowCount:
+            self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
         self.updateOperations()
         self.propsDW.updateProperties()
     def millOutsideContour(self):
