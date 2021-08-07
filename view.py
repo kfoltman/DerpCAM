@@ -180,7 +180,7 @@ class PathViewer(QWidget):
    def isDraft(self):
       return self.click_data or self.draft_time
 
-   def paintAxis(self, e, qp):
+   def paintGrid(self, e, qp):
       size = self.size()
       zeropt = self.project(QPointF())
       qp.setPen(QPen(QColor(128, 128, 128)))
@@ -224,7 +224,7 @@ class PathViewer(QWidget):
       qp.setRenderHint(1, True)
       qp.setRenderHint(8, True)
 
-      self.paintAxis(e, qp)
+      self.paintGrid(e, qp)
       self.paintDrawingOps(e, qp)
       self.paintOverlays(e, qp)
       qp.end()

@@ -15,16 +15,19 @@ class ConfigSettings(object):
     def __init__(self):
         self.resolution = GeometrySettings.RESOLUTION
         self.simplify_arcs = GeometrySettings.simplify_arcs
+        self.grid_resolution = 50
         self.load()
     def load(self):
         settings = QSettings("kfoltman", "DerpCAM")
         settings.sync()
         self.resolution = int(settings.value("geometry/resolution", self.resolution))
         self.simplify_arcs = settings.value("geometry/simplify_arcs", self.simplify_arcs) == 'true'
+        self.grid_resolution = int(settings.value("display/grid_resolution", self.grid_resolution))
     def save(self):
         settings = QSettings("kfoltman", "DerpCAM")
         settings.setValue("geometry/resolution", self.resolution)
         settings.setValue("geometry/simplify_arcs", self.simplify_arcs)
+        settings.setValue("geometry/grid_resolution", self.grid_resolution)
         settings.sync()
     def update(self):
         GeometrySettings.resolution = self.resolution
@@ -60,6 +63,29 @@ class DrawingViewer(PathViewer):
         PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
+    def paintGrid(self, e, qp):
+        size = self.size()
+
+        gridPen = QPen(QColor(224, 224, 224))
+        qp.setPen(gridPen)
+        grid = configSettings.grid_resolution
+        if grid > 0 and grid < 1000:
+            gridm = grid * self.scalingFactor()
+            gridres = 2 + int(size.height() / gridm)
+            gridfirst = int(self.unproject(QPointF(0, size.height())).y() / grid)
+            for i in range(gridres):
+                pt = self.project(QPointF(0, (i + gridfirst) * grid))
+                qp.drawLine(QLineF(0.0, pt.y(), size.width(), pt.y()))
+            gridfirst = int(self.unproject(QPointF(0, 0)).x() / grid)
+            gridres = 2 + int(size.width() / gridm)
+            for i in range(gridres):
+                pt = self.project(QPointF((i + gridfirst) * grid, 0))
+                qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
+
+        zeropt = self.project(QPointF())
+        qp.setPen(QPen(QColor(192, 192, 192)))
+        qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
+        qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintOverlays(self, e, qp):
         if self.rubberband_rect:
             qp.setOpacity(0.33)
@@ -230,17 +256,22 @@ class PreferencesDialog(QDialog):
         self.resolutionSpin = QSpinBox()
         self.resolutionSpin.setRange(10, 100)
         self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs (experimental)")
+        self.gridSpin = QSpinBox()
+        self.gridSpin.setRange(0, 1000)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         self.form.addRow("&Resolution (pixels per mm):", self.resolutionSpin)
         self.form.addRow(self.simplifyArcsCheck)
+        self.form.addRow("&Display grid (mm):", self.gridSpin)
         self.form.addRow(self.buttonBox)
         self.resolutionSpin.setValue(self.config.resolution)
         self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
+        self.gridSpin.setValue(self.config.grid_resolution)
     def accept(self):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
+        self.config.grid_resolution = self.gridSpin.value()
         QDialog.accept(self)
 
 class CAMMainWindow(QMainWindow):
