@@ -218,7 +218,7 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
         #self.props_widget.itemFromIndex(index).prop.setData(value)
 
 class PropertySheetWidget(QTableWidget):
-    propertyChanged = pyqtSignal([list])
+    propertyChanged = pyqtSignal([str, list])
     def __init__(self, properties):
         QTableWidget.__init__(self, 0, 1)
         self.updating = False
@@ -230,6 +230,7 @@ class PropertySheetWidget(QTableWidget):
         self.horizontalHeader().setStretchLastSection(True)
         #self.horizontalHeader().setClickable(False)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
         self.setCurrentCell(0, 0)
         self.cellChanged.connect(self.onCellChanged)
     def setProperties(self, properties):
@@ -243,24 +244,26 @@ class PropertySheetWidget(QTableWidget):
             self.setVerticalHeaderLabels([p.name for p in self.properties])
         else:
             self.setVerticalHeaderLabels([])
+    def setCellValue(self, row, newValueText):
+        prop = self.properties[row]
+        changed = []
+        try:
+            value = prop.validate(newValueText)
+            for o in self.objects:
+                if value != prop.getData(o):
+                    prop.setData(o, value)
+                    changed.append(o)
+        except Exception as e:
+            print (e)
+        finally:
+            #self.refreshRow(row)
+            self.refreshAll()
+        self.propertyChanged.emit(prop.attribute, changed)
     def onCellChanged(self, row, column):
         if self.objects and not self.updating:
             item = self.item(row, column)
             newValueText = item.data(Qt.EditRole)
-            prop = self.properties[row]
-            changed = []
-            try:
-                value = prop.validate(newValueText)
-                for o in self.objects:
-                    if value != prop.getData(o):
-                        prop.setData(o, value)
-                        changed.append(o)
-            except Exception as e:
-                print (e)
-            finally:
-                #self.refreshRow(row)
-                self.refreshAll()
-            self.propertyChanged.emit(changed)
+            self.setCellValue(row, newValueText)
     def refreshRow(self, row):
         if self.objects is None:
             self.setItem(row, 0, None)

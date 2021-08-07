@@ -270,8 +270,10 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
         self.propsDW = CAMPropertiesDockWidget()
+        self.propsDW.propsheet.propertyChanged.connect(self.propertyChanged)
         self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
         self.document.operModel.dataChanged.connect(self.operChanged)
+        self.document.operModel.rowsRemoved.connect(self.operRemoved)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
@@ -305,6 +307,14 @@ class CAMMainWindow(QMainWindow):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
         self.updateSelection()
+    def propertyChanged(self, property, objects):
+        shapesChanged = False
+        for item in objects:
+            if isinstance(item, DrawingItemTreeItem):
+                shapesChanged = True
+        if shapesChanged:
+            self.document.updateCAM()
+            self.viewer.majorUpdate()
     def viewerSelectionChanged(self):
         self.projectDW.updateShapeSelection(self.viewer.selection)
     def shapeTreeSelectionChanged(self):
@@ -330,6 +340,8 @@ class CAMMainWindow(QMainWindow):
         self.viewer.majorUpdate()
     def operChanged(self):
         self.viewer.majorUpdate()
+    def operRemoved(self):
+        self.viewer.majorUpdate()
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
@@ -341,9 +353,7 @@ class CAMMainWindow(QMainWindow):
         selType, items = self.projectDW.activeSelection()
         if selType == 'o':
             for item in items:
-                index = self.document.operModel.indexFromItem(item)
-                self.document.operModel.removeRow(index.row())
-            self.viewer.majorUpdate()
+                self.document.operModel.removeItem(item)
     def editPreferences(self):
         dlg = PreferencesDialog(self, configSettings)
         self.prefDlg = dlg

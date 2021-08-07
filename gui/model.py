@@ -96,12 +96,41 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
+    prop_x = FloatEditableProperty("Centre X", "x", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_y = FloatEditableProperty("Centre Y", "y", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_dia = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f mm", min=0, max=100, allow_none=False)
     def __init__(self, document, centre, r, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.centre = (centre[0], centre[1])
         self.r = r
         self.calcBounds()
         self.untransformed = untransformed if untransformed is not None else self
+    def properties(self):
+        return [self.prop_x, self.prop_y, self.prop_dia, self.prop_radius]
+    def getPropertyValue(self, name):
+        if name == 'x':
+            return self.centre[0]
+        elif name == 'y':
+            return self.centre[1]
+        elif name == 'radius':
+            return self.r
+        elif name == 'diameter':
+            return 2 * self.r
+        else:
+            assert False, "Unknown property: " + name
+    def setPropertyValue(self, name, value):
+        if name == 'x':
+            self.centre = (value, self.centre[1])
+        elif name == 'y':
+            self.centre = (self.centre[0], value)
+        elif name == 'radius':
+            self.r = value
+        elif name == 'diameter':
+            self.r = value / 2.0
+        else:
+            assert False, "Unknown property: " + name
+        self.emitDataChanged()
     def calcBounds(self):
         self.bounds = (self.centre[0] - self.r, self.centre[1] - self.r,
             self.centre[0] + self.r, self.centre[1] + self.r)
@@ -285,7 +314,7 @@ class DrawingTreeItem(CAMTreeItem):
         
 class ToolTreeItem(CAMTreeItem):
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
-    prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=True)
+    prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_cel = FloatEditableProperty("Flute length", "cel", "%0.1f mm", min=0.1, max=100, allow_none=True)
     prop_doc = FloatEditableProperty("Cut depth per pass", "depth", "%0.2f mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f/min", min=0.1, max=60000, allow_none=True)
@@ -510,6 +539,11 @@ class OperationsModel(QStandardItemModel):
                 row += 1
             return True
         return False
+    def removeItem(self, item):
+        index = self.indexFromItem(item)
+        row = index.row()
+        self.removeRow(row)
+        self.rowsRemoved.emit(index.parent(), row, row)
     def mimeData(self, indexes):
         data = []
         for i in indexes:
