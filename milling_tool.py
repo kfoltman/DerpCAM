@@ -10,6 +10,8 @@ class Tool(object):
       self.maxdoc = maxdoc
       self.stepover = stepover
       self.stepover_fulldepth = stepover_fulldepth
+      # Reduction of feed rate for full engagement plunges
+      self.full_plunge_feed_ratio = 0.5
       # Minimum diameter of the helix during helical ramps. If 0, this will
       # essentially permit plunge cuts, and if it's too small, then chip
       # evacuation may be a problem. Picking half the diameter just because.

@@ -688,24 +688,42 @@ class HelicalDrill(Operation):
       self.y = y
       self.d = d
 
-   def to_gcode(self, gcode, machine_params):
-      if self.d < 2 * self.tool.diameter * self.tool.stepover:
-         self.to_gcode_ring(gcode, self.d, machine_params)
+   def diameters(self):
+      if self.d < self.min_dia:
+         return [self.d]
       else:
-         d = 2 * self.tool.diameter * self.tool.stepover
+         dias = []
+         d = self.min_dia
+         step = self.tool.diameter * self.tool.stepover
+         # XXXKF adjust stepover to make the last pass same as the previous ones
          while d < self.d:
-            self.to_gcode_ring(gcode, d, machine_params)
-            d += self.tool.diameter * self.tool.stepover
-         self.to_gcode_ring(gcode, self.d, machine_params)
+            dias.append(d)
+            d += step
+         # If the last diameter is very close to the final diameter, just replace it with
+         # final diameter instead of making the last pass nearly a spring pass. Now, a spring
+         # pass or a finishing pass would be a nice feature to have, but done in a predictable
+         # manner and not for some specific diameters and not others.
+         if len(dias) and dias[-1] > self.d - self.tool.diameter * self.tool.stepover / 10:
+            dias[-1] = self.d
+         else:
+            dias.append(self.d)
+         return dias
+
+   def to_gcode(self, gcode, machine_params):
+      rate_factor = self.tool.full_plunge_feed_ratio
+      for d in self.diameters():
+         self.to_gcode_ring(gcode, d, rate_factor, machine_params)
+         rate_factor = 1
       gcode.rapid(z=machine_params.safe_z)
          
-   def to_gcode_ring(self, gcode, d, machine_params):
+   def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
       r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
+      gcode.add("(Circle at (%0.2f, %0.2f) diameter %0.2f overall diameter %0.2f)" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
       gcode.rapid(z=machine_params.safe_z)
       gcode.rapid(x=self.x + r, y=self.y)
       curz = machine_params.semi_safe_z
       gcode.rapid(z=machine_params.semi_safe_z)
-      gcode.feed(self.tool.hfeed)
+      gcode.feed(self.tool.hfeed * rate_factor)
       dist = 2 * pi * r
       doc = min(self.tool.maxdoc, dist / self.tool.slope())
       while curz > self.props.depth:
@@ -718,12 +736,15 @@ class HelicalDrill(Operation):
 # by side milling
 class HelicalDrillFullDepth(HelicalDrill):
    def to_gcode(self, gcode, machine_params):
+      # Do the first pass at a slower rate because of full radial engagement downwards
+      rate_factor = self.tool.full_plunge_feed_ratio
       if self.d < self.min_dia:
-         self.to_gcode_ring(gcode, self.d, machine_params)
+         self.to_gcode_ring(gcode, self.d, rate_factor, machine_params)
       else:
          # Mill initial hole by helical descent into desired depth
          d = self.min_dia
-         self.to_gcode_ring(gcode, d, machine_params)
+         self.to_gcode_ring(gcode, d, rate_factor, machine_params)
+         gcode.feed(self.tool.hfeed)
          # Bore it out at full depth to the final diameter
          while d < self.d:
             r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
