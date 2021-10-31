@@ -718,7 +718,7 @@ class HelicalDrill(Operation):
          
    def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
       r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
-      gcode.add("(Circle at (%0.2f, %0.2f) diameter %0.2f overall diameter %0.2f)" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
+      gcode.add("(Circle at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f)" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
       gcode.rapid(z=machine_params.safe_z)
       gcode.rapid(x=self.x + r, y=self.y)
       curz = machine_params.semi_safe_z
