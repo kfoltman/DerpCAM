@@ -123,7 +123,11 @@ def mergeToolpaths(tps, new, dia):
       assert i.closed
       pt = i.points[0]
       found = False
+      new_toolpaths = []
       for l in last.toolpaths:
+         if found:
+            new_toolpaths.append(l)
+            continue
          mindist = None
          mdpos = None
          for j, pt2 in enumerate(l.points):
@@ -132,15 +136,15 @@ def mergeToolpaths(tps, new, dia):
                mindist = d
                mdpos = j
          if mindist <= dia:
-            #l.points = l.points[:mdpos + 1] + i.points + i.points[0:1] + l.points[mdpos:]
-            l.points = i.points + i.points[0:1] + l.points[mdpos:] + l.points[:mdpos + 1] + i.points[0:1]
+            l.points = l.points[mdpos:] + l.points[:mdpos + 1]
+            new_toolpaths.append(i)
+            new_toolpaths.append(l)
             found = True
-            break
+         else:
+            new_toolpaths.append(l)
       if not found:
-         new2.append(i)
-   if new2:
-      tps.append(Toolpaths(new2))
-
+         new_toolpaths.append(i)
+      last.toolpaths = new_toolpaths
 
 class Shape(object):
    def __init__(self, boundary, closed=True, islands=None):
@@ -203,6 +207,7 @@ class Shape(object):
       tps = []
       tps_islands = []
       boundary = IntPath(self.boundary)
+      boundary_transformed = [ IntPath(i, True) for i in Shape._offset(boundary.int_points, True, -tool.diameter * 0.5 * GeometrySettings.RESOLUTION) ]
       islands_transformed = []
       islands = self.islands
       for island in islands:
@@ -219,7 +224,7 @@ class Shape(object):
       if islands_transformed:
          islands_transformed = Shape._union(*[i for i in islands_transformed], return_ints=True)
       for path in islands_transformed:
-         for ints in Shape._intersection(path, boundary):
+         for ints in Shape._intersection(path, *boundary_transformed):
             # diff with other islands
             tps_islands += [Toolpath(ints, True, tool)]
       displace_now = displace
@@ -317,16 +322,37 @@ class Shape(object):
       #polygon = list(reversed(polygon))
       return Shape(polygon, True, None)
    @staticmethod
+   def _from_clipper_res(orig_orient_path, res):
+      orig_orientation = Orientation(PtsToInts(orig_orient_path.boundary))
+      if not res:
+         return []
+      if len(res) == 1:
+         return Shape(PtsFromInts(res[0]))
+      shapes = []
+      for i in res:
+         if Orientation(i) == orig_orientation:
+            shapes.append(Shape(PtsFromInts(i), True, []))
+         else:
+            # XXXKF find the enclosing shape
+            shapes[-1].islands.append(PtsFromInts(i))
+      if len(shapes) == 1:
+         return shapes[0]
+      else:
+         return shapes
+   @staticmethod
    def union(*paths):
       pc = Pyclipper()
       for path in paths:
          pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
       res = pc.Execute(CT_UNION, GeometrySettings.fillMode, GeometrySettings.fillMode)
-      if not res:
-         return []
-      if len(res) == 1:
-         return Shape(PtsFromInts(res[0]))
-      return [Shape(PtsFromInts(i)) for i in res]
+      return Shape._from_clipper_res(paths[0], res)
+   @staticmethod
+   def difference(*paths):
+      pc = Pyclipper()
+      for path in paths:
+         pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
+      res = pc.Execute(CT_DIFFERENCE, GeometrySettings.fillMode, GeometrySettings.fillMode)
+      return Shape._from_clipper_res(paths[0], res)
    # This works on lists of points
    @staticmethod
    def _difference(*paths, return_ints=False):
