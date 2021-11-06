@@ -508,11 +508,24 @@ class TabbedOperation(Operation):
       return 1
 
 class Contour(TabbedOperation):
-   def __init__(self, shape, outside, tool, props, tabs):
-      TabbedOperation.__init__(self, shape, tool, shape.contour(tool, outside=outside, displace=props.margin), props, tabs=tabs)
+   def __init__(self, shape, outside, tool, props, tabs, widen=False):
+      contours = shape.contour(tool, outside=outside, displace=props.margin)
+      if widen:
+         widen_func = lambda contour: self.widen(contour, tool)
+         contours = Toolpaths([Toolpath(contour.points, contour.closed, tool, transform=widen_func) for contour in contours.toolpaths])
+      TabbedOperation.__init__(self, shape, tool, contours, props, tabs=tabs)
       self.outside = outside
    def operation_name(self):
       return "Contour/Outside" if self.outside else "Contour/Inside"
+   def widen(self, contour, tool):
+      if not contour.closed:
+         return contour
+      points = contour.points
+      offset = Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2)
+      if len(offset) != 1:
+         raise ValueError("Offset outline for one shape consists of several distinct pieces")
+      points += reversed(PtsFromInts(offset[0] + [offset[0][0]]))
+      return Toolpath(points, contour.closed, tool)
 
 class TrochoidalContour(TabbedOperation):
    def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
@@ -706,8 +719,8 @@ class Operations(object):
       self.operations.append(operation)
    def add_all(self, operations):
       self.operations += operations
-   def outside_contour(self, shape, tabs, props=None):
-      self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs))
+   def outside_contour(self, shape, tabs, widen=False, props=None):
+      self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, widen=widen))
    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
       self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
    def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
