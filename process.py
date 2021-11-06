@@ -162,8 +162,6 @@ class Shape(object):
    def engrave(self, tool):
       tps = [Toolpath(self.boundary, self.closed, tool)] + [
          Toolpath(island, True, tool) for island in self.islands ]
-      if len(tps) == 1:
-         return tps[0]
       return Toolpaths(tps)
    @staticmethod
    def _offset(points, closed, dist):
@@ -198,8 +196,6 @@ class Shape(object):
          tps = [Toolpath(path.real_points(), self.closed, tool) for path in res2]
       else:
          tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
-      if len(tps) == 1:
-         return tps[0]
       return Toolpaths(tps)
    def pocket_contour(self, tool, displace=0):
       if not self.closed:
