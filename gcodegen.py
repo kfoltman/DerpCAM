@@ -224,19 +224,23 @@ class Cut(object):
 
 # A bit unfortunate name, might be changed in future
 class CutPath2D(object):
-   def __init__(self, p, tabs):
-      def simplifySubpaths(subpaths):
-         return [subpath.lines_to_arcs() for subpath in subpaths]
-      self.subpaths_full = [p.transformed()]
+   @staticmethod
+   def simplifySubpaths(subpaths):
+      return [subpath.lines_to_arcs() for subpath in subpaths]
+   def __init__(self, path):
+      self.subpaths_full = [path.transformed()]
+      if GeometrySettings.simplify_arcs:
+         self.subpaths_full = self.simplifySubpaths(self.subpaths_full)
+
+class TabbedCutPath2D(CutPath2D):
+   def __init__(self, path, tabs):
+      CutPath2D.__init__(self, path)
+      self.subpaths_full = [path.transformed()]
       if tabs and tabs.tabs:
-         self.subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
-         self.subpaths_tabbed = [subpath.transformed() for subpath in self.subpaths_tabbed]
+         self.subpaths_tabbed = path.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
          if GeometrySettings.simplify_arcs:
-            self.subpaths_tabbed = simplifySubpaths(self.subpaths_tabbed)
-            self.subpaths_full = simplifySubpaths(self.subpaths_full)
+            self.subpaths_tabbed = self.simplifySubpaths(self.subpaths_tabbed)
       else:
-         if GeometrySettings.simplify_arcs:
-            self.subpaths_full = simplifySubpaths(self.subpaths_full)
          self.subpaths_tabbed = self.subpaths_full
 
 class CutLayer2D(object):
@@ -253,7 +257,7 @@ class BaseCut2D(Cut):
       self.prepare_paths(toolpath)
 
    def prepare_paths(self, toolpath):
-      self.cutpaths = [CutPath2D(toolpath, None)]
+      self.cutpaths = [CutPath2D(toolpath)]
 
    def build(self, gcode):
       for cutpath in self.cutpaths:
@@ -399,7 +403,7 @@ class Cut2DWithTabs(BaseCut2D):
       BaseCut2D.__init__(self, machine_params, props, tool, toolpath)
 
    def prepare_paths(self, toolpath):
-      self.cutpaths = [CutPath2D(toolpath, self.tabs)]
+      self.cutpaths = [TabbedCutPath2D(toolpath, self.tabs)]
 
    def subpaths_for_layer(self, prev_depth, depth, cutpath):
       return cutpath.subpaths_tabbed if depth < self.tab_depth else cutpath.subpaths_full
@@ -443,7 +447,7 @@ class Cut2DWithDraft(BaseCut2D):
       max_height = self.props.start_depth - self.props.depth
       toolpaths = toolpaths_func(self.shape, self.tool, self.props.margin + max_height * self.draft)
       self.flattened = toolpaths.flattened() if isinstance(toolpaths, Toolpaths) else [toolpaths]
-      self.cutpaths = [CutPath2D(p, None) for p in self.flattened]
+      self.cutpaths = [CutPath2D(p) for p in self.flattened]
    def layers_at_depth(self, prev_depth, depth, cutpath):
       base_layers = [CutLayer2D(prev_depth, depth, self.subpaths_for_layer(prev_depth, depth, cutpath))]
       if depth > self.props.depth:
@@ -465,88 +469,6 @@ class Cut2DWithDraft(BaseCut2D):
       return base_layers + draft_layers
    def subpaths_for_layer(self, prev_depth, depth, cutpath):
       return cutpath.subpaths_full
-
-def oldPathToGcode(gcode, path, machine_params, start_depth, end_depth, doc, tabs, tab_depth):
-   def simplifySubpaths(subpaths):
-      return [subpath.lines_to_arcs() for subpath in subpaths]
-   z_margin = machine_params.semi_safe_z - start_depth
-   paths = path.flattened() if isinstance(path, Toolpaths) else [path]
-   prev_depth = machine_params.semi_safe_z
-   if tab_depth is not None and tab_depth < end_depth:
-      raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, end_depth))
-   depth = max(start_depth - doc, end_depth)
-   curz = machine_params.safe_z
-   lastpt = None
-   paths_out = []
-   for p in paths:
-      subpaths_full = [p.transformed()]
-      subpaths_tabbed = p.eliminate_tabs2(tabs) if tabs and tabs.tabs else subpaths_full
-      subpaths_tabbed = [subpath.transformed() for subpath in subpaths_tabbed]
-      if GeometrySettings.simplify_arcs:
-         subpaths_tabbed = simplifySubpaths(subpaths_tabbed)
-         subpaths_full = simplifySubpaths(subpaths_full)
-      paths_out.append((subpaths_tabbed, subpaths_full))
-   while True:
-      for subpaths_tabbed, subpaths_full in paths_out:
-         subpaths = subpaths_tabbed if depth < tab_depth else subpaths_full
-         # Not a continuous path, need to jump to a new place
-         firstpt = subpaths[0].points[0]
-         if lastpt is None or dist(lastpt, firstpt) > 1 / GeometrySettings.RESOLUTION:
-            gcode.rapid(z=machine_params.safe_z)
-            curz = machine_params.safe_z
-            # Note: it's not ideal because of the helical entry, but it's
-            # good enough.
-            gcode.rapid(x=firstpt[0], y=firstpt[1])
-            lastpt = firstpt
-         for subpath in subpaths:
-            is_tab = subpath.is_tab
-            newz = tab_depth + machine_params.over_tab_safety if is_tab else depth
-            if is_tab and debug_tabs:
-               gcode.add("(tab start)")
-            if newz != curz:
-               z_above_cut = prev_depth + z_margin
-               if newz < curz:
-                  if not is_tab and prev_depth < curz:
-                     # Go back faster (at horizontal feed rate) when there is
-                     # a helical entry hole already made during the previous
-                     # passes
-                     if subpath.helical_entry:
-                        gcode.move_z(prev_depth, curz, p.tool, machine_params.semi_safe_z, z_above_cut)
-                     else:
-                        gcode.move_z(prev_depth, curz, p.tool, machine_params.semi_safe_z)
-                     curz = prev_depth
-                  gcode.feed(p.tool.hfeed)
-                  if subpath.helical_entry:
-                     lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, p.tool, machine_params.semi_safe_z, z_above_cut)
-                     if subpath.helical_entry != subpath.points[0]:
-                        # The helical entry ends somewhere else in the pocket, so feed to the right spot
-                        lastpt = subpath.points[0]
-                        gcode.linear(x=lastpt[0], y=lastpt[1])
-                  else:
-                     lastpt = gcode.ramped_move_z(newz, curz, subpath.points, p.tool, machine_params.semi_safe_z, z_above_cut)
-               else:
-                  gcode.move_z(newz, curz, p.tool, machine_params.semi_safe_z)
-               curz = newz
-            # First point was either equal to the most recent one, or
-            # was reached using a rapid move, so omit it here.
-            if subpath.closed:
-               lastpt = gcode.apply_subpath(subpath.points + subpath.points[0:1], lastpt)
-            else:
-               lastpt = gcode.apply_subpath(subpath.points, lastpt)
-            if is_tab and debug_tabs:
-               gcode.add("(tab end)")
-      if depth == end_depth:
-         break
-      prev_depth = depth
-      # Make sure that the full tab depth is milled with non-interrupted
-      # paths before switching to the interrupted (tabbed) path. This is
-      # to prevent accidentally using a non-trochoidal path for the last pass
-      if depth > tab_depth:
-         depth = max(depth - doc, tab_depth)
-      else:
-         depth = max(depth - doc, end_depth)
-   gcode.rapid(z=machine_params.safe_z)
-   return gcode
 
 class Operation(object):
    def __init__(self, shape, tool, paths, props):
