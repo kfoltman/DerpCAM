@@ -52,18 +52,19 @@ class OperationsRenderer(object):
                      if stage == 2:
                         pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
                      self.addToolpaths(owner, pen, toolpath, stage, op)
-               for toolpath in op.tabbed:
-                  if stage == 1:
-                     # Draw a cut line of the diameter of the cut
-                     alpha = tab_alpha if toolpath.is_tab else 100
-                     pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
-                  else:
-                     if toolpath.is_tab:
-                        pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
+               if isinstance(op, TabbedOperation):
+                  for toolpath in op.tabbed:
+                     if stage == 1:
+                        # Draw a cut line of the diameter of the cut
+                        alpha = tab_alpha if toolpath.is_tab else 100
+                        pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
                      else:
-                        pen = QPen(QColor(0, 0, 0, 100), 0)
-                  #self.drawToolpaths(qp, self.paths, stage)
-                  self.addToolpaths(owner, pen, toolpath, stage, op)
+                        if toolpath.is_tab:
+                           pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
+                        else:
+                           pen = QPen(QColor(0, 0, 0, 100), 0)
+                     #self.drawToolpaths(qp, self.paths, stage)
+                     self.addToolpaths(owner, pen, toolpath, stage, op)
    def isHighlighted(self, operation):
       return False
    def renderNotTabs(self, owner):
@@ -75,7 +76,7 @@ class OperationsRenderer(object):
             pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
          pen.setCapStyle(Qt.RoundCap)
          pen.setJoinStyle(Qt.RoundJoin)
-         if op.paths and op.tabs and op.tabs.tabs:
+         if op.paths and isinstance(op, TabbedOperation) and op.tabs and op.tabs.tabs:
             for subpath in op.tabbed:
                if not subpath.is_tab:
                   owner.addLines(pen, subpath.transformed().points, False)
