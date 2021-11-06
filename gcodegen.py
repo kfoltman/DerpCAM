@@ -386,19 +386,17 @@ class BaseCut2D(Cut):
       return self.tool.maxdoc
 
 class Cut2DWithTabs(BaseCut2D):
-   def __init__(self, machine_params, props, tool, toolpaths, tabs):
+   def __init__(self, machine_params, props, tool, toolpath, tabs):
       BaseCut2D.__init__(self, machine_params, props, tool)
       if props.tab_depth is not None and props.tab_depth < props.depth:
          raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (props.tab_depth, props.depth))
       self.tabs = tabs
       self.tab_depth = self.props.tab_depth if self.props.tab_depth is not None else self.props.depth
       self.over_tab_z = self.tab_depth + self.machine_params.over_tab_safety
-      self.prepare_paths(toolpaths)
+      self.prepare_paths(toolpath)
 
-   def prepare_paths(self, toolpaths):
-      # Convert to an array of single Toolpath objects
-      flattened = toolpaths.flattened() if isinstance(toolpaths, Toolpaths) else [toolpaths]
-      self.cutpaths = [CutPath2D(p, self.tabs) for p in flattened]
+   def prepare_paths(self, toolpath):
+      self.cutpaths = [CutPath2D(toolpath, self.tabs)]
 
    def subpaths_for_layer(self, prev_depth, depth, cutpath):
       return cutpath.subpaths_tabbed if depth < self.tab_depth else cutpath.subpaths_full
@@ -569,9 +567,6 @@ class Operation(object):
          tab_depth = self.props.depth
       for path in self.flattened:
          Cut2DWithTabs(machine_params, self.props, self.tool, path, self.tabs).build(gcode)
-         #pathToGcode(gcode, path=path, machine_params=machine_params,
-         #   start_depth=self.props.start_depth, end_depth=self.props.depth,
-         #   doc=self.tool.maxdoc, tabs=self.tabs, tab_depth=tab_depth)
    def to_text(self):
       if self.props.start_depth != 0:
          return self.operation_name() + ", " + ("%0.2fmm deep at %0.2fmm" % (self.props.start_depth - self.props.depth, -self.props.start_depth))
