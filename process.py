@@ -109,6 +109,19 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
          toolpath.helical_entry = (startx, starty, tool.diameter * tool.stepover / 2)
          break
 
+def startWithClosestPoint(path, pt, dia):
+   mindist = None
+   mdpos = None
+   for j, pt2 in enumerate(path.points):
+      d = dist(pt, pt2)
+      if mindist is None or d < mindist:
+         mindist = d
+         mdpos = j
+   if mindist <= dia:
+      path.points = path.points[mdpos:] + path.points[:mdpos + 1]
+      return True
+   return False
+
 def mergeToolpaths(tps, new, dia):
    if type(new) is Toolpath:
       new = [new]
@@ -128,15 +141,7 @@ def mergeToolpaths(tps, new, dia):
          if found:
             new_toolpaths.append(l)
             continue
-         mindist = None
-         mdpos = None
-         for j, pt2 in enumerate(l.points):
-            d = dist(pt, pt2)
-            if mindist is None or d < mindist:
-               mindist = d
-               mdpos = j
-         if mindist <= dia:
-            l.points = l.points[mdpos:] + l.points[:mdpos + 1]
+         if startWithClosestPoint(l, pt, dia):
             new_toolpaths.append(i)
             new_toolpaths.append(l)
             found = True
@@ -316,6 +321,12 @@ class Shape(object):
    def rectangle(sx, sy, ex, ey):
       polygon = [(sx, sy), (ex, sy), (ex, ey), (sx, ey)]
       #polygon = list(reversed(polygon))
+      return Shape(polygon, True, None)
+   def round_rectangle(sx, sy, ex, ey, r):
+      polygon = circle(sx + r, sy + r, r=r, sa=pi, ea=3 * pi / 2) + \
+        circle(ex - r, sy + r, r=r, sa=3 * pi / 2, ea=2 * pi) + \
+        circle(ex - r, ey - r, r=r, sa=0, ea=pi / 2) + \
+        circle(sx + r, ey - r, r=r, sa=pi / 2, ea=pi)
       return Shape(polygon, True, None)
    @staticmethod
    def _from_clipper_res(orig_orient_path, res):

@@ -508,23 +508,27 @@ class TabbedOperation(Operation):
       return 1
 
 class Contour(TabbedOperation):
-   def __init__(self, shape, outside, tool, props, tabs, widen=False):
+   def __init__(self, shape, outside, tool, props, tabs, widen=0):
       contours = shape.contour(tool, outside=outside, displace=props.margin)
       if widen:
-         widen_func = lambda contour: self.widen(contour, tool)
+         widen_func = lambda contour: self.widen(contour, tool, widen)
          contours = Toolpaths([Toolpath(contour.points, contour.closed, tool, transform=widen_func) for contour in contours.toolpaths])
       TabbedOperation.__init__(self, shape, tool, contours, props, tabs=tabs)
       self.outside = outside
    def operation_name(self):
       return "Contour/Outside" if self.outside else "Contour/Inside"
-   def widen(self, contour, tool):
+   def widen(self, contour, tool, extension):
       if not contour.closed:
          return contour
       points = contour.points
-      offset = Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2)
+      offset = Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2 * extension)
       if len(offset) != 1:
          raise ValueError("Offset outline for one shape consists of several distinct pieces")
-      points += reversed(PtsFromInts(offset[0] + [offset[0][0]]))
+      extension = Toolpath(PtsFromInts(offset[0]), True, tool)
+      if startWithClosestPoint(extension, points[0], tool.diameter):
+         if SameOrientation(points, extension.points):
+            extension.points = reversed(extension.points)
+         points += extension.points
       return Toolpath(points, contour.closed, tool)
 
 class TrochoidalContour(TabbedOperation):
