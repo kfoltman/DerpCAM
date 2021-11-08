@@ -527,8 +527,8 @@ class Contour(TabbedOperation):
       extension = Toolpath(PtsFromInts(offset[0]), True, tool)
       if startWithClosestPoint(extension, points[0], tool.diameter):
          if SameOrientation(points, extension.points):
-            extension.points = reversed(extension.points)
-         points += extension.points
+            extension.points = list(reversed(extension.points))
+         points = extension.points + points + points[0:1] + extension.points[0:1]
       return Toolpath(points, contour.closed, tool)
 
 class TrochoidalContour(TabbedOperation):
