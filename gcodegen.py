@@ -235,7 +235,6 @@ class CutPath2D(object):
 class TabbedCutPath2D(CutPath2D):
    def __init__(self, path, tabs):
       CutPath2D.__init__(self, path)
-      self.subpaths_full = [path.transformed()]
       if tabs and tabs.tabs:
          self.subpaths_tabbed = path.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
          if GeometrySettings.simplify_arcs:
