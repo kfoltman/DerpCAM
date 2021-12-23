@@ -44,7 +44,14 @@ class OperationsRenderer(object):
                   tab_alpha = 100
                else:
                   tab_alpha = 100 * (op.props.start_depth - op.props.tab_depth) / (op.props.start_depth - op.props.depth)
-               if op.props.tab_depth is not None and op.props.tab_depth < op.props.start_depth:
+               if not isinstance(op, TabbedOperation):
+                  for toolpath in op.flattened:
+                     if stage == 1:
+                        pen = self.toolPen(toolpath, alpha=100, isHighlighted = self.isHighlighted(op))
+                     if stage == 2:
+                        pen = QPen(QColor(0, 0, 0, 100), 0)
+                     self.addToolpaths(owner, pen, toolpath, stage, op)
+               elif (op.props.tab_depth is not None and op.props.tab_depth < op.props.start_depth):
                   for toolpath in op.flattened:
                      if stage == 1:
                         # Use the alpha for the tab depth
@@ -52,7 +59,6 @@ class OperationsRenderer(object):
                      if stage == 2:
                         pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
                      self.addToolpaths(owner, pen, toolpath, stage, op)
-               if isinstance(op, TabbedOperation):
                   for toolpath in op.tabbed:
                      if stage == 1:
                         # Draw a cut line of the diameter of the cut
@@ -63,7 +69,6 @@ class OperationsRenderer(object):
                            pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
                         else:
                            pen = QPen(QColor(0, 0, 0, 100), 0)
-                     #self.drawToolpaths(qp, self.paths, stage)
                      self.addToolpaths(owner, pen, toolpath, stage, op)
    def isHighlighted(self, operation):
       return False
