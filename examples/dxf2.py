@@ -453,7 +453,7 @@ class CAMMainWindow(QMainWindow):
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.openProject(fn)
+            self.loadProject(fn)
     def fileSaveAs(self):
         dlg = QFileDialog(self, "Save a project", filter="DerpCAM project (*.dcp);;All files (*)")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
