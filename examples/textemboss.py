@@ -30,10 +30,10 @@ outside = Shape.circle(0, 0, width/2)
 inner_frame = Shape.circle(0, 0, inner_width / 2)
 
 def curve_transform(x, y):
-   pos = 0.5 + 0.5 * x / (inner_width / 2)
-   r = width / 2 - 29 + y * 1.5
-   angle = (1 - pos) * pi
-   return r * cos(angle), r * sin(angle)
+    pos = 0.5 + 0.5 * x / (inner_width / 2)
+    r = width / 2 - 29 + y * 1.5
+    angle = (1 - pos) * pi
+    return r * cos(angle), r * sin(angle)
 
 from ptext import *
 init_app()
@@ -49,8 +49,8 @@ inner_frame_emboss = Shape(inner_frame.boundary, True, [shape.boundary for shape
 print ("pocket")
 operations.pocket(inner_frame_emboss, props=props_engrave)
 for label_item in label + label2:
-   for island in label_item.islands:
-      operations.pocket(Shape(island, True, []), props=props_engrave)
+    for island in label_item.islands:
+        operations.pocket(Shape(island, True, []), props=props_engrave)
 operations.outside_contour(outside, tabs=4)
 print ("to gcode")
 operations.to_gcode_file("textemboss.ngc")

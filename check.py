@@ -3,10 +3,10 @@ from geom import *
 from gcodegen import *
 
 def prepare(ranges):
-   res = []
-   for s, e in ranges:
-      res.append((int(s * 64), int(e * 64)))
-   return res
+    res = []
+    for s, e in ranges:
+        res.append((int(s * 64), int(e * 64)))
+    return res
 
 tabs = Tabs([Tab(16, 32)])
 
@@ -23,7 +23,7 @@ assert calc_subpath(path, 11, 25) == [(11, 0), (20, 0), (25, 0)]
 assert calc_subpath(path, 25, 40) == [(25, 0), (30, 0)]
 
 def check_near(v1, v2):
-   return abs(v1 - v2) < 0.001
+    return abs(v1 - v2) < 0.001
 
 path = [(50, 0), ("ARC_CCW", (50, 0), (-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi)]
 
@@ -53,33 +53,33 @@ assert check_near(path_length(cut_arc(arc, 0.25, 0.75)), pi * 25)
 # ---------------------------------------------------------------------
 
 def verify_path_circles(path):
-   def roundpt(pt):
-      res = 1000
-      return (int(pt[0] * res) / res, int(pt[1] * res) / res)
-   lastpt = None
-   for item in path:
-      if len(item) == 2:
-         lastpt = item
-      else:
-         arcdir, startpt, endpt, circ, res, sangle, sspan = item
-         assert startpt == lastpt
-         lastpt = endpt
-         assert len(item) == 7
-         (circ.cx, circ.cy) = roundpt((circ.cx, circ.cy))
-         startpt = roundpt(startpt)
-         endpt = roundpt(endpt)
-         sdist = circ.dist(startpt)
-         edist = circ.dist(endpt)
-         assert abs(sdist - edist) < 0.002
+    def roundpt(pt):
+        res = 1000
+        return (int(pt[0] * res) / res, int(pt[1] * res) / res)
+    lastpt = None
+    for item in path:
+        if len(item) == 2:
+            lastpt = item
+        else:
+            arcdir, startpt, endpt, circ, res, sangle, sspan = item
+            assert startpt == lastpt
+            lastpt = endpt
+            assert len(item) == 7
+            (circ.cx, circ.cy) = roundpt((circ.cx, circ.cy))
+            startpt = roundpt(startpt)
+            endpt = roundpt(endpt)
+            sdist = circ.dist(startpt)
+            edist = circ.dist(endpt)
+            assert abs(sdist - edist) < 0.002
 
 for i in range(1, 100):
-   c = circle(0, 0, 0.3 * i, None, 0, 2 * pi / 3)
-   c2 = CircleFitter.simplify(c)
-   verify_path_circles(c2)
-   assert len(c2) == 2
+    c = circle(0, 0, 0.3 * i, None, 0, 2 * pi / 3)
+    c2 = CircleFitter.simplify(c)
+    verify_path_circles(c2)
+    assert len(c2) == 2
 
 for i in range(10, 100):
-   c = circle(0, 0, i)
-   c2 = CircleFitter.simplify(c)
-   verify_path_circles(c2)
-   assert len(c2) == 4
+    c = circle(0, 0, i)
+    c2 = CircleFitter.simplify(c)
+    verify_path_circles(c2)
+    assert len(c2) == 4
