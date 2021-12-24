@@ -309,7 +309,7 @@ class DrawingTreeItem(CAMTreeItem):
     def translation(self):
         return (-self.x_offset, -self.y_offset)
     def onPropertyValueSet(self, name):
-        self.drawing.origin = (self.x_offset, self.y_offset)
+        self.document.drawing.origin = (self.x_offset, self.y_offset)
         self.emitDataChanged()
         
 class ToolTreeItem(CAMTreeItem):
@@ -632,4 +632,18 @@ class DocumentModel(QObject):
                 operation.isSelected = isIn
                 return True
         return any(self.forEachOperation(setSelected))
-
+    def opCreateOperation(self, shapeIds, operationType):
+        indexes = []
+        rowCount = self.operModel.rowCount()
+        for i in shapeIds:
+            item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
+            self.operModel.appendRow(item)
+            indexes.append(self.operModel.index(rowCount, 0))
+            rowCount += 1
+        return rowCount, indexes
+    def opChangeProperties(self, changes):
+        for subject, property, value in changes:
+            property.setData(subject, value)
+    def opDeleteOperations(self, items):
+        for item in items:
+            self.operModel.removeItem(item)

@@ -218,12 +218,12 @@ class CAMObjectTreeDockWidget(QDockWidget):
         assert False
 
 class CAMPropertiesDockWidget(QDockWidget):
-    def __init__(self):
+    def __init__(self, document):
         QDockWidget.__init__(self, "Properties")
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setMinimumSize(400, 100)
-        self.propsheet = PropertySheetWidget([])
+        self.propsheet = PropertySheetWidget([], document)
         self.setWidget(self.propsheet)
         self.updateModel()
     def updateModel(self):
@@ -302,8 +302,7 @@ class CAMMainWindow(QMainWindow):
         self.projectDW = CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
-        self.propsDW = CAMPropertiesDockWidget()
-        self.propsDW.propsheet.propertyChanged.connect(self.propertyChanged)
+        self.propsDW = CAMPropertiesDockWidget(self.document)
         self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
@@ -340,14 +339,6 @@ class CAMMainWindow(QMainWindow):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
         self.updateSelection()
-    def propertyChanged(self, property, objects):
-        shapesChanged = False
-        for item in objects:
-            if isinstance(item, DrawingItemTreeItem):
-                shapesChanged = True
-        if shapesChanged:
-            self.document.updateCAM()
-            self.viewer.majorUpdate()
     def viewerSelectionChanged(self):
         self.projectDW.updateShapeSelection(self.viewer.selection)
     def shapeTreeSelectionChanged(self):
@@ -385,8 +376,7 @@ class CAMMainWindow(QMainWindow):
     def editDelete(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 'o':
-            for item in items:
-                self.document.operModel.removeItem(item)
+            self.document.opDeleteOperations(items)
     def editPreferences(self):
         dlg = PreferencesDialog(self, configSettings)
         self.prefDlg = dlg
@@ -398,28 +388,26 @@ class CAMMainWindow(QMainWindow):
             configSettings.save()
     def millSelectedShapes(self, checkFunc, operType):
         selection = self.viewer.selection
-        newSelection = QItemSelection()
-        rowCount = self.document.operModel.rowCount()
         translation = self.document.drawing.translation()
-        newItems = 0
         anyLeft = False
+        shapeIds = []
         for i in selection:
             shape = i.translated(*translation).toShape()
             if checkFunc(i, shape):
-                item = CAMTreeItem.load(self.document, { '_type' : 'OperationTreeItem', 'shape_id' : i.shape_id, 'operation' : operType })
-                self.document.operModel.appendRow(item)
-                index = self.document.operModel.index(rowCount, 0)
-                newSelection.select(index, index)
-                rowCount += 1
-                newItems += 1
+                shapeIds.append(i.shape_id)
                 self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
             else:
                 anyLeft = True
-        if newItems == 0:
+        if not shapeIds:
             QMessageBox.warning(self, None, "No objects created")
             return
+        rowCount, operations = self.document.opCreateOperation(shapeIds, operType)
+        # The logic behind this is a bit iffy
         if not anyLeft:
             self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
+            newSelection = QItemSelection()
+            for index in operations:
+                newSelection.select(index, index)
             self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
             if rowCount:
                 self.projectDW.operTree.scrollTo(newSelection.indexes()[0])

@@ -218,9 +218,9 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
         #self.props_widget.itemFromIndex(index).prop.setData(value)
 
 class PropertySheetWidget(QTableWidget):
-    propertyChanged = pyqtSignal([str, list])
-    def __init__(self, properties):
+    def __init__(self, properties, document):
         QTableWidget.__init__(self, 0, 1)
+        self.document = document
         self.updating = False
         self.objects = None
         self.setHorizontalHeaderLabels(['Value'])
@@ -246,19 +246,18 @@ class PropertySheetWidget(QTableWidget):
             self.setVerticalHeaderLabels([])
     def setCellValue(self, row, newValueText):
         prop = self.properties[row]
-        changed = []
+        changes = []
         try:
             value = prop.validate(newValueText)
             for o in self.objects:
                 if value != prop.getData(o):
-                    prop.setData(o, value)
-                    changed.append(o)
+                    changes.append((o, prop, value))
+            self.document.opChangeProperties(changes)
         except Exception as e:
             print (e)
         finally:
             #self.refreshRow(row)
             self.refreshAll()
-        self.propertyChanged.emit(prop.attribute, changed)
     def onCellChanged(self, row, column):
         if self.objects and not self.updating:
             item = self.item(row, column)
