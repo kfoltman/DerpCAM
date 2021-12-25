@@ -539,11 +539,14 @@ class OperationsModel(QStandardItemModel):
                 row += 1
             return True
         return False
-    def removeItem(self, item):
+    def findItem(self, item):
         index = self.indexFromItem(item)
-        row = index.row()
-        self.removeRow(row)
-        self.rowsRemoved.emit(index.parent(), row, row)
+        return index.row()
+    def removeItemAt(self, row):
+        self.takeRow(row)
+        # XXXKF Not sure why this was previously necessary
+        # self.rowsRemoved.emit(index.parent(), row, row)
+        return row
     def mimeData(self, indexes):
         data = []
         for i in indexes:
@@ -558,9 +561,44 @@ class OperationsModel(QStandardItemModel):
         else:
             return Qt.ItemIsDropEnabled | defaultFlags
 
+class AddOperationUndoCommand(QUndoCommand):
+    def __init__(self, document, item, row):
+        QUndoCommand.__init__(self, "Create " + OperationType.toString(item.operation))
+        self.document = document
+        self.item = item
+        self.row = row
+    def undo(self):
+        self.document.operModel.removeItemAt(self.row)
+    def redo(self):
+        self.document.operModel.insertRow(self.row, self.item)
+
+class DeleteOperationUndoCommand(QUndoCommand):
+    def __init__(self, document, item, row):
+        QUndoCommand.__init__(self, "Delete " + OperationType.toString(item.operation))
+        self.document = document
+        self.item = item
+        self.row = row
+    def undo(self):
+        self.document.operModel.insertRow(self.row, self.item)
+    def redo(self):
+        self.document.operModel.removeItemAt(self.row)
+
+class PropertySetUndoCommand(QUndoCommand):
+    def __init__(self, property, subject, old_value, new_value):
+        QUndoCommand.__init__(self, "Set " + property.name)
+        self.property = property
+        self.subject = subject
+        self.old_value = old_value
+        self.new_value = new_value
+    def undo(self):
+        self.property.setData(self.subject, self.old_value)
+    def redo(self):
+        self.property.setData(self.subject, self.new_value)
+
 class DocumentModel(QObject):
     def __init__(self):
         QObject.__init__(self)
+        self.undoStack = QUndoStack(self)
         self.material = MaterialTreeItem(self)
         self.tool = ToolTreeItem(self)
         self.drawing = DrawingTreeItem(self)
@@ -585,6 +623,7 @@ class DocumentModel(QObject):
         data['operations'] = self.forEachOperation(lambda op: op.store())
         return data
     def load(self, data):
+        self.undoStack.clear()
         self.material.reload(data['material'])
         self.tool.reload(data['tool'])
         self.drawing.reload(data['drawing']['header'])
@@ -637,13 +676,14 @@ class DocumentModel(QObject):
         rowCount = self.operModel.rowCount()
         for i in shapeIds:
             item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
-            self.operModel.appendRow(item)
+            self.undoStack.push(AddOperationUndoCommand(self, item, rowCount))
             indexes.append(self.operModel.index(rowCount, 0))
             rowCount += 1
         return rowCount, indexes
-    def opChangeProperties(self, changes):
-        for subject, property, value in changes:
-            property.setData(subject, value)
+    def opChangeProperty(self, property, changes):
+        for subject, value in changes:
+            self.undoStack.push(PropertySetUndoCommand(property, subject, property.getData(subject), value))
     def opDeleteOperations(self, items):
         for item in items:
-            self.operModel.removeItem(item)
+            row = self.operModel.findItem(item)
+            self.undoStack.push(DeleteOperationUndoCommand(self, item, row))

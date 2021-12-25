@@ -230,6 +230,9 @@ class CAMPropertiesDockWidget(QDockWidget):
         self.propsheet.setObjects([])
     def updateProperties(self):
         self.propsheet.refreshAll()
+    def updatePropertiesFor(self, object):
+        if object in self.propsheet.objects:
+            self.propsheet.refreshAll()
     def setSelection(self, selection):
         properties = []
         seen = set([])
@@ -285,6 +288,8 @@ class CAMMainWindow(QMainWindow):
         for i in actions:
             if i is None:
                 menu.addSeparator()
+            elif isinstance(i, QAction):
+                menu.addAction(i)
             else:
                 label, fn, shortcut, tip = i
                 action = QAction(label, self)
@@ -296,6 +301,9 @@ class CAMMainWindow(QMainWindow):
                 menu.addAction(action)
         return menu
     def initUI(self):
+        def addShortcut(action, shortcut):
+            action.setShortcuts(shortcut)
+            return action
         self.viewer = DrawingViewer(self.document)
         self.viewer.initUI()
         self.setCentralWidget(self.viewer)
@@ -305,6 +313,7 @@ class CAMMainWindow(QMainWindow):
         self.propsDW = CAMPropertiesDockWidget(self.document)
         self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
         self.document.operModel.dataChanged.connect(self.operChanged)
+        self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
@@ -319,6 +328,9 @@ class CAMMainWindow(QMainWindow):
             ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
         ])
         self.fileMenu = self.addMenu("&Edit", [
+            addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
+            addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
+            None,
             ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
@@ -353,6 +365,7 @@ class CAMMainWindow(QMainWindow):
             self.toolChanged()
         elif type(item) == DrawingTreeItem:
             self.drawingChanged()
+        self.propsDW.updatePropertiesFor(item)
     def materialChanged(self):
         self.document.tool.model().itemChanged.emit(self.document.tool)
     def toolChanged(self):
@@ -363,6 +376,8 @@ class CAMMainWindow(QMainWindow):
         self.document.updateCAM()
         self.viewer.majorUpdate()
     def operChanged(self):
+        self.viewer.majorUpdate()
+    def operInserted(self):
         self.viewer.majorUpdate()
     def operRemoved(self):
         self.viewer.majorUpdate()

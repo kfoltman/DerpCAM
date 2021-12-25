@@ -251,8 +251,8 @@ class PropertySheetWidget(QTableWidget):
             value = prop.validate(newValueText)
             for o in self.objects:
                 if value != prop.getData(o):
-                    changes.append((o, prop, value))
-            self.document.opChangeProperties(changes)
+                    changes.append((o, value))
+            self.document.opChangeProperty(prop, changes)
         except Exception as e:
             print (e)
         finally:
