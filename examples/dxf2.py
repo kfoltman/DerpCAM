@@ -39,7 +39,7 @@ class DocumentRenderer(object):
     def __init__(self, document):
         self.document = document
     def bounds(self):
-        return self.document.drawing.bounds()
+        return max_bounds((0, 0, 1, 1), self.document.drawing.bounds())
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
         modeData = None
@@ -82,7 +82,7 @@ class DrawingViewer(view.PathViewer):
                 qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
 
         zeropt = self.project(QPointF())
-        qp.setPen(QPen(QColor(192, 192, 192)))
+        qp.setPen(QPen(QColor(144, 144, 144), 0))
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintOverlays(self, e, qp):
