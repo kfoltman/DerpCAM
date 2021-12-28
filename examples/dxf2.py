@@ -182,11 +182,26 @@ class CAMObjectTreeDockWidget(QDockWidget):
         tree.setDragDropOverwriteMode(False)
         tree.setDragDropMode(QAbstractItemView.InternalMove)
         tree.selectionModel().selectionChanged.connect(self.operationSelectionChanged)
+        tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        tree.customContextMenuRequested.connect(self.customContextMenu)
         self.operTree = tree
         self.tabs.addTab(tree, "&Operations")
         self.tabs.setTabPosition(QTabWidget.South)
         self.tabs.currentChanged.connect(self.tabSelectionChanged)
         self.setWidget(self.tabs)
+    def customContextMenu(self, point):
+        opers = self.operSelection()
+        if len(opers) != 1:
+            return
+        point = self.operTree.mapToGlobal(point)
+        menu = QMenu(self)
+        if opers[0].operation == OperationType.OUTSIDE_CONTOUR or opers[0].operation == OperationType.INSIDE_CONTOUR:
+            menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
+        elif opers[0].operation == OperationType.POCKET:
+            menu.addAction("Islands").triggered.connect(self.operationIslands)
+        else:
+            return
+        action = menu.exec_(point)
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
         for idx, item in enumerate(self.document.drawing.items()):
@@ -215,6 +230,10 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return "o", self.operSelection()
         assert False
+    def operationHoldingTabs(self, checked):
+        print ("Holding tabs")
+    def operationIslands(self, checked):
+        print ("Islands")
 
 class CAMPropertiesDockWidget(QDockWidget):
     def __init__(self, document):
