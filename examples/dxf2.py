@@ -375,6 +375,7 @@ class CAMMainWindow(QMainWindow):
         self.document.updateCAM()
         self.viewer.majorUpdate()
     def operChanged(self):
+        self.propsDW.updateProperties()
         self.viewer.majorUpdate()
     def operInserted(self):
         self.viewer.majorUpdate()
