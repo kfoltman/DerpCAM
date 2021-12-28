@@ -684,18 +684,36 @@ class DocumentModel(QObject):
                 return True
         return any(self.forEachOperation(setSelected))
     def opCreateOperation(self, shapeIds, operationType):
-        indexes = []
-        rowCount = self.operModel.rowCount()
-        for i in shapeIds:
-            item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
-            self.undoStack.push(AddOperationUndoCommand(self, item, rowCount))
-            indexes.append(self.operModel.index(rowCount, 0))
-            rowCount += 1
+        if len(shapeIds) > 1:
+            self.undoStack.beginMacro("Create multiple " + OperationType.toString(operationType))
+        try:
+            indexes = []
+            rowCount = self.operModel.rowCount()
+            for i in shapeIds:
+                item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
+                self.undoStack.push(AddOperationUndoCommand(self, item, rowCount))
+                indexes.append(self.operModel.index(rowCount, 0))
+                rowCount += 1
+        finally:
+            if len(shapeIds) > 1:
+                self.undoStack.endMacro()
         return rowCount, indexes
     def opChangeProperty(self, property, changes):
-        for subject, value in changes:
-            self.undoStack.push(PropertySetUndoCommand(property, subject, property.getData(subject), value))
+        if len(changes) > 1:
+            self.undoStack.beginMacro("Set " + property.name)
+        try:
+            for subject, value in changes:
+                self.undoStack.push(PropertySetUndoCommand(property, subject, property.getData(subject), value))
+        finally:
+            if len(changes) > 1:
+                self.undoStack.endMacro()
     def opDeleteOperations(self, items):
-        for item in items:
-            row = self.operModel.findItem(item)
-            self.undoStack.push(DeleteOperationUndoCommand(self, item, row))
+        if len(items) > 1:
+            self.undoStack.beginMacro("Delete %d operations" % (len(items), ))
+        try:
+            for item in items:
+                row = self.operModel.findItem(item)
+                self.undoStack.push(DeleteOperationUndoCommand(self, item, row))
+        finally:
+            if len(items) > 1:
+                self.undoStack.endMacro()
