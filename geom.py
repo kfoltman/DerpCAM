@@ -43,14 +43,22 @@ def dist_fast(a, b):
 def maxaxisdist(a, b):
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
+def seg_start(seg):
+    return seg[1] if len(seg) == 7 else seg
+def seg_end(seg):
+    return seg[2] if len(seg) == 7 else seg
+
 def dist(a, b):
-    if len(a) == 7:
-        a = a[2]
-    if len(b) == 7:
-        b = b[1]
+    a = seg_end(a)
+    b = seg_start(b)
     dx = b[0] - a[0]
     dy = b[1] - a[1]
     return sqrt(dx * dx + dy * dy)
+
+def dist_vec(a, b):
+    a = seg_end(a)
+    b = seg_start(b)
+    return b[0] - a[0], b[1] - a[1]
 
 def weighted(p1, p2, alpha):
     return p1[0] + (p2[0] - p1[0]) * alpha, p1[1] + (p2[1] - p1[1]) * alpha
@@ -507,3 +515,67 @@ def dxf_polyline_to_points(entity):
         lastbulge = point[4]
         lastx, lasty = x, y
     return points, entity.closed
+
+# For a path and a given point, find the nearest point on a path.
+# Returns the curve-length to a matching point *on* the path and the distance
+# from that point to the given point.
+def closest_point(path, closed, pt):
+    def rotate(x, y, angle):
+        cosv, sinv = -cos(angle), sin(angle)
+        return x * cosv - y * sinv, x * sinv + y * cosv
+    mindist = None
+    closest = None
+    if closed:
+        path = path + path[0:1]
+    lengths = path_lengths(path)
+    tlen = 0
+    for i in range(len(path) - 1):
+        pt1 = seg_end(path[i])
+        pt2 = path[i + 1]
+        dist1 = dist(pt, pt1)
+        if len(pt2) == 7:
+            tag, pt1, pt2, c, points, sstart, sspan = pt2
+            if mindist is None or dist1 < mindist:
+                mindist = dist1
+                closest = lengths[i - 1]
+            dx = pt[0] - c.cx
+            dy = pt[1] - c.cy
+            angle = atan2(dy, dx) - sstart
+            if sspan < 0:
+                angle = -angle
+            angle = (angle) % (2 * pi)
+            if angle < abs(sspan):
+                r = sqrt(dx * dx + dy * dy)
+                dist1 = abs(r - c.r)
+                if mindist is None or dist1 < mindist:
+                    mindist = dist1
+                    closest = lengths[i] + angle * c.r
+        else:
+            if mindist is None or dist1 < mindist:
+                mindist = dist1
+                closest = lengths[i]
+            pt2 = seg_start(path[(i + 1) % len(path)])
+            dx, dy = dist_vec(pt1, pt2)
+            d = sqrt(dx * dx + dy * dy)
+            lx, ly = dist_vec(pt, pt1)
+            mx, my = rotate(lx, ly, atan2(dy, dx))
+            if mx >= 0 and mx <= d:
+                if abs(my) < mindist:
+                    mindist = abs(my)
+                    closest = lengths[i] + (lengths[i + 1] - lengths[i]) * mx / d
+    return closest, mindist
+
+# Calculate a point on a path, then offset it by 'dist' (positive = outwards from the shape)
+# Only works for closed paths!
+def offset_point_on_path(path, pos, dist):
+    plength = path_length(path)
+    subpath = calc_subpath(path, pos, min(plength, pos + 0.1))
+    orientation = IntPath(path).orientation()
+    if orientation:
+        dist = -dist
+    s = seg_start(subpath[0])
+    e = seg_end(subpath[-1])
+    x1, y1 = s
+    dx, dy = dist_vec(s, e)
+    angle = atan2(dy, dx) + pi / 2
+    return x1 + dist * cos(angle), y1 + dist * sin(angle)
