@@ -2,17 +2,22 @@ import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
-from propsheet import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
+import process
+import gcodegen
+from propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, EnumEditableProperty
+import view
+from milling_tool import *
+
 import ezdxf
 import json
 
-class OperationsRendererWithSelection(OperationsRenderer):
+class OperationsRendererWithSelection(view.OperationsRenderer):
     def __init__(self, owner):
-        OperationsRenderer.__init__(self, owner.cam)
+        view.OperationsRenderer.__init__(self, owner.cam)
         self.owner = owner
     def isHighlighted(self, operation):
         return self.owner.isSelected
@@ -143,7 +148,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def textDescription(self):
         return self.label() + ("(X=%0.2f, Y=%0.2f, D=%0.2f)" % (*self.centre, 2 * self.r))
     def toShape(self):
-        return Shape.circle(*self.centre, self.r)
+        return process.Shape.circle(*self.centre, self.r)
     def translated(self, dx, dy):
         return DrawingCircleTreeItem(self.document, translate_point(self.centre, dx, dy), self.r, self.untransformed)
     def scaled(self, cx, cy, scale):
@@ -211,7 +216,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 return self.label() + "(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)
         return self.label() + "(%0.2f, %0.2f)-(%0.2f, %0.2f)" % self.bounds
     def toShape(self):
-        return Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
+        return process.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
         
 class DrawingTreeItem(CAMTreeItem):
     prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
@@ -505,8 +510,8 @@ class OperationTreeItem(CAMTreeItem):
         depth = self.depth if self.depth is not None else thickness
         start_depth = self.start_depth if self.start_depth is not None else 0
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
-        self.gcode_props = OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-        self.cam = Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
+        self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
+        self.cam = gcodegen.Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
         self.renderer = OperationsRendererWithSelection(self)
         if self.shape:
             tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
@@ -642,7 +647,7 @@ class DocumentModel(QObject):
             self.operModel.appendRow(operation)
         self.updateCAM()
     def make_machine_params(self):
-        self.gcode_machine_params = MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
+        self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def make_tool(self):
         self.gcode_material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
         self.gcode_coating = carbide_uncoated

@@ -1,9 +1,9 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from process import *
 from geom import *
-from gcodegen import *
+import gcodegen
+import toolpath
 import sys
 import time
 
@@ -44,7 +44,7 @@ class OperationsRenderer(object):
                         tab_alpha = 100
                     else:
                         tab_alpha = 100 * (op.props.start_depth - op.props.tab_depth) / (op.props.start_depth - op.props.depth)
-                    if not isinstance(op, TabbedOperation):
+                    if not isinstance(op, gcodegen.TabbedOperation):
                         for toolpath in op.flattened:
                             if stage == 1:
                                 pen = self.toolPen(toolpath, alpha=100, isHighlighted = self.isHighlighted(op))
@@ -81,7 +81,7 @@ class OperationsRenderer(object):
                 pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
             pen.setCapStyle(Qt.RoundCap)
             pen.setJoinStyle(Qt.RoundJoin)
-            if op.paths and isinstance(op, TabbedOperation) and op.tabs and op.tabs.tabs:
+            if op.paths and isinstance(op, gcodegen.TabbedOperation) and op.tabs and op.tabs.tabs:
                 for subpath in op.tabbed:
                     if not subpath.is_tab:
                         owner.addLines(pen, subpath.transformed().points, False)
@@ -106,7 +106,7 @@ class OperationsRenderer(object):
         self.renderRapids(owner)
         self.renderShapes(owner)
     def addRapids(self, owner, pen, path, lastpt):
-        if isinstance(path, Toolpaths):
+        if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
                 lastpt = self.addRapids(owner, pen, tp, lastpt)
             return lastpt
@@ -115,7 +115,7 @@ class OperationsRenderer(object):
         owner.addLines(pen, [lastpt, path.points[0]], False)
         return path.points[0 if path.closed else -1]
     def addToolpaths(self, owner, pen, path, stage, operation):
-        if isinstance(path, Toolpaths):
+        if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
                 self.addToolpaths(owner, pen, tp, stage)
             return
@@ -253,7 +253,7 @@ class PathViewer(QWidget):
 
     def addLines(self, pen, points, closed, has_arcs=False):
         if has_arcs:
-            points = CircleFitter.interpolate_arcs(points, debug_simplify_arcs, self.scalingFactor())
+            points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
         if closed:
             self.addPath(pen, points + points[0:1])
         else:

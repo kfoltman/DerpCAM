@@ -1,4 +1,6 @@
-from process import *
+from geom import *
+import process
+import toolpath
 
 # VERY experimental feature
 debug_simplify_arcs = False
@@ -514,7 +516,7 @@ class Contour(TabbedOperation):
         contours = shape.contour(tool, outside=outside, displace=props.margin)
         if widen:
             widen_func = lambda contour: self.widen(contour, tool, widen)
-            contours = Toolpaths([Toolpath(contour.points, contour.closed, tool, transform=widen_func) for contour in contours.toolpaths])
+            contours = toolpath.Toolpaths([toolpath.Toolpath(contour.points, contour.closed, tool, transform=widen_func) for contour in contours.toolpaths])
         TabbedOperation.__init__(self, shape, tool, contours, props, tabs=tabs)
         self.outside = outside
     def operation_name(self):
@@ -523,15 +525,15 @@ class Contour(TabbedOperation):
         if not contour.closed:
             return contour
         points = contour.points
-        offset = Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2 * extension)
+        offset = process.Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2 * extension)
         if len(offset) != 1:
             raise ValueError("Offset outline for one shape consists of several distinct pieces")
-        extension = Toolpath(PtsFromInts(offset[0]), True, tool)
-        if startWithClosestPoint(extension, points[0], tool.diameter):
+        extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
+        if process.startWithClosestPoint(extension, points[0], tool.diameter):
             if SameOrientation(points, extension.points):
                 extension.points = list(reversed(extension.points))
             points = extension.points + points + points[0:1] + extension.points[0:1]
-        return Toolpath(points, contour.closed, tool)
+        return toolpath.Toolpath(points, contour.closed, tool)
 
 class TrochoidalContour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
@@ -596,7 +598,7 @@ class RetractBy(RetractSchedule):
 
 class PeckDrill(Operation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
-        shape = Shape.circle(x, y, r=0.5 * tool.diameter)
+        shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
         Operation.__init__(self, shape, tool, Toolpath([(x, y)], True, tool), props)
         self.x = x
         self.y = y
@@ -628,7 +630,7 @@ class HelicalDrill(Operation):
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
-        shape = Shape.circle(x, y, r=0.5*d)
+        shape = process.Shape.circle(x, y, r=0.5*d)
         Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
         self.x = x
         self.y = y

@@ -2,11 +2,10 @@ import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
-from propsheet import *
+import process
+import gcodegen
+import view
+import propsheet
 from gui.model import *
 import ezdxf
 import json
@@ -52,7 +51,7 @@ class DocumentRenderer(object):
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
-class DrawingViewer(PathViewer):
+class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
     def __init__(self, document):
         self.document = document
@@ -60,7 +59,7 @@ class DrawingViewer(PathViewer):
         self.dragging = False
         self.rubberband_rect = None
         self.start_point = None
-        PathViewer.__init__(self, DocumentRenderer(document))
+        view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
     def paintGrid(self, e, qp):
@@ -115,7 +114,7 @@ class DrawingViewer(PathViewer):
                     self.renderDrawing()
                     self.repaint()
         else:
-            PathViewer.mousePressEvent(self, e)
+            view.PathViewer.mousePressEvent(self, e)
     def mouseMoveEvent(self, e):
         if not self.dragging and self.start_point:
             dist = e.localPos() - self.start_point
@@ -125,7 +124,7 @@ class DrawingViewer(PathViewer):
             self.rubberband_rect = QRectF(self.start_point, e.localPos())
             self.startDeferredRepaint()
             self.repaint()
-        PathViewer.mouseMoveEvent(self, e)
+        view.PathViewer.mouseMoveEvent(self, e)
     def mouseReleaseEvent(self, e):
         if self.dragging:
             pt1 = self.unproject(self.rubberband_rect.bottomLeft())
@@ -145,7 +144,7 @@ class DrawingViewer(PathViewer):
             self.dragging = False
             self.start_point = None
             self.rubberband_rect = None
-        PathViewer.mouseReleaseEvent(self, e)
+        view.PathViewer.mouseReleaseEvent(self, e)
     def setSelection(self, selection):
         self.selection = set(selection)
         self.renderDrawing()
@@ -223,7 +222,7 @@ class CAMPropertiesDockWidget(QDockWidget):
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setMinimumSize(400, 100)
-        self.propsheet = PropertySheetWidget([], document)
+        self.propsheet = propsheet.PropertySheetWidget([], document)
         self.setWidget(self.propsheet)
         self.updateModel()
     def updateModel(self):
@@ -508,7 +507,7 @@ class CAMMainWindow(QMainWindow):
             fn = dlg.selectedFiles()[0]
             self.exportGcode(fn)
     def exportGcode(self, fn):
-        operations = Operations(self.document.gcode_machine_params)
+        operations = gcodegen.Operations(self.document.gcode_machine_params)
         self.document.forEachOperation(lambda item: operations.add_all(item.cam.operations))
         operations.to_gcode_file(fn)
     def fileExit(self):
