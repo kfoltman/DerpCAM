@@ -327,7 +327,7 @@ class CAMMainWindow(QMainWindow):
             None,
             ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
         ])
-        self.fileMenu = self.addMenu("&Edit", [
+        self.editMenu = self.addMenu("&Edit", [
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
