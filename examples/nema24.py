@@ -37,12 +37,20 @@ operations.helical_drill_full_depth(x=30, y=30, d=10.2)
 #operations.pocket(shaft))
 #operations.helical_drill_full_depth(x=30, y=30, d=38.3, props=OperationProps(depth=recess_depth))
 operations.pocket(recess, props=props_recess)
+
+tabs = [
+    (30, 0),
+    (60, 30),
+    (30, 60),
+    (0, 30),
+]
+
 for x, y, d in holes:
     operations.helical_drill(x=x, y=y, d=d)
 if use_trochoidal_for_contour:
-    operations.outside_contour_trochoidal(outside, nrad=0.5, nspeed=1, tabs=4)
+    operations.outside_contour_trochoidal(outside, nrad=0.5, nspeed=1, tabs=tabs)
 else:
-    operations.outside_contour(outside, tabs=4)
+    operations.outside_contour(outside, tabs=tabs)
 
 operations.to_gcode_file("nema24.ngc")
 

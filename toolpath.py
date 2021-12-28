@@ -116,9 +116,19 @@ class Toolpath(object):
    def autotabs(self, ntabs, offset=0, width=1):
       tablist = []
       pos = offset
+      tabw = self.tool.diameter * (1 + width)
       for i in range(ntabs):
-         tablist.append(Tab(pos, pos + self.tool.diameter + width * self.tool.diameter))
+         tablist.append(Tab(pos, pos + tabw))
          pos += self.tlength / ntabs
+      return Tabs(tablist)
+
+   def usertabs(self, tab_locations, width=1):
+      tablist = []
+      tabw = self.tool.diameter * (1 + width)
+      for tab in tab_locations:
+         pos, dist = closest_point(self.points, self.closed, tab)
+         pos = max(0, pos - tabw / 2)
+         tablist.append(Tab(pos, pos + tabw))
       return Tabs(tablist)
 
 class Toolpaths(object):

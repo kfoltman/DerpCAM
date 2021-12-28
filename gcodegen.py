@@ -492,7 +492,10 @@ class TabbedOperation(Operation):
         Operation.__init__(self, shape, tool, paths, props)
         if tabs:
             assert len(self.flattened) == 1
-            self.tabs = self.flattened[0].autotabs(tabs, width=self.tabs_width())
+            if isinstance(tabs, int):
+                self.tabs = self.flattened[0].autotabs(tabs, width=self.tabs_width())
+            else:
+                self.tabs = self.flattened[0].usertabs(tabs, width=self.tabs_width())
             self.tabbed = self.flattened[0].eliminate_tabs2(self.tabs)
         else:
             self.tabs = Tabs([])
