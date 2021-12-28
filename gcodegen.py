@@ -627,6 +627,7 @@ class PeckDrill(Operation):
 
 class HelicalDrill(Operation):
     def __init__(self, x, y, d, tool, props):
+        d -= props.margin
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
