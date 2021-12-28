@@ -453,6 +453,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_height = None
         self.tab_count = None
         self.offset = 0
+        self.islands = set()
         self.operation = OperationType.OUTSIDE_CONTOUR
         self.isSelected = False
         self.updateCAM()
@@ -476,9 +477,11 @@ class OperationTreeItem(CAMTreeItem):
     def store(self):
         dump = CAMTreeItem.store(self)
         dump['shape_id'] = self.shape_id
+        dump['islands'] = list(sorted(self.islands))
         return dump
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
+        self.islands = set(dump.get('islands', []))
         self.updateCAM()
     def properties(self):
         return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset]
@@ -494,6 +497,8 @@ class OperationTreeItem(CAMTreeItem):
         if self.orig_shape:
             translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
             self.shape = self.orig_shape.translated(*translation).toShape()
+        else:
+            self.shape = None
         thickness = self.document.material.thickness
         if thickness is None:
             thickness = 0
@@ -510,6 +515,10 @@ class OperationTreeItem(CAMTreeItem):
             elif self.operation == OperationType.INSIDE_CONTOUR:
                 self.cam.inside_contour(self.shape, tabs=tabs)
             elif self.operation == OperationType.POCKET:
+                for island in self.islands:
+                    item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                    if item.closed:
+                        self.shape.add_island(item.boundary)
                 self.cam.pocket(self.shape)
             elif self.operation == OperationType.ENGRAVE:
                 self.cam.engrave(self.shape)
@@ -532,9 +541,7 @@ class OperationsModel(QStandardItemModel):
             if row == -1:
                 row = self.rowCount(parent)
             for i in data:
-                #shape_source = self.document.drawing.drawing.items[i['shape_index']]
                 item = CAMTreeItem.load(self.document, i)
-                #OperationTreeItem(self.document, shape_source, i['operation'])
                 self.insertRow(row, item)
                 row += 1
             return True

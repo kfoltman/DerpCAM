@@ -155,8 +155,10 @@ class Shape(object):
     def __init__(self, boundary, closed=True, islands=None):
         self.boundary = boundary
         self.closed = closed
-        self.islands = islands or []
+        self.islands = list(islands) if islands is not None else []
         self.bounds = self.calc_bounds()
+    def add_island(self, island):
+        self.islands.append(island)
     def calc_bounds(self):
         xcoords = [p[0] if len(p) == 2 else p[2][0] for p in self.boundary]
         ycoords = [p[1] if len(p) == 2 else p[2][1] for p in self.boundary]
