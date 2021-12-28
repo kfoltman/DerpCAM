@@ -15,6 +15,11 @@ from milling_tool import *
 import ezdxf
 import json
 
+class DrawingUIMode(object):
+    MODE_NORMAL = 0
+    MODE_ISLANDS = 1
+    MODE_TABS = 2
+
 class OperationsRendererWithSelection(view.OperationsRenderer):
     def __init__(self, owner):
         view.OperationsRenderer.__init__(self, owner.cam)
@@ -65,8 +70,10 @@ class CAMTreeItem(QStandardItem):
         return []
 
 class DrawingItemTreeItem(CAMTreeItem):
+    defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
     defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
     selectedItemDrawingPen = QPen(QColor(0, 64, 128, 255), 2)
+    selectedItemDrawingPen2 = QPen(QColor(0, 64, 128, 255), 1)
     next_drawing_item_id = 1
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -77,7 +84,17 @@ class DrawingItemTreeItem(CAMTreeItem):
     def selectedItemPenFunc(self, item, scale):
         # avoid draft behaviour of thick lines
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
-    def penForPath(self, path):
+    def penForPath(self, path, modeData):
+        if modeData[0] == DrawingUIMode.MODE_ISLANDS:
+            if modeData[1].shape_id == self.shape_id:
+                return self.defaultDrawingPen
+            if self.shape_id in modeData[1].islands:
+                return self.selectedItemDrawingPen2
+            return self.defaultGrayPen
+        if modeData[0] == DrawingUIMode.MODE_TABS:
+            if modeData[1].shape_id == self.shape_id:
+                return self.defaultDrawingPen
+            return self.defaultGrayPen
         return self.selectedItemPenFunc if self.untransformed in path.selection else self.defaultDrawingPen
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id }
@@ -142,7 +159,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def distanceTo(self, pt):
         return abs(dist(self.centre, pt) - self.r)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path), circle(self.centre[0], self.centre[1], self.r), True)
+        path.addLines(self.penForPath(path, modeData), circle(self.centre[0], self.centre[1], self.r), True)
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
@@ -150,7 +167,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def toShape(self):
         return process.Shape.circle(*self.centre, self.r)
     def translated(self, dx, dy):
-        return DrawingCircleTreeItem(self.document, translate_point(self.centre, dx, dy), self.r, self.untransformed)
+        cti = DrawingCircleTreeItem(self.document, translate_point(self.centre, dx, dy), self.r, self.untransformed)
+        cti.shape_id = self.shape_id
+        return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, scale_point(self.centre, cx, cy, scale), self.r * scale, self.untransformed)
     def store(self):
@@ -194,11 +213,13 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                     mindist = min(dist, mindist)
         return mindist
     def translated(self, dx, dy):
-        return DrawingPolylineTreeItem(self.document, [translate_gen_point(p, dx, dy) for p in self.points], self.closed, self.untransformed)
+        pti = DrawingPolylineTreeItem(self.document, [translate_gen_point(p, dx, dy) for p in self.points], self.closed, self.untransformed)
+        pti.shape_id = self.shape_id
+        return pti
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+        path.addLines(self.penForPath(path, modeData), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def label(self):
         if len(self.points) == 2:
             if len(self.points[1]) == 2:
@@ -459,6 +480,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_count = None
         self.offset = 0
         self.islands = set()
+        self.user_tabs = set()
         self.operation = OperationType.OUTSIDE_CONTOUR
         self.isSelected = False
         self.updateCAM()
@@ -483,10 +505,12 @@ class OperationTreeItem(CAMTreeItem):
         dump = CAMTreeItem.store(self)
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
+        dump['user_tabs'] = list(sorted(self.user_tabs))
         return dump
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
+        self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
         self.updateCAM()
     def properties(self):
         return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset]
@@ -514,7 +538,10 @@ class OperationTreeItem(CAMTreeItem):
         self.cam = gcodegen.Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
         self.renderer = OperationsRendererWithSelection(self)
         if self.shape:
-            tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
+            if len(self.user_tabs):
+                tabs = self.user_tabs
+            else:
+                tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
             if self.operation == OperationType.OUTSIDE_CONTOUR:
                 self.cam.outside_contour(self.shape, tabs=tabs)
             elif self.operation == OperationType.INSIDE_CONTOUR:

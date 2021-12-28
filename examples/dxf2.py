@@ -42,12 +42,13 @@ class DocumentRenderer(object):
         return max_bounds((0, 0, 1, 1), self.document.drawing.bounds())
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
-        modeData = None
+        modeData = (owner.mode, owner.mode_item)
         self.document.drawing.renderTo(owner, modeData)
-        self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner))
-        self.document.forEachOperation(lambda item: item.renderer.renderNotTabs(owner))
-        self.lastpt = (0, 0)
-        self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner))
+        if owner.mode == DrawingUIMode.MODE_NORMAL:
+            self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner))
+            self.document.forEachOperation(lambda item: item.renderer.renderNotTabs(owner))
+            self.lastpt = (0, 0)
+            self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner))
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
@@ -59,9 +60,16 @@ class DrawingViewer(view.PathViewer):
         self.dragging = False
         self.rubberband_rect = None
         self.start_point = None
+        self.mode = DrawingUIMode.MODE_NORMAL
+        self.mode_item = None
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
+    def changeMode(self, mode, item):
+        self.mode = mode
+        self.mode_item = item
+        self.renderDrawing()
+        self.repaint()
     def paintGrid(self, e, qp):
         size = self.size()
 
@@ -86,6 +94,24 @@ class DrawingViewer(view.PathViewer):
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintOverlays(self, e, qp):
+        if self.mode != DrawingUIMode.MODE_NORMAL:
+            if self.mode == DrawingUIMode.MODE_TABS:
+                modeText = "Holding tabs"
+            if self.mode == DrawingUIMode.MODE_ISLANDS:
+                modeText = "Islands"
+            icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+            pen = qp.pen()
+            qp.setPen(QPen(QColor(0, 0, 0), 0))
+            qp.drawRect(3, 3, 34, 34)
+            icon.paint(qp, 5, 5, 30, 30, Qt.AlignCenter)
+            qp.setPen(QPen(QColor(128, 0, 0), 0))
+            qp.drawText(QRect(40, 5, 200, 35), Qt.AlignVCenter, "Mode: " + modeText)
+            if self.mode == DrawingUIMode.MODE_TABS:
+                qp.setPen(QPen(QColor(255, 0, 0), 0))
+                for tab in self.mode_item.user_tabs:
+                    pos = self.project(QPointF(tab[0], tab[1]))
+                    qp.drawEllipse(pos, 10, 10)
+            qp.setPen(pen)
         if self.rubberband_rect:
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
@@ -97,6 +123,32 @@ class DrawingViewer(view.PathViewer):
             self.dragging = False
             pos = self.unproject(e.localPos())
             objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            if self.mode != DrawingUIMode.MODE_NORMAL:
+                lpos = e.localPos()
+                if lpos.x() >= 5 and lpos.x() < 35 and lpos.y() >= 5 and lpos.y() < 35:
+                    item = self.mode_item
+                    item.updateCAM()
+                    self.changeMode(DrawingUIMode.MODE_NORMAL, None)
+                    self.renderDrawing()
+                    self.majorUpdate()
+                    return
+                if self.mode == DrawingUIMode.MODE_ISLANDS:
+                    self.mode_item.islands ^= set([o.shape_id for o in objs])
+                    self.renderDrawing()
+                    self.repaint()
+                elif self.mode == DrawingUIMode.MODE_TABS:
+                    pt = (pos.x(), pos.y())
+                    ptToDelete = None
+                    for x, y in self.mode_item.user_tabs:
+                        if dist(pt, (x, y)) < 5:
+                            ptToDelete = (x, y)
+                    if ptToDelete is not None:
+                        self.mode_item.user_tabs.remove(ptToDelete)
+                    else:
+                        self.mode_item.user_tabs.add(pt)
+                    self.renderDrawing()
+                    self.repaint()
+                return
             if objs:
                 if e.modifiers() & Qt.ControlModifier:
                     self.selection ^= set(objs)
@@ -154,6 +206,7 @@ document = DocumentModel()
 
 class CAMObjectTreeDockWidget(QDockWidget):
     selectionChanged = pyqtSignal([])
+    modeChanged = pyqtSignal([int])
     INPUTS_TAB = 0
     OPERATIONS_TAB = 1
     def __init__(self, document):
@@ -231,9 +284,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             return "o", self.operSelection()
         assert False
     def operationHoldingTabs(self, checked):
-        print ("Holding tabs")
+        self.modeChanged.emit(DrawingUIMode.MODE_TABS)
     def operationIslands(self, checked):
-        print ("Islands")
+        self.modeChanged.emit(DrawingUIMode.MODE_ISLANDS)
 
 class CAMPropertiesDockWidget(QDockWidget):
     def __init__(self, document):
@@ -327,6 +380,7 @@ class CAMMainWindow(QMainWindow):
         self.setCentralWidget(self.viewer)
         self.projectDW = CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
+        self.projectDW.modeChanged.connect(self.operationEditMode)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
         self.propsDW = CAMPropertiesDockWidget(self.document)
         self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
@@ -400,6 +454,8 @@ class CAMMainWindow(QMainWindow):
         self.viewer.majorUpdate()
     def operRemoved(self):
         self.viewer.majorUpdate()
+    def operationEditMode(self, mode):
+        self.viewer.changeMode(mode, self.projectDW.operSelection()[0])
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
