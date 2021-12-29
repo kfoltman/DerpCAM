@@ -415,9 +415,10 @@ class CAMMainWindow(QMainWindow):
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
         ])
-        self.coordLabel = QLabel("X=? Y=?")
+        self.coordLabel = QLabel("")
         self.statusBar().addPermanentWidget(self.coordLabel)
         self.viewer.coordsUpdated.connect(self.canvasMouseMove)
+        self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
     def updateOperations(self):
@@ -516,6 +517,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
+    def canvasMouseLeave(self):
+        self.coordLabel.setText("")
     def importDrawing(self, fn):
         self.document.importDrawing(fn)
         self.viewer.majorUpdate()

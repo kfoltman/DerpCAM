@@ -138,6 +138,7 @@ class OperationsRenderer(object):
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
+    coordsInvalid = pyqtSignal([])
 
     def __init__(self, renderer):
         QWidget.__init__(self)
@@ -289,6 +290,12 @@ class PathViewer(QWidget):
             self.processMove(e)
         p = self.unproject(e.localPos())
         self.coordsUpdated.emit(p.x(), p.y())
+
+    def enterEvent(self, e):
+        p = self.unproject(e.localPos())
+        self.coordsUpdated.emit(p.x(), p.y())
+    def leaveEvent(self, e):
+        self.coordsInvalid.emit()
 
     def wheelEvent(self, e):
         delta = e.angleDelta().y()
