@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import *
 
 import process
 import gcodegen
-from propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, EnumEditableProperty
+from propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, EnumEditableProperty, SetEditableProperty
 import view
 from milling_tool import *
 
@@ -470,6 +470,8 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
+    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs")
+    prop_islands = SetEditableProperty("Islands", "islands")
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
         self.shape_id = None
@@ -490,6 +492,10 @@ class OperationTreeItem(CAMTreeItem):
         return False
     def isPropertyValid(self, name):
         if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count', 'extra_width']:
+            return False
+        if self.operation != OperationType.POCKET and name == 'islands':
+            return False
+        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name == 'user_tabs':
             return False
         if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset', 'extra_width']:
             return False
@@ -517,7 +523,7 @@ class OperationTreeItem(CAMTreeItem):
         self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
         self.updateCAM()
     def properties(self):
-        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset, self.prop_extra_width]
+        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset, self.prop_extra_width, self.prop_islands, self.prop_user_tabs]
     def onPropertyValueSet(self, name):
         self.updateCAM()
         self.emitDataChanged()

@@ -34,6 +34,12 @@ class EditableProperty(object):
     def setEditorData(self, editor, value):
         pass
 
+class SetEditableProperty(EditableProperty):
+    def toDisplayString(self, value):
+        return "%d items" % (len(value))
+    def validate(self, value):
+        raise ValueError("Manual entry not supported")
+
 class EnumClass(object):
     @classmethod
     def toString(classInst, value):

@@ -133,6 +133,7 @@ class DrawingViewer(view.PathViewer):
                     self.majorUpdate()
                     return
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
+                    self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.user_tabs ^ set([o.shape_id for o in objs]))])
                     self.mode_item.islands ^= set([o.shape_id for o in objs])
                     self.renderDrawing()
                     self.repaint()
@@ -143,9 +144,9 @@ class DrawingViewer(view.PathViewer):
                         if dist(pt, (x, y)) < 5:
                             ptToDelete = (x, y)
                     if ptToDelete is not None:
-                        self.mode_item.user_tabs.remove(ptToDelete)
+                        self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs - set([ptToDelete]))])
                     else:
-                        self.mode_item.user_tabs.add(pt)
+                        self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs | set([pt]))])
                     self.renderDrawing()
                     self.repaint()
                 return
