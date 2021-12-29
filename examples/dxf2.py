@@ -432,7 +432,7 @@ class CAMMainWindow(QMainWindow):
             self.viewer.majorUpdate()
     def shapeModelChanged(self, index):
         item = self.document.shapeModel.itemFromIndex(index)
-        if type(item) == MaterialTreeItem:
+        if type(item) == WorkpieceTreeItem:
             self.materialChanged()
         elif type(item) == ToolTreeItem:
             self.toolChanged()

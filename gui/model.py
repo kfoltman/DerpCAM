@@ -43,7 +43,8 @@ class CAMTreeItem(QStandardItem):
     def reload(self, dump):
         rtype = dump['_type']
         if rtype != type(self).__name__:
-            raise ValuError("Unexpected type: %s" % rtype)
+            if not (rtype == 'MaterialTreeItem' and isinstance(self, WorkpieceTreeItem)):
+                raise ValueError("Unexpected type: %s" % rtype)
         for prop in self.properties():
             if prop.attribute in dump:
                 setattr(self, prop.attribute, dump[prop.attribute])
@@ -56,8 +57,8 @@ class CAMTreeItem(QStandardItem):
             res = DrawingTreeItem(document)
         elif rtype == 'DrawingItemTreeItem':
             res = DrawingItemTreeItem(document)
-        elif rtype == 'MaterialTreeItem':
-            res = MaterialTreeItem(document)
+        elif rtype == 'MaterialTreeItem' or rtype == 'WorkpieceTreeItem':
+            res = WorkpieceTreeItem(document)
         elif rtype == 'ToolTreeItem':
             res = ToolTreeItem(document)
         elif rtype == 'OperationTreeItem':
@@ -420,13 +421,13 @@ class MaterialType(EnumClass):
         (STEEL, "Mild steel", material_mildsteel),
     ]
 
-class MaterialTreeItem(CAMTreeItem):
+class WorkpieceTreeItem(CAMTreeItem):
     prop_material = EnumEditableProperty("Material", "material", MaterialType, allow_none=True, none_value="Unknown")
     prop_thickness = FloatEditableProperty("Thickness", "thickness", "%0.2f mm", min=0, max=100, allow_none=True)
     prop_clearance = FloatEditableProperty("Clearance", "clearance", "%0.2f mm", min=0, max=100, allow_none=True)
     prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
-        CAMTreeItem.__init__(self, document, "Material")
+        CAMTreeItem.__init__(self, document, "Workpiece")
         self.material = MaterialType.WOOD
         self.thickness = 3
         self.clearance = 5
@@ -436,9 +437,9 @@ class MaterialTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             if self.thickness is not None:
-                return QVariant("Material: %0.2f mm %s" % (self.thickness, MaterialType.toString(self.material)))
+                return QVariant("Workpiece: %0.2f mm %s" % (self.thickness, MaterialType.toString(self.material)))
             else:
-                return QVariant("Material: ? %s" % (MaterialType.toString(self.material)))
+                return QVariant("Workpiece: ? %s" % (MaterialType.toString(self.material)))
         return CAMTreeItem.data(self, role)
     def onPropertyValueSet(self, name):
         if name == 'material':
@@ -648,7 +649,7 @@ class DocumentModel(QObject):
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
-        self.material = MaterialTreeItem(self)
+        self.material = WorkpieceTreeItem(self)
         self.tool = ToolTreeItem(self)
         self.drawing = DrawingTreeItem(self)
         self.filename = None
