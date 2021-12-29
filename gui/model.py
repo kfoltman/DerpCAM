@@ -471,7 +471,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
-    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs")
+    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]))
     prop_islands = SetEditableProperty("Islands", "islands")
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)

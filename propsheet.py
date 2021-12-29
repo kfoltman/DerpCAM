@@ -33,12 +33,22 @@ class EditableProperty(object):
         return None
     def setEditorData(self, editor, value):
         pass
+    def isEditable(self):
+        return True
 
 class SetEditableProperty(EditableProperty):
+    def __init__(self, name, attribute, format_func=None):
+        EditableProperty.__init__(self, name, attribute)
+        self.format_func = format_func
     def toDisplayString(self, value):
-        return "%d items" % (len(value))
+        if self.format_func is None:
+            return "%d items" % (len(value))
+        else:
+            return self.format_func(value)
     def validate(self, value):
         raise ValueError("Manual entry not supported")
+    def isEditable(self):
+        return False
 
 class EnumClass(object):
     @classmethod
@@ -171,9 +181,10 @@ class PropertyTableWidgetItem(QTableWidgetItem):
         self.def_value = def_value
         self.valid_values = valid_values
     def data(self, role):
-        if not (self.flags() & Qt.ItemIsEditable):
+        if not (self.flags() & Qt.ItemIsEnabled):
             if role == Qt.DisplayRole:
                 return "N/A"
+        if not (self.flags() & Qt.ItemIsEditable):
             if role == Qt.ForegroundRole:
                 return QBrush(QColor("black"))
             if role == Qt.BackgroundRole:
@@ -191,7 +202,7 @@ class PropertyTableWidgetItem(QTableWidgetItem):
             if role == Qt.ForegroundRole:
                 return QBrush(QColor("gray"))
         else:
-            if role == Qt.DisplayRole:
+            if role == Qt.DisplayRole or role == Qt.ToolTipRole:
                 return self.prop.toDisplayString(self.value)
             if role == Qt.ForegroundRole:
                 color = self.prop.toTextColor(self.value)
@@ -260,7 +271,8 @@ class PropertySheetWidget(QTableWidget):
                     changes.append((o, value))
             self.document.opChangeProperty(prop, changes)
         except Exception as e:
-            print (e)
+            box = QMessageBox(QMessageBox.Warning, "Warning", str(e), QMessageBox.Ok, self)
+            box.exec_()
         finally:
             #self.refreshRow(row)
             self.refreshAll()
@@ -301,7 +313,10 @@ class PropertySheetWidget(QTableWidget):
                             break
                 item = PropertyTableWidgetItem(self, prop, v, defValue, validValues)
                 if isValid:
-                    item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+                    if prop.isEditable():
+                        item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled)
+                    else:
+                        item.setFlags((item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled) &~ Qt.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() &~ (Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled ))
                 self.setItem(row, 0, item)
