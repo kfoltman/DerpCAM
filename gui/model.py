@@ -469,6 +469,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
         self.shape_id = None
@@ -479,6 +480,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_height = None
         self.tab_count = None
         self.offset = 0
+        self.extra_width = 0
         self.islands = set()
         self.user_tabs = set()
         self.operation = OperationType.OUTSIDE_CONTOUR
@@ -487,9 +489,11 @@ class OperationTreeItem(CAMTreeItem):
     def isDropEnabled(self):
         return False
     def isPropertyValid(self, name):
-        if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count']:
+        if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
-        if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset']:
+        if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset', 'extra_width']:
+            return False
+        if self.operation == OperationType.INTERPOLATED_HOLE and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
         return True
     def getValidEnumValues(self, name):
@@ -513,7 +517,7 @@ class OperationTreeItem(CAMTreeItem):
         self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
         self.updateCAM()
     def properties(self):
-        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset]
+        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset, self.prop_extra_width]
     def onPropertyValueSet(self, name):
         self.updateCAM()
         self.emitDataChanged()
@@ -543,9 +547,9 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
             if self.operation == OperationType.OUTSIDE_CONTOUR:
-                self.cam.outside_contour(self.shape, tabs=tabs)
+                self.cam.outside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
             elif self.operation == OperationType.INSIDE_CONTOUR:
-                self.cam.inside_contour(self.shape, tabs=tabs)
+                self.cam.inside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
             elif self.operation == OperationType.POCKET:
                 for island in self.islands:
                     item = self.document.drawing.itemById(island).translated(*translation).toShape()

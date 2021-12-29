@@ -117,9 +117,15 @@ class OperationsRenderer(object):
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
-                self.addToolpaths(owner, pen, tp, stage)
+                self.addToolpaths(owner, pen, tp, stage, operation)
             return
         path = path.transformed()
+        self.addToolpathsTransformed(owner, pen, path, stage, operation)
+    def addToolpathsTransformed(self, owner, pen, path, stage, operation):
+        if isinstance(path, toolpath.Toolpaths):
+            for tp in path.toolpaths:
+                self.addToolpathsTransformed(owner, pen, tp, stage, operation)
+            return
         if GeometrySettings.simplify_arcs:
             path = path.lines_to_arcs()
             if stage == 1:

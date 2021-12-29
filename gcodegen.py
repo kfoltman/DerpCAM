@@ -526,14 +526,18 @@ class Contour(TabbedOperation):
             return contour
         points = contour.points
         offset = process.Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2 * extension)
-        if len(offset) != 1:
-            raise ValueError("Offset outline for one shape consists of several distinct pieces")
-        extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
-        if process.startWithClosestPoint(extension, points[0], tool.diameter):
-            if SameOrientation(points, extension.points):
-                extension.points = list(reversed(extension.points))
-            points = extension.points + points + points[0:1] + extension.points[0:1]
-        return toolpath.Toolpath(points, contour.closed, tool)
+        if len(offset) == 1:
+            extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
+            if process.startWithClosestPoint(extension, points[0], tool.diameter):
+                if SameOrientation(points, extension.points):
+                    extension.points = list(reversed(extension.points))
+                points = extension.points + points + points[0:1] + extension.points[0:1]
+                return toolpath.Toolpath(points, contour.closed, tool)
+        widened = []
+        for path in offset:
+            widened.append(toolpath.Toolpath(PtsFromInts(path), True, tool))
+        widened.append(toolpath.Toolpath(points, contour.closed, tool))
+        return toolpath.Toolpaths(widened)
 
 class TrochoidalContour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
@@ -728,7 +732,7 @@ class Operations(object):
         self.operations.append(operation)
     def add_all(self, operations):
         self.operations += operations
-    def outside_contour(self, shape, tabs, widen=False, props=None):
+    def outside_contour(self, shape, tabs, widen=0, props=None):
         self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, widen=widen))
     def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
         self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
@@ -746,8 +750,8 @@ class Operations(object):
                 self.add(Contour(shape, outside, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
         else:
             self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
-    def inside_contour(self, shape, tabs, props=None):
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs))
+    def inside_contour(self, shape, tabs, widen=0, props=None):
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, widen=-widen))
     def engrave(self, shape, props=None):
         self.add(Engrave(shape, self.tool, props or self.props))
     def pocket(self, shape, props=None):
