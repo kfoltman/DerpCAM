@@ -29,7 +29,7 @@ class ConfigSettings(object):
         settings.setValue("geometry/grid_resolution", self.grid_resolution)
         settings.sync()
     def update(self):
-        GeometrySettings.resolution = self.resolution
+        GeometrySettings.RESOLUTION = self.resolution
         GeometrySettings.simplify_arcs = self.simplify_arcs
 
 configSettings = ConfigSettings()
