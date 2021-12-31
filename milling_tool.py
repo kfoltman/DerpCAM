@@ -28,7 +28,7 @@ class Tool(object):
             return self.hfeed / (2 * radial_engagement)
     @staticmethod
     def calc_vfeed(hfeed, degrees):
-        return hfeed * tan(degrees * pi / 180)
+        return hfeed * tan(min(45, degrees) * pi / 180)
     # Path slope for ramp/helical entry
     def slope(self):
         return max(1, int(self.hfeed / self.vfeed))
