@@ -38,7 +38,6 @@ class Tool(object):
             tool.rpm = self.rpm
         else:
             tool.rpm = rpm
-            print (rpm)
             tool.hfeed = tool.hfeed * rpm / self.rpm
             tool.vfeed = tool.vfeed * rpm / self.rpm
         tool.flutes = self.flutes
