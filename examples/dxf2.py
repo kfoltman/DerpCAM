@@ -132,8 +132,7 @@ class DrawingViewer(view.PathViewer):
                     self.majorUpdate()
                     return
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
-                    self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.user_tabs ^ set([o.shape_id for o in objs]))])
-                    self.mode_item.islands ^= set([o.shape_id for o in objs])
+                    self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])
                     self.renderDrawing()
                     self.repaint()
                 elif self.mode == DrawingUIMode.MODE_TABS:
