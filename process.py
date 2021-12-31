@@ -212,6 +212,7 @@ class Shape(object):
         boundary = IntPath(self.boundary)
         boundary_transformed = [ IntPath(i, True) for i in Shape._offset(boundary.int_points, True, -tool.diameter * 0.5 * GeometrySettings.RESOLUTION) ]
         islands_transformed = []
+        islands_transformed_nonoverlap = []
         islands = self.islands
         for island in islands:
             pc = PyclipperOffset()
@@ -224,9 +225,10 @@ class Shape(object):
                 return None
             res = [IntPath(it, True) for it in res]
             islands_transformed += res
-        if islands_transformed:
-            islands_transformed = Shape._union(*[i for i in islands_transformed], return_ints=True)
-        for path in islands_transformed:
+            islands_transformed_nonoverlap += [it for it in res if not run_clipper_simple(CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
+        if islands_transformed_nonoverlap:
+            islands_transformed_nonoverlap = Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+        for path in islands_transformed_nonoverlap:
             for ints in Shape._intersection(path, *boundary_transformed):
                 # diff with other islands
                 tps_islands += [Toolpath(ints, True, tool)]
@@ -235,7 +237,7 @@ class Shape(object):
         for island in tps_islands:
             mergeToolpaths(tps, island, tool.diameter)
         while True:
-            res = self.contour(tool, False, displace_now, islands_transformed)
+            res = self.contour(tool, False, displace_now, subtract=islands_transformed)
             if not res:
                 break
             displace_now += stepover
