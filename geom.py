@@ -116,7 +116,9 @@ def max_bounds(b1, *b2etc):
         ey = max(ey, ey2)
     return sx, sy, ex, ey
 
-def path_length(path):
+def path_length(path, closed=False):
+    if closed:
+        return path_length(path, False) + dist(seg_end(path[-1]), path[0])
     return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc_length(arc) for arc in path if len(arc) == 7])
 
 def path_lengths(path):
@@ -163,6 +165,38 @@ def cut_arc(arc, alpha, beta):
     arc_end = c.at_angle(start + span)
     return [arc_start, (arc[0], arc_start, arc_end, arc[3], arc[4], start, span)]
 
+# Return the point at 'pos' position along the path.
+def path_point(path, pos, closed=False):
+    tlen = 0
+    i = 1
+    last = path[0]
+    assert len(last) == 2
+    if closed:
+        # That's a bit wasteful, but we'll live with this for now.
+        path = path + path[0:1]
+    while i < len(path):
+        if pos <= tlen:
+            return last
+        p = path[i]
+        if len(p) == 7: # Arc
+            tseg = arc_length(p)
+            p2 = p[2]
+        else:
+            p2 = p
+            tseg = dist(last, p)
+        if pos < tlen + tseg:
+            alpha = (pos - tlen) / tseg
+            if len(p) == 7:
+                return p[3].at_angle(p[5] + p[6] * alpha)
+            else:
+                return weighted(last, p, alpha)
+        tlen += tseg
+        last = p2
+        i += 1
+    if closed and pos > tlen:
+        return path_point(path, pos % tlen, False)
+    return last
+
 def calc_subpath(path, start, end, closed=False):
     res = []
     tlen = 0
@@ -170,6 +204,7 @@ def calc_subpath(path, start, end, closed=False):
         # That's a bit wasteful, but we'll live with this for now.
         path = path + path[0:1]
     last = path[0]
+    assert len(last) == 2
     for p in path[1:]:
         if len(p) == 7: # Arc
             tag, p1, p2, c, points, sstart, sspan = p
@@ -563,13 +598,16 @@ def closest_point(path, closed, pt):
                 if abs(my) < mindist:
                     mindist = abs(my)
                     closest = lengths[i] + (lengths[i + 1] - lengths[i]) * mx / d
+    assert closest <= lengths[-1]
     return closest, mindist
 
 # Calculate a point on a path, then offset it by 'dist' (positive = outwards from the shape)
 # Only works for closed paths!
 def offset_point_on_path(path, pos, dist):
-    plength = path_length(path)
-    subpath = calc_subpath(path, pos, min(plength, pos + 0.1))
+    plength = path_length(path, closed=True)
+    #path = path + path[0:1]
+    #assert pos <= plength
+    subpath = calc_subpath(path, pos, min(plength, pos + 0.1), closed=True)
     orientation = IntPath(path).orientation()
     if orientation:
         dist = -dist

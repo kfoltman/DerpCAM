@@ -46,7 +46,6 @@ class DocumentRenderer(object):
         self.document.drawing.renderTo(owner, modeData)
         if owner.mode == DrawingUIMode.MODE_NORMAL:
             self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner))
-            self.document.forEachOperation(lambda item: item.renderer.renderNotTabs(owner))
             self.lastpt = (0, 0)
             self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner))
     def renderRapids(self, renderer, owner):

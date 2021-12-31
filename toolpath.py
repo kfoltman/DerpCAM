@@ -18,6 +18,9 @@ class Tab(object):
         if elen >= self.end:
             segs.append((self.end, elen))
         return segs
+    # Start and end point coordinates
+    def coords(self, path):
+        return (path_point(path, self.start), path_point(path, self.end))
 
 class Tabs(object):
     def __init__(self, tabs):
@@ -45,6 +48,9 @@ class Tabs(object):
         for s, e in result:
             fres.append(((s - slen) / l, (e - slen) / l))
         return fres
+    # Start and end point coordinates
+    def coords(self, path):
+        return [tab.coords(path) for tab in self.tabs]
 
 class Toolpath(object):
     def __init__(self, points, closed, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
@@ -94,7 +100,7 @@ class Toolpath(object):
         tp.helical_entry = None
         return tp
 
-    def eliminate_tabs2(self, tabs):
+    def cut_by_tabs(self, tabs):
         ptsc = self.points if not self.closed else self.points + [self.points[0]]
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
         pos = 0
@@ -113,22 +119,31 @@ class Toolpath(object):
     def flattened(self):
         return [self]
 
-    def autotabs(self, ntabs, offset=0, width=1):
+    def autotabs(self, tool, ntabs, width=1):
+        tlength = path_length(self.points, self.closed)
+        offset = tlength / (1 + ntabs)
         tablist = []
-        pos = offset
-        tabw = self.tool.diameter * (1 + width)
+        tabw = tool.diameter * (1 + width)
         for i in range(ntabs):
-            tablist.append(Tab(pos, pos + tabw))
-            pos += self.tlength / ntabs
-        return Tabs(tablist)
+            pos = offset + i * tlength / ntabs
+            tablist.append(path_point(self.points, pos + tabw / 2, closed=self.closed))
+        return tablist
 
     def usertabs(self, tab_locations, width=1):
         tablist = []
         tabw = self.tool.diameter * (1 + width)
         for tab in tab_locations:
             pos, dist = closest_point(self.points, self.closed, tab)
-            pos = max(0, pos - tabw / 2)
-            tablist.append(Tab(pos, pos + tabw))
+            pos = pos - tabw / 2
+            if pos >= 0:
+                if pos + tabw <= self.tlength:
+                    tablist.append(Tab(pos, pos + tabw))
+                else:
+                    tablist.append(Tab(pos, self.tlength))
+                    tablist.append(Tab(0, pos + tabw - self.tlength))
+            else:
+                tablist.append(Tab(0, pos + tabw))
+                tablist.append(Tab(self.tlength + pos, self.tlength))
         return Tabs(tablist)
 
 class Toolpaths(object):

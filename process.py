@@ -289,7 +289,7 @@ class Shape(object):
             res = []
             for i, p1 in enumerate(pts):
                 p2 = pts[(i + 1) % len(pts)]
-                segs = max(1, floor(dist(p1, p2)))
+                segs = max(1, ceil(dist(p1, p2)))
                 for i in range(segs):
                     res.append(weighted(p1, p2, i / segs))
             return res

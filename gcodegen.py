@@ -235,14 +235,11 @@ class CutPath2D(object):
             self.subpaths_full = self.simplifySubpaths(self.subpaths_full)
 
 class TabbedCutPath2D(CutPath2D):
-    def __init__(self, path, tabs):
-        CutPath2D.__init__(self, path)
-        if tabs and tabs.tabs:
-            self.subpaths_tabbed = path.eliminate_tabs2(tabs) if tabs and tabs.tabs else self.subpaths_full
-            if GeometrySettings.simplify_arcs:
-                self.subpaths_tabbed = self.simplifySubpaths(self.subpaths_tabbed)
-        else:
-            self.subpaths_tabbed = self.subpaths_full
+    def __init__(self, path_notabs, path_withtabs):
+        CutPath2D.__init__(self, path_notabs)
+        self.subpaths_tabbed = path_withtabs
+        if GeometrySettings.simplify_arcs:
+            self.subpaths_tabbed = self.simplifySubpaths(self.subpaths_tabbed)
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False):
@@ -255,7 +252,8 @@ class CutLayer2D(object):
 class BaseCut2D(Cut):
     def __init__(self, machine_params, props, tool, toolpath):
         Cut.__init__(self, machine_params, props, tool)
-        self.prepare_paths(toolpath)
+        if toolpath is not None:
+            self.prepare_paths(toolpath)
 
     def prepare_paths(self, toolpath):
         self.cutpaths = [CutPath2D(toolpath)]
@@ -395,16 +393,18 @@ class BaseCut2D(Cut):
         return self.tool.maxdoc
 
 class Cut2DWithTabs(BaseCut2D):
-    def __init__(self, machine_params, props, tool, toolpath, tabs):
+    def __init__(self, machine_params, props, tool, toolpath_notabs, toolpath_withtabs):
         if props.tab_depth is not None and props.tab_depth < props.depth:
             raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (props.tab_depth, props.depth))
-        self.tabs = tabs
+        self.toolpath_notabs = toolpath_notabs
+        self.toolpath_withtabs = toolpath_withtabs
         self.tab_depth = props.tab_depth if props.tab_depth is not None else props.depth
         self.over_tab_z = self.tab_depth + machine_params.over_tab_safety
-        BaseCut2D.__init__(self, machine_params, props, tool, toolpath)
+        BaseCut2D.__init__(self, machine_params, props, tool, (toolpath_notabs, toolpath_withtabs))
 
     def prepare_paths(self, toolpath):
-        self.cutpaths = [TabbedCutPath2D(toolpath, self.tabs)]
+        toolpath_notabs, toolpath_withtabs = toolpath
+        self.cutpaths = [TabbedCutPath2D(toolpath_notabs, toolpath_withtabs)]
 
     def subpaths_for_layer(self, prev_depth, depth, cutpath):
         return cutpath.subpaths_tabbed if depth < self.tab_depth else cutpath.subpaths_full
@@ -439,7 +439,7 @@ class Cut2DWithTabs(BaseCut2D):
 
 class Cut2DWithDraft(BaseCut2D):
     def __init__(self, machine_params, props, tool, shape, toolpaths_func, outside, draft_angle_deg, layer_thickness):
-        BaseCut2D.__init__(self, machine_params, props, tool)
+        BaseCut2D.__init__(self, machine_params, props, tool, None)
         self.shape = shape
         self.outside = outside
         self.draft_angle_deg = draft_angle_deg
@@ -447,7 +447,7 @@ class Cut2DWithDraft(BaseCut2D):
         self.draft = tan(draft_angle_deg * pi / 180)
         max_height = self.props.start_depth - self.props.depth
         toolpaths = toolpaths_func(self.shape, self.tool, self.props.margin + max_height * self.draft)
-        self.flattened = toolpaths.flattened() if isinstance(toolpaths, Toolpaths) else [toolpaths]
+        self.flattened = toolpaths.flattened() if isinstance(toolpaths, toolpath.Toolpaths) else [toolpaths]
         self.cutpaths = [CutPath2D(p) for p in self.flattened]
     def layers_at_depth(self, prev_depth, depth, cutpath):
         base_layers = [CutLayer2D(prev_depth, depth, self.subpaths_for_layer(prev_depth, depth, cutpath))]
@@ -462,8 +462,8 @@ class Cut2DWithDraft(BaseCut2D):
             depth = self.props.start_depth - height
             draftval = self.draft * height
             contour = self.shape.contour(self.tool, self.outside, displace=self.props.margin+draftval)
-            flattened = contour.flattened() if isinstance(contour, Toolpaths) else [contour]
-            paths = [CutPath2D(p, None) for p in flattened]
+            flattened = contour.flattened() if isinstance(contour, toolpath.Toolpaths) else [contour]
+            paths = [CutPath2D(p) for p in flattened]
             assert len(paths) == 1
             draft_layers += [CutLayer2D(prev_depth, depth, paths[0].subpaths_full, force_join=True)]
             prev_depth = depth
@@ -472,12 +472,10 @@ class Cut2DWithDraft(BaseCut2D):
         return cutpath.subpaths_full
 
 class Operation(object):
-    def __init__(self, shape, tool, paths, props):
+    def __init__(self, shape, tool, props):
         self.shape = shape
         self.tool = tool
-        self.paths = paths
         self.props = props
-        self.flattened = paths.flattened() if paths else None
     def to_text(self):
         if self.props.start_depth != 0:
             return self.operation_name() + ", " + ("%0.2fmm deep at %0.2fmm" % (self.props.start_depth - self.props.depth, -self.props.start_depth))
@@ -485,39 +483,118 @@ class Operation(object):
             return self.operation_name() + ", " + ("%0.2fmm deep" % (self.props.start_depth - self.props.depth))
     def operation_name(self):
         return self.__class__.__name__
+
+class UntabbedOperation(Operation):
+    def __init__(self, shape, tool, props, paths):
+        Operation.__init__(self, shape, tool, props)
+        self.paths = paths
+        self.flattened = paths.flattened() if paths else None
     def to_gcode(self, gcode, machine_params):
         for path in self.flattened:
             BaseCut2D(machine_params, self.props, self.tool, path).build(gcode)
+    def to_preview(self):
+        return [(self.props.depth, i) for i in self.flattened]
+
+class Engrave(UntabbedOperation):
+    def __init__(self, shape, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, shape.engrave(tool))
+
+class FaceMill(UntabbedOperation):
+    def __init__(self, shape, angle, margin, zigzag, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, shape.face_mill(tool, angle, margin, zigzag))
+
+class Pocket(UntabbedOperation):
+    def __init__(self, shape, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+
+class PocketWithDraft(UntabbedOperation):
+    def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
+        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+        self.draft_angle_deg = draft_angle_deg
+        self.layer_thickness = layer_thickness
+    def to_gcode(self, gcode, machine_params):
+        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.pocket_contour(tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class TabbedOperation(Operation):
-    def __init__(self, shape, tool, paths, props, tabs):
-        Operation.__init__(self, shape, tool, paths, props)
+    def __init__(self, shape, tool, props, paths, tabs):
+        Operation.__init__(self, shape, tool, props)
+        self.paths = paths
+        self.flattened = paths.flattened() if paths else None
+        self.tabbed_for_path = {}
         if tabs:
-            assert len(self.flattened) == 1
-            if isinstance(tabs, int):
-                self.tabs = self.flattened[0].autotabs(tabs, width=self.tabs_width())
-            else:
-                self.tabs = self.flattened[0].usertabs(tabs, width=self.tabs_width())
-            self.tabbed = self.flattened[0].eliminate_tabs2(self.tabs)
-        else:
-            self.tabs = Tabs([])
-            self.tabbed = self.flattened
+            for i in self.flattened:
+                tab_inst = i.usertabs(tabs[i], width=self.tabs_width())
+                self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst)
     def to_gcode(self, gcode, machine_params):
         tab_depth = self.props.tab_depth
         if tab_depth is None:
             tab_depth = self.props.depth
         for path in self.flattened:
-            Cut2DWithTabs(machine_params, self.props, self.tool, path, self.tabs).build(gcode)
+            tabbed = self.tabbed_for_path.get(path, None)
+            if tabbed is not None:
+                Cut2DWithTabs(machine_params, self.props, self.tool, path, tabbed).build(gcode)
+            else:
+                BaseCut2D(machine_params, self.props, self.tool, path).build(gcode)
     def tabs_width(self):
         return 1
+    def to_preview(self):
+        tab_depth = self.props.start_depth if self.props.tab_depth is None else self.props.tab_depth
+        preview = []
+        for path in self.flattened:
+            tabbed = self.tabbed_for_path.get(path, None)
+            if tabbed is not None:
+                for i in tabbed:
+                    preview.append((tab_depth if i.is_tab else self.props.depth, i))
+            else:
+                preview.append((self.props.depth, path))
+        return preview
 
 class Contour(TabbedOperation):
-    def __init__(self, shape, outside, tool, props, tabs, widen=0):
-        contours = shape.contour(tool, outside=outside, displace=props.margin)
-        if widen:
-            widen_func = lambda contour: self.widen(contour, tool, widen)
-            contours = toolpath.Toolpaths([toolpath.Toolpath(contour.points, contour.closed, tool, transform=widen_func) for contour in contours.toolpaths])
-        TabbedOperation.__init__(self, shape, tool, contours, props, tabs=tabs)
+    def __init__(self, shape, outside, tool, props, tabs, extra_width=0):
+        assert shape.closed
+        extra_width *= tool.diameter / 2 
+        contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
+        if isinstance(tabs, int):
+            newtabs = []
+            for contour in contours:
+                newtabs += contour.autotabs(tool, tabs, width=self.tabs_width())
+        else:
+            # Offset the tabs
+            newtabs = []
+            for pt in tabs:
+                pos, dist = closest_point(shape.boundary, True, pt)
+                pt2 = offset_point_on_path(shape.boundary, pos, tool.diameter / 2 * (1 if outside else -1))
+                newtabs.append(pt2)
+        tabs = newtabs
+        tabs_dict = {}
+        if extra_width:
+            widen_func = lambda contour: self.widen(contour, tool, extra_width)
+            res = []
+            for contour in contours:
+                widened = toolpath.Toolpath(contour.points, contour.closed, tool, transform=widen_func).transformed()
+                if isinstance(widened, toolpath.Toolpath):
+                    moretabs = []
+                    for pt in tabs:
+                        pos, dist = closest_point(contour.points, contour.closed, pt)
+                        if dist < tool.diameter * sqrt(2):
+                            pt2 = offset_point_on_path(contour.points, pos, extra_width)
+                            moretabs.append(pt)
+                            moretabs.append(pt2)
+                    tabs_dict[widened] = moretabs
+                res.append(widened)
+            contours = toolpath.Toolpaths(res)
+        else:
+            contours = toolpath.Toolpaths(contours)
+        for i in contours.flattened():
+            if i not in tabs_dict:
+                # Filter by distance
+                thistabs = []
+                for t in tabs:
+                    pos, dist = closest_point(i.points, True, t)
+                    if dist < tool.diameter * sqrt(2):
+                        thistabs.append(t)
+                tabs_dict[i] = thistabs
+        TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
         self.outside = outside
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
@@ -525,12 +602,12 @@ class Contour(TabbedOperation):
         if not contour.closed:
             return contour
         points = contour.points
-        offset = process.Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * tool.diameter / 2 * extension)
+        offset = process.Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * extension)
         if len(offset) == 1:
             extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
             if process.startWithClosestPoint(extension, points[0], tool.diameter):
                 if SameOrientation(points, extension.points):
-                    extension.points = list(reversed(extension.points))
+                    extension.points = reverse_path(extension.points)
                 points = extension.points + points + points[0:1] + extension.points[0:1]
                 return toolpath.Toolpath(points, contour.closed, tool)
         widened = []
@@ -549,39 +626,19 @@ class TrochoidalContour(TabbedOperation):
         contour = shape.contour(tool, outside=outside, displace=nrad + props.margin)
         trochoidal_func = lambda contour: trochoidal_transform(contour, nrad, nspeed)
         contour = Toolpath(contour.points, contour.closed, tool, transform=trochoidal_func)
-        TabbedOperation.__init__(self, shape, tool, contour, props, tabs=tabs)
+        TabbedOperation.__init__(self, shape, tool, props, contour, tabs=tabs)
     def tabs_width(self):
         # This needs tweaking
         return 1 + self.nrad
 
-class Pocket(Operation):
-    def __init__(self, shape, tool, props):
-        Operation.__init__(self, shape, tool, shape.pocket_contour(tool, displace=props.margin), props)
-
-class PocketWithDraft(Operation):
-    def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
-        Operation.__init__(self, shape, tool, shape.pocket_contour(tool, displace=props.margin), props)
-        self.draft_angle_deg = draft_angle_deg
-        self.layer_thickness = layer_thickness
-    def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.pocket_contour(tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
-
 class ContourWithDraft(TabbedOperation):
     def __init__(self, shape, outside, tool, props, draft_angle_deg, layer_thickness):
-        TabbedOperation.__init__(self, shape, tool, shape.contour(tool, outside=outside, displace=props.margin), props)
+        TabbedOperation.__init__(self, shape, tool, props, shape.contour(tool, outside=outside, displace=props.margin), [])
         self.outside = outside
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
     def to_gcode(self, gcode, machine_params):
         Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.contour(tool, self.outside, margin), self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
-
-class Engrave(Operation):
-    def __init__(self, shape, tool, props):
-        Operation.__init__(self, shape, tool, shape.engrave(tool), props)
-
-class FaceMill(Operation):
-    def __init__(self, shape, angle, margin, zigzag, tool, props):
-        Operation.__init__(self, shape, tool, shape.face_mill(tool, angle, margin, zigzag), props)
 
 class RetractSchedule(object):
     pass
@@ -600,10 +657,10 @@ class RetractBy(RetractSchedule):
     def get(self, z, props, semi_safe_z):
         return min(z + self.peck_depth, props.start_depth)
 
-class PeckDrill(Operation):
+class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
-        Operation.__init__(self, shape, tool, Toolpath([(x, y)], True, tool), props)
+        UntabbedOperation.__init__(self, shape, tool, props, Toolpath([(x, y)], True, tool))
         self.x = x
         self.y = y
         self.dwell_bottom = dwell_bottom
@@ -629,14 +686,14 @@ class PeckDrill(Operation):
                 gcode.dwell(1000 * self.dwell_retract)
             curz = nextz
 
-class HelicalDrill(Operation):
+class HelicalDrill(UntabbedOperation):
     def __init__(self, x, y, d, tool, props):
         d -= props.margin
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
         shape = process.Shape.circle(x, y, r=0.5*d)
-        Operation.__init__(self, shape, tool, shape.pocket_contour(tool), props)
+        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool))
         self.x = x
         self.y = y
         self.d = d
@@ -733,7 +790,7 @@ class Operations(object):
     def add_all(self, operations):
         self.operations += operations
     def outside_contour(self, shape, tabs, widen=0, props=None):
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, widen=widen))
+        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen))
     def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
         self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
@@ -751,7 +808,7 @@ class Operations(object):
         else:
             self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
     def inside_contour(self, shape, tabs, widen=0, props=None):
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, widen=-widen))
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen))
     def engrave(self, shape, props=None):
         self.add(Engrave(shape, self.tool, props or self.props))
     def pocket(self, shape, props=None):

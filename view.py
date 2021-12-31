@@ -21,13 +21,13 @@ class OperationsRenderer(object):
             else:
                 b = max_bounds(b, opb)
         return b
-    def highlightPen(self, path):
-        return QPen(QColor(0, 128, 192, 255), path.tool.diameter)
-    def toolPen(self, path, alpha=100, isHighlighted=False):
+    def penColInt(self, r, g, b, a, diameter):
+        return QPen(QColor(255 + (r - 255) * a / 255, 255 + (g - 255) * a / 255, 255 + (b - 255) * a / 255), diameter)
+    def toolPen(self, path, alpha=255, isHighlighted=False):
         if isHighlighted:
-            pen = self.highlightPen(path)
+            pen = self.penColInt(0, 128, 192, alpha, path.tool.diameter)
         else:
-            pen = QPen(QColor(192, 192, 192, alpha), path.tool.diameter)
+            pen = self.penColInt(192, 192, 192, alpha, path.tool.diameter)
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
         return pen
@@ -39,52 +39,15 @@ class OperationsRenderer(object):
                     # Null passes (we should probably warn about these)
                     if op.props.start_depth <= op.props.depth:
                         continue
-                    # Draw tab-less version unless tabs are full height
-                    if op.props.tab_depth is None:
-                        tab_alpha = 100
-                    else:
-                        tab_alpha = 100 * (op.props.start_depth - op.props.tab_depth) / (op.props.start_depth - op.props.depth)
-                    if not isinstance(op, gcodegen.TabbedOperation):
-                        for toolpath in op.flattened:
-                            if stage == 1:
-                                pen = self.toolPen(toolpath, alpha=100, isHighlighted = self.isHighlighted(op))
-                            if stage == 2:
-                                pen = QPen(QColor(0, 0, 0, 100), 0)
-                            self.addToolpaths(owner, pen, toolpath, stage, op)
-                    elif (op.props.tab_depth is not None and op.props.tab_depth < op.props.start_depth):
-                        for toolpath in op.flattened:
-                            if stage == 1:
-                                # Use the alpha for the tab depth
-                                pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
-                            if stage == 2:
-                                pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
-                            self.addToolpaths(owner, pen, toolpath, stage, op)
-                        for toolpath in op.tabbed:
-                            if stage == 1:
-                                # Draw a cut line of the diameter of the cut
-                                alpha = tab_alpha if toolpath.is_tab else 100
-                                pen = self.toolPen(toolpath, alpha=tab_alpha, isHighlighted = self.isHighlighted(op))
-                            else:
-                                if toolpath.is_tab:
-                                    pen = QPen(QColor(0, 0, 0, tab_alpha), 0)
-                                else:
-                                    pen = QPen(QColor(0, 0, 0, 100), 0)
-                            self.addToolpaths(owner, pen, toolpath, stage, op)
+                    for depth, toolpath in op.to_preview():
+                        alpha = int(255 * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
+                        if stage == 1:
+                            pen = self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op))
+                        if stage == 2:
+                            pen = self.penColInt(0, 0, 0, alpha, 0)
+                        self.addToolpaths(owner, pen, toolpath, stage, op)
     def isHighlighted(self, operation):
         return False
-    def renderNotTabs(self, owner):
-        # Pink tint for cuts that are not tabs
-        for op in self.operations.operations:
-            if self.isHighlighted(op):
-                pen = self.highlightPen(op)
-            else:
-                pen = QPen(QColor(128, 0, 128, 32), op.tool.diameter)
-            pen.setCapStyle(Qt.RoundCap)
-            pen.setJoinStyle(Qt.RoundJoin)
-            if op.paths and isinstance(op, gcodegen.TabbedOperation) and op.tabs and op.tabs.tabs:
-                for subpath in op.tabbed:
-                    if not subpath.is_tab:
-                        owner.addLines(pen, subpath.transformed().points, False)
     def renderRapids(self, owner, lastpt = (0, 0)):
         # Red rapid moves
         pen = QPen(QColor(255, 0, 0), 0)
@@ -102,7 +65,6 @@ class OperationsRenderer(object):
                 owner.addLines(penIslands, p, True)
     def renderDrawing(self, owner):
         self.renderToolpaths(owner)
-        self.renderNotTabs(owner)
         self.renderRapids(owner)
         self.renderShapes(owner)
     def addRapids(self, owner, pen, path, lastpt):
@@ -111,8 +73,8 @@ class OperationsRenderer(object):
                 lastpt = self.addRapids(owner, pen, tp, lastpt)
             return lastpt
         if path.helical_entry:
-            owner.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False)
-        owner.addLines(pen, [lastpt, path.points[0]], False)
+            owner.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False, darken=False)
+        owner.addLines(pen, [lastpt, path.points[0]], False, darken=False)
         return path.points[0 if path.closed else -1]
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
@@ -128,10 +90,6 @@ class OperationsRenderer(object):
             return
         if GeometrySettings.simplify_arcs:
             path = path.lines_to_arcs()
-            if stage == 1:
-                pen = self.toolPen(path, isHighlighted = self.isHighlighted(operation))
-            else:
-                pen = QPen(QColor(160, 160, 160) if path.is_tab else QColor(0, 128, 128), 0)
             owner.addLines(pen, path.points, path.closed, True)
         else:
             owner.addLines(pen, path.points, path.closed)
@@ -174,7 +132,7 @@ class PathViewer(QWidget):
         vpt2 = self.unproject(pt)
         self.zero += vpt - vpt2
         self.repaint()
-    def addPath(self, pen, *polylines):
+    def addPath(self, pen, *polylines, darken=True):
         paths = []
         for polyline in polylines:
             path = QPainterPath()
@@ -182,9 +140,9 @@ class PathViewer(QWidget):
             for point in polyline[1:]:
                 path.lineTo(*point)
             if polyline[0] == polyline[-1]:
-                self.drawingOps.append((pen, path, path.boundingRect()))
+                self.drawingOps.append((pen, path, path.boundingRect(), darken))
             else:
-                self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1))))
+                self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1)), darken))
 
     def renderDrawing(self):
         self.drawingOps = []
@@ -206,7 +164,11 @@ class PathViewer(QWidget):
         transform = QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
         qp.setTransform(transform)
         drawingArea = QRectF(self.rect())
-        for pen, path, bbox in self.drawingOps:
+        for pen, path, bbox, darken in self.drawingOps:
+            if darken:
+                qp.setCompositionMode(QPainter.CompositionMode_Darken)
+            else:
+                qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
             bounds = transform.mapRect(bbox)
             if bounds.intersects(drawingArea):
                 # Skip all the thick lines when drawing during an interactive
@@ -258,13 +220,13 @@ class PathViewer(QWidget):
         mx, my = (self.size().width() * 0.5, self.size().height() * 0.5)
         return QPointF((qpf.x() - mx) / scale + self.zero.x(), -(qpf.y() - my) / scale + self.zero.y())
 
-    def addLines(self, pen, points, closed, has_arcs=False):
+    def addLines(self, pen, points, closed, has_arcs=False, darken=True):
         if has_arcs:
             points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
         if closed:
-            self.addPath(pen, points + points[0:1])
+            self.addPath(pen, points + points[0:1], darken=darken)
         else:
-            self.addPath(pen, points)
+            self.addPath(pen, points, darken=darken)
 
     def processMove(self, e):
         orig_zero, orig_pos = self.click_data
