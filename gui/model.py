@@ -248,8 +248,11 @@ class DrawingTreeItem(CAMTreeItem):
         self.reset()
     def reset(self):
         self.removeRows(0, self.rowCount())
+        self.resetProperties()
+    def resetProperties(self):
         self.x_offset = 0
         self.y_offset = 0
+        self.emitDataChanged()
     def items(self):
         i = 0
         while i < self.rowCount():
@@ -350,6 +353,8 @@ class ToolTreeItem(CAMTreeItem):
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Tool")
         self.setEditable(False)
+        self.resetProperties()
+    def resetProperties(self):
         self.diameter = 3.2
         self.flutes = 2
         self.cel = 22
@@ -357,6 +362,7 @@ class ToolTreeItem(CAMTreeItem):
         self.hfeed = None
         self.vfeed = None
         self.rpm = None
+        self.emitDataChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Tool: " + self.document.gcode_tool.short_info)
@@ -428,10 +434,13 @@ class WorkpieceTreeItem(CAMTreeItem):
     prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Workpiece")
+        self.resetProperties()
+    def resetProperties(self):
         self.material = MaterialType.WOOD
         self.thickness = 3
         self.clearance = 5
         self.safe_entry_z = 1
+        self.emitDataChanged()
     def properties(self):
         return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
     def data(self, role):
@@ -682,7 +691,10 @@ class DocumentModel(QObject):
             self.drawing.appendRow(DrawingItemTreeItem.load(self, i))
         for i in data['operations']:
             operation = CAMTreeItem.load(self, i)
-            self.operModel.appendRow(operation)
+            if operation.orig_shape is None:
+                print ("Warning: dangling reference to shape %d, ignoring the referencing operation" % (operation.shape_id, ))
+            else:
+                self.operModel.appendRow(operation)
         self.updateCAM()
     def make_machine_params(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
@@ -691,7 +703,14 @@ class DocumentModel(QObject):
         self.gcode_coating = carbide_uncoated
         self.gcode_tool_orig = standard_tool(self.tool.diameter, self.tool.flutes, self.gcode_material, self.gcode_coating)
         self.gcode_tool = self.gcode_tool_orig.clone_with_overrides(self.tool.hfeed, self.tool.vfeed, self.tool.depth, self.tool.rpm)
+    def reinitDocument(self):
+        self.undoStack.clear()
+        self.material.resetProperties()
+        self.tool.resetProperties()
+        self.drawing.reset()
+        self.operModel.removeRows(0, self.operModel.rowCount())
     def importDrawing(self, fn):
+        self.reinitDocument()
         self.filename = None
         self.drawingFilename = fn
         self.drawing.importDrawing(fn)
