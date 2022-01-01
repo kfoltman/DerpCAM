@@ -4,7 +4,8 @@ from math import *
 class GeometrySettings:
     RESOLUTION = 25.0
     fillMode = PFT_POSITIVE
-    simplify_arcs = False
+    simplify_arcs = True
+    simplify_lines = False
 
 def PtsToInts(points):
     return [(round(x * GeometrySettings.RESOLUTION), round(y * GeometrySettings.RESOLUTION)) for x, y in points]
@@ -459,6 +460,70 @@ class CircleFitter(object):
             else:
                 pts.append((p[0], p[1]))
         return pts
+
+class LineOptimizer(object):
+    @staticmethod
+    def simplify(points):
+        last = points[0]
+        assert len(last) == 2
+        # XXXKF make it settable
+        # Detection threshold (the shortest line that will initiate coalescing)
+        threshold = 1.0
+        # Error threshold (coalesce until one of the removed points sticks out by this much)
+        threshold2 = 0.2
+        run_start = None
+        output = points[0:1]
+        for i in range(1, len(points)):
+            pt = points[i]
+            if len(pt) == 7:
+                # Copy arcs verbatim
+                if run_start is not None:
+                    output.append(last)
+                    run_start = None
+                output.append(pt)
+                continue
+            d = dist(last, pt)
+            if d < threshold:
+                if run_start is None:
+                    run_start = i
+                    prev_error = None
+                    output.append(pt)
+                    last = pt
+                    continue
+            if run_start is not None:
+                ptrs = points[run_start]
+                d2 = dist(ptrs, pt)
+                if d2 != 0:
+                    maxerr = 0
+                    # Checks the intermediate points against a straight line from run_start to i
+                    runlen = 0
+                    for j in range(run_start + 1, i):
+                        # Distance to the start point
+                        d1 = dist(ptrs, points[j])
+                        # Distance to the end point
+                        d3 = dist(pt, points[j])
+                        if d1 <= d2 and d3 <= d2:
+                            papprox = weighted(ptrs, pt, d1/d2)
+                            error = dist(papprox, points[j])
+                            maxerr = max(maxerr, error)
+                        else:
+                            error = threshold2
+                        if d1 > d2 or error >= threshold2:
+                            print (i - 1 - run_start, "items skipped, prev maxerr", preverr, "now", error, "runlen", runlen)
+                            if last != output[-1]:
+                                output.append(last)
+                            run_start = i
+                            last = pt
+                            break
+                        runlen += dist(points[j-1], points[j])
+                    preverr = maxerr
+            if run_start is None:
+                output.append(pt)
+            last = pt
+        if run_start is not None:
+            output.append(last)
+        print (len(points), len(output))
+        return output
 
 class IntPath(object):
     def __init__(self, real_points, ints_already=False):

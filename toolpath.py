@@ -61,6 +61,7 @@ class Toolpath(object):
         self.is_tab = is_tab
         self.transformed_cache = None
         self.lines_to_arcs_cache = None
+        self.optimize_lines_cache = None
         self.helical_entry = helical_entry
         # Allow borrowing bounds from the non-simplified shape to avoid calculating arc bounds
         self.bounds = self.calc_bounds() if bounds is None else bounds
@@ -90,6 +91,11 @@ class Toolpath(object):
         if self.lines_to_arcs_cache is None:
             self.lines_to_arcs_cache = Toolpath(CircleFitter.simplify(self.points), self.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.lines_to_arcs_cache
+
+    def optimize_lines(self):
+        if self.optimize_lines_cache is None:
+            self.optimize_lines_cache = Toolpath(LineOptimizer.simplify(self.points), self.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+        return self.optimize_lines_cache
 
     def subpath(self, start, end, is_tab=False):
         points = calc_subpath(self.points, start, end, self.closed)

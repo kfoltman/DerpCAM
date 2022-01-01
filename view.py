@@ -90,9 +90,9 @@ class OperationsRenderer(object):
             return
         if GeometrySettings.simplify_arcs:
             path = path.lines_to_arcs()
-            owner.addLines(pen, path.points, path.closed, True)
-        else:
-            owner.addLines(pen, path.points, path.closed)
+        if GeometrySettings.simplify_lines:
+            path = path.optimize_lines()
+        owner.addLines(pen, path.points, path.closed, GeometrySettings.simplify_arcs)
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])

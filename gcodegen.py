@@ -227,19 +227,26 @@ class Cut(object):
 # A bit unfortunate name, might be changed in future
 class CutPath2D(object):
     @staticmethod
-    def simplifySubpaths(subpaths):
+    def simplifySubpathsArcs(subpaths):
         return [subpath.lines_to_arcs() for subpath in subpaths]
+    @staticmethod
+    def simplifySubpathsLines(subpaths):
+        return [subpath.optimize_lines() for subpath in subpaths]
     def __init__(self, path):
         self.subpaths_full = [path.transformed()]
         if GeometrySettings.simplify_arcs:
-            self.subpaths_full = self.simplifySubpaths(self.subpaths_full)
+            self.subpaths_full = self.simplifySubpathsArcs(self.subpaths_full)
+        if GeometrySettings.simplify_lines:
+            self.subpaths_full = self.simplifySubpathsLines(self.subpaths_full)
 
 class TabbedCutPath2D(CutPath2D):
     def __init__(self, path_notabs, path_withtabs):
         CutPath2D.__init__(self, path_notabs)
         self.subpaths_tabbed = path_withtabs
         if GeometrySettings.simplify_arcs:
-            self.subpaths_tabbed = self.simplifySubpaths(self.subpaths_tabbed)
+            self.subpaths_tabbed = self.simplifySubpathsArcs(self.subpaths_tabbed)
+        if GeometrySettings.simplify_lines:
+            self.subpaths_tabbed = self.simplifySubpathsLines(self.subpaths_tabbed)
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False):
