@@ -191,18 +191,20 @@ class Shape(object):
         res = Shape._offset(boundary, self.closed, dist if outside else -dist)
         if not res:
             return None
-        res = [SameOrientation(i, outside ^ tool.climb) for i in res]
 
         if subtract:
             res2 = []
             for i in res:
+                exp_orient = Orientation(i)
                 d = Shape._difference(IntPath(i, True), *subtract, return_ints=True)
                 if d:
-                    res2 += d
+                    res2 += [j for j in d if Orientation(j.int_points) == exp_orient]
             if not res2:
                 return None
-            tps = [Toolpath(path.real_points(), self.closed, tool) for path in res2]
+            res2 = [SameOrientation(i.int_points, outside ^ tool.climb) for i in res2]
+            tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res2]
         else:
+            res = [SameOrientation(i, outside ^ tool.climb) for i in res]
             tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
         return Toolpaths(tps)
     def pocket_contour(self, tool, displace=0):
@@ -235,8 +237,10 @@ class Shape(object):
                 tps_islands += [Toolpath(ints, True, tool)]
         displace_now = displace
         stepover = tool.stepover * tool.diameter
-        for island in tps_islands:
-            mergeToolpaths(tps, island, tool.diameter)
+        # No idea why this was here given the joinClosePaths call later on is
+        # already merging the island paths.
+        #for island in tps_islands:
+        #    mergeToolpaths(tps, island, tool.diameter)
         while True:
             res = self.contour(tool, False, displace_now, subtract=islands_transformed)
             if not res:
