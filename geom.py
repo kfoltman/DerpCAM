@@ -522,7 +522,6 @@ class LineOptimizer(object):
             last = pt
         if run_start is not None:
             output.append(last)
-        print (len(points), len(output))
         return output
 
 class IntPath(object):

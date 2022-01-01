@@ -335,7 +335,7 @@ class PreferencesDialog(QDialog):
         self.resolutionSpin = QSpinBox()
         self.resolutionSpin.setRange(10, 100)
         self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs")
-        self.simplifyLinesCheck = QCheckBox("&Merge short segments")
+        self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.gridSpin = QSpinBox()
         self.gridSpin.setRange(0, 1000)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
