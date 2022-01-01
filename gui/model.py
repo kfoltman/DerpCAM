@@ -342,6 +342,14 @@ class DrawingTreeItem(CAMTreeItem):
         self.document.drawing.origin = (self.x_offset, self.y_offset)
         self.emitDataChanged()
         
+class MillDirection(EnumClass):
+    CONVENTIONAL = 0
+    CLIMB = 1
+    descriptions = [
+        (CONVENTIONAL, "Conventional", False),
+        (CLIMB, "Climb", True),
+    ]
+
 class ToolTreeItem(CAMTreeItem):
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
@@ -350,6 +358,8 @@ class ToolTreeItem(CAMTreeItem):
     prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f/min", min=0.1, max=60000, allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
+    prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
+    prop_direction = EnumEditableProperty("Direction", "direction", MillDirection, allow_none=False)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Tool")
         self.setEditable(False)
@@ -362,13 +372,15 @@ class ToolTreeItem(CAMTreeItem):
         self.hfeed = None
         self.vfeed = None
         self.rpm = None
+        self.stepover = None
+        self.direction = 0
         self.emitDataChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Tool: " + self.document.gcode_tool.short_info)
         return CAMTreeItem.data(self, role)
     def properties(self):
-        return [self.prop_diameter, self.prop_flutes, self.prop_cel, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm]
+        return [self.prop_diameter, self.prop_flutes, self.prop_cel, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
     def getDefaultPropertyValue(self, name):
         if name == 'depth':
             return self.document.gcode_tool_orig.maxdoc
@@ -378,43 +390,24 @@ class ToolTreeItem(CAMTreeItem):
             return self.document.gcode_tool.vfeed
         if name == 'rpm':
             return self.document.gcode_tool.rpm
+        if name == 'stepover':
+            return 100 * self.document.gcode_tool.stepover
+        if name == 'direction':
+            return MillDirection.CLIMB if self.document.gcode_tool.climb else MillDirection.CONVENTIONAL
         return None
     def getPropertyValue(self, name):
-        if name == 'diameter':
-            return self.diameter
-        if name == 'flutes':
-            return self.flutes
-        if name == 'cel':
-            return self.cel
-        if name == 'depth':
-            return self.depth
-        if name == 'hfeed':
-            return self.hfeed
-        if name == 'vfeed':
-            return self.vfeed
-        if name == 'rpm':
-            return self.rpm
-        assert False, "Unknown attribute: " + repr(name)
+        if hasattr(self, name):
+            return getattr(self, name)
+        else:
+            assert False, "Unknown attribute: " + repr(name)
     def setPropertyValue(self, name, value):
-        if name == 'diameter':
-            self.diameter = value
-        elif name == 'flutes':
-            self.flutes = value
-        elif name == 'cel':
-            self.cel = value
-        elif name == 'depth':
-            self.depth = value
-        elif name == 'hfeed':
-            self.hfeed = value
-        elif name == 'vfeed':
-            self.vfeed = value
-        elif name == 'rpm':
-            self.rpm = value
+        if hasattr(self, name):
+            setattr(self, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
         self.document.make_tool()
         self.emitDataChanged()
-        
+
 class MaterialType(EnumClass):
     WOOD = 0
     PLASTICS = 1
@@ -702,7 +695,7 @@ class DocumentModel(QObject):
         self.gcode_material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
         self.gcode_coating = carbide_uncoated
         self.gcode_tool_orig = standard_tool(self.tool.diameter, self.tool.flutes, self.gcode_material, self.gcode_coating)
-        self.gcode_tool = self.gcode_tool_orig.clone_with_overrides(self.tool.hfeed, self.tool.vfeed, self.tool.depth, self.tool.rpm)
+        self.gcode_tool = self.gcode_tool_orig.clone_with_overrides(self.tool.hfeed, self.tool.vfeed, self.tool.depth, self.tool.rpm, self.tool.stepover * 0.01 if self.tool.stepover else None, self.tool.direction == MillDirection.CLIMB)
     def reinitDocument(self):
         self.undoStack.clear()
         self.material.resetProperties()

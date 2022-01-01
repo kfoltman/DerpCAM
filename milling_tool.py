@@ -2,12 +2,13 @@ from math import *
 from geom import *
 
 class Tool(object):
-    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1):
+    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False):
         self.diameter = diameter
         self.flutes = None
         self.hfeed = hfeed
         self.vfeed = vfeed
         self.maxdoc = maxdoc
+        self.climb = climb
         self.stepover = stepover
         self.stepover_fulldepth = stepover_fulldepth
         # Reduction of feed rate for full engagement plunges
@@ -32,8 +33,8 @@ class Tool(object):
     # Path slope for ramp/helical entry
     def slope(self):
         return max(1, int(self.hfeed / self.vfeed))
-    def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None):
-        tool = Tool(self.diameter, hfeed or self.hfeed, vfeed or self.vfeed, maxdoc or self.maxdoc, self.stepover, self.stepover_fulldepth)
+    def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None):
+        tool = Tool(self.diameter, hfeed or self.hfeed, vfeed or self.vfeed, maxdoc or self.maxdoc, stepover or self.stepover, self.stepover_fulldepth, climb if climb is not None else self.climb)
         if rpm is None:
             tool.rpm = self.rpm
         else:

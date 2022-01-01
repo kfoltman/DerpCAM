@@ -191,6 +191,7 @@ class Shape(object):
         res = Shape._offset(boundary, self.closed, dist if outside else -dist)
         if not res:
             return None
+        res = [SameOrientation(i, outside ^ tool.climb) for i in res]
 
         if subtract:
             res2 = []
