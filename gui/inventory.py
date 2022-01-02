@@ -180,7 +180,7 @@ class DrillBitCutter(CutterBase):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self
     def description(self):
-        return f"D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} drill bit"
+        return f"{self.diameter:0.1f}mm {self.material.name} drill bit, L={self.length:0.0f}mm"
     
 class Inventory(object):
     def __init__(self):
@@ -199,12 +199,16 @@ class Inventory(object):
             EndMillCutter.new(3, "cheapo 1F 3.2/15", CutterMaterial.carbide, 3.2, 15, 1)
                 .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL),
             EndMillCutter.new(4, "cheapo 1F 2/8", CutterMaterial.carbide, 2, 8, 1),
-            DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25),
+            DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25)
+                .addPreset(200, "Wood-untested", 10000, 100, 6),
             DrillBitCutter.new(51, "3mm HSS", CutterMaterial.HSS, 3, 41)
-                .addPreset(200, "Wood-untested", 4000, 100, 6),
-            DrillBitCutter.new(52, "4mm HSS", CutterMaterial.HSS, 4, 54),
-            DrillBitCutter.new(53, "5mm HSS", CutterMaterial.HSS, 5, 62),
-            DrillBitCutter.new(54, "6mm HSS", CutterMaterial.HSS, 6, 70),
+                .addPreset(201, "Wood-untested", 7000, 100, 6),
+            DrillBitCutter.new(52, "4mm HSS", CutterMaterial.HSS, 4, 54)
+                .addPreset(202, "Wood-untested", 5000, 100, 6),
+            DrillBitCutter.new(53, "5mm HSS", CutterMaterial.HSS, 5, 62)
+                .addPreset(203, "Wood-untested", 4000, 100, 6),
+            DrillBitCutter.new(54, "6mm HSS", CutterMaterial.HSS, 6, 70)
+                .addPreset(204, "Wood-untested", 3000, 100, 6),
         ]
 
 inventory = Inventory()

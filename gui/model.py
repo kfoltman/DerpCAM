@@ -488,18 +488,23 @@ class OperationType(EnumClass):
     POCKET = 3
     ENGRAVE = 4
     INTERPOLATED_HOLE = 5
+    DRILLED_HOLE = 6
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
         (POCKET, "Pocket"),
         (ENGRAVE, "Engrave"),
         (INTERPOLATED_HOLE, "H-Hole"),
+        (DRILLED_HOLE, "Drill"),
     ]
 
 class CutterAdapter(object):
     def getLookupData(self, items):
         assert items
-        return items[0].document.getToolbitList(inventory.EndMillCutter)
+        if items[0].operation == OperationType.DRILLED_HOLE:
+            return items[0].document.getToolbitList(inventory.DrillBitCutter)
+        else:
+            return items[0].document.getToolbitList(inventory.EndMillCutter)
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
@@ -557,11 +562,13 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation == OperationType.INTERPOLATED_HOLE and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
+        if self.operation == OperationType.DRILLED_HOLE and name in ['tab_height', 'tab_count', 'offset', 'extra_width']:
+            return False
         return True
     def getValidEnumValues(self, name):
         if name == 'operation':
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
-                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem):
                 if self.shape.closed:
                     return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE]
@@ -590,9 +597,13 @@ class OperationTreeItem(CAMTreeItem):
             self.tool_preset = self.cutter.presets[0]
         self.updateCAM()
         self.emitDataChanged()
+    def operationTypeLabel(self):
+        if self.operation == OperationType.DRILLED_HOLE:
+            return OperationType.toString(self.operation) + (f" {self.cutter.diameter:0.1f}mm" if self.cutter else "")
+        return OperationType.toString(self.operation)
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant(OperationType.toString(self.operation) +": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
+            return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
         return CAMTreeItem.data(self, role)
     def updateCAM(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
@@ -613,7 +624,10 @@ class OperationTreeItem(CAMTreeItem):
         start_depth = self.start_depth if self.start_depth is not None else 0
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-        tool = Tool(self.cutter.diameter, self.tool_preset.hfeed, self.tool_preset.vfeed, self.tool_preset.maxdoc, climb=(self.tool_preset.direction == inventory.MillDirection.CLIMB))
+        if isinstance(self.cutter, inventory.EndMillCutter):
+            tool = Tool(self.cutter.diameter, self.tool_preset.hfeed, self.tool_preset.vfeed, self.tool_preset.maxdoc, climb=(self.tool_preset.direction == inventory.MillDirection.CLIMB))
+        else:
+            tool = Tool(self.cutter.diameter, 0, self.tool_preset.vfeed, self.tool_preset.maxdoc)
         self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
         self.renderer = canvas.OperationsRendererWithSelection(self)
         if self.shape:
@@ -635,6 +649,8 @@ class OperationTreeItem(CAMTreeItem):
                 self.cam.engrave(self.shape)
             elif self.operation == OperationType.INTERPOLATED_HOLE:
                 self.cam.helical_drill(self.orig_shape.centre[0] + translation[0], self.orig_shape.centre[1] + translation[1], 2 * self.orig_shape.r)
+            elif self.operation == OperationType.DRILLED_HOLE:
+                self.cam.peck_drill(self.orig_shape.centre[0] + translation[0], self.orig_shape.centre[1] + translation[1])
 
 MIMETYPE = 'application/x-derpcam-operations'
 

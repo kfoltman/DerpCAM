@@ -682,7 +682,7 @@ class RetractBy(RetractSchedule):
 class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
-        UntabbedOperation.__init__(self, shape, tool, props, Toolpath([(x, y)], True, tool))
+        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath([(x, y)], True, tool))
         self.x = x
         self.y = y
         self.dwell_bottom = dwell_bottom

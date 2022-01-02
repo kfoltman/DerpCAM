@@ -197,6 +197,7 @@ class CAMMainWindow(QMainWindow):
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
+            ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+T"), "Drill a circular hole with a twist drill bit"),
         ])
         self.coordLabel = QLabel("")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -302,6 +303,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
     def millInterpolatedHole(self):
         self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
+    def drillHole(self):
+        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):

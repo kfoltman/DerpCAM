@@ -136,6 +136,9 @@ class PathViewer(QWidget):
         paths = []
         for polyline in polylines:
             path = QPainterPath()
+            if len(polyline) == 1:
+                x, y = polyline[0]
+                self.drawingOps.append((pen, QPointF(x, y), QRectF(x, y, 1, 1), darken))
             path.moveTo(*polyline[0])
             for point in polyline[1:]:
                 path.lineTo(*point)
@@ -176,7 +179,7 @@ class PathViewer(QWidget):
                 if not isinstance(pen, QPen):
                     pen, is_slow = pen(path, scale)
                 else:
-                    is_slow = pen.widthF() and path.elementCount() > 1000
+                    is_slow = pen.widthF() and not isinstance(path, QPointF) and path.elementCount() > 1000
                 if self.isDraft() and is_slow:
                     continue
                 qp.setPen(pen)
@@ -184,7 +187,10 @@ class PathViewer(QWidget):
                 if is_slow:
                     qp.setRenderHint(1, False)
                     qp.setRenderHint(8, False)
-                qp.drawPath(path)
+                if isinstance(path, QPointF):
+                    qp.drawPoint(path)
+                else:
+                    qp.drawPath(path)
                 if is_slow:
                     qp.setRenderHint(1, True)
                     qp.setRenderHint(8, True)
@@ -223,7 +229,7 @@ class PathViewer(QWidget):
     def addLines(self, pen, points, closed, has_arcs=False, darken=True):
         if has_arcs:
             points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
-        if closed:
+        if closed and points[0] != points[-1]:
             self.addPath(pen, points + points[0:1], darken=darken)
         else:
             self.addPath(pen, points, darken=darken)
