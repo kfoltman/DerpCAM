@@ -29,7 +29,7 @@ class EditableProperty(object):
         return self.toEditString(value)
     def validate(self, value):
         return value
-    def createEditor(self, parent, item):
+    def createEditor(self, parent, item, objects):
         return None
     def setEditorData(self, editor, value):
         pass
@@ -58,6 +58,54 @@ class EnumClass(object):
                 return data[1]
         return None
 
+class ComboEditableProperty(EditableProperty):
+    def createEditor(self, parent, item, objects):
+        widget = QListWidget(parent)
+        widget.setMinimumSize(200, 100)
+        widget.lookupData = self.getLookupData(objects)
+        widget.rowToId = []
+        for id, description in widget.lookupData:
+            if item.valid_values is not None:
+                if id not in item.valid_values:
+                    continue
+            widget.rowToId.append(id)
+            widget.addItem(description)
+        widget.itemPressed.connect(lambda: self.destroyEditor(widget))
+        return widget
+    def setEditorData(self, editor, value):
+        item = None
+        if type(value) is int:
+            for row, item in enumerate(editor.lookupData):
+                if item[0] == value:
+                    editor.setCurrentRow(row)
+                    return
+        if type(value) is str:
+            for row, item in enumerate(editor.lookupData):
+                if item[1] == value:
+                    editor.setCurrentRow(row)
+                    return
+            for row, item in enumerate(editor.lookupData):
+                if str(item[0]) == value:
+                    editor.setCurrentRow(row)
+                    return
+    
+class RefEditableProperty(ComboEditableProperty):
+    def __init__(self, name, attribute, items_adapter, allow_none = False, none_value = "none"):
+        EditableProperty.__init__(self, name, attribute, "%s")
+        self.items_adapter = items_adapter
+        self.allow_none = allow_none
+        self.none_value = none_value
+    def getLookupData(self, item):
+        return self.items_adapter.getLookupData(item)
+    def toEditString(self, value):
+        return value.description() if value is not None else self.none_value
+    def getEditorData(self, editor):
+        row = editor.currentRow()
+        id = editor.rowToId[row] if row >= 0 else -1
+        return self.items_adapter.lookupById(id)
+    def destroyEditor(self, widget):
+        widget.close()
+
 class EnumEditableProperty(EditableProperty):
     def __init__(self, name, attribute, enum_class, allow_none = False, none_value = "none"):
         EditableProperty.__init__(self, name, attribute, "%s")
@@ -74,7 +122,7 @@ class EnumEditableProperty(EditableProperty):
         if self.allow_none and value == self.none_value:
             return None
         raise ValueError("Incorrect value: %s" % (value))
-    def createEditor(self, parent, item):
+    def createEditor(self, parent, item, objects):
         widget = QListWidget(parent)
         widget.setMinimumSize(200, 100)
         for data in self.enum_class.descriptions:
@@ -217,7 +265,7 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
         self.props_widget = props_widget
     def createEditor(self, parent, option, index):
         row = index.row()
-        editor = self.properties[row].createEditor(parent, self.props_widget.itemFromIndex(index))
+        editor = self.properties[row].createEditor(parent, self.props_widget.itemFromIndex(index), self.props_widget.objects)
         if editor is not None:
             return editor
         return QStyledItemDelegate.createEditor(self, parent, option, index)

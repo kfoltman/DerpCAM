@@ -8,24 +8,14 @@ from PyQt5.QtWidgets import *
 
 import process
 import gcodegen
-from propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, EnumEditableProperty, SetEditableProperty
 import view
 from milling_tool import *
 
+from . import canvas, inventory
+from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, EnumEditableProperty, SetEditableProperty, RefEditableProperty
+
 import ezdxf
 import json
-
-class DrawingUIMode(object):
-    MODE_NORMAL = 0
-    MODE_ISLANDS = 1
-    MODE_TABS = 2
-
-class OperationsRendererWithSelection(view.OperationsRenderer):
-    def __init__(self, owner):
-        view.OperationsRenderer.__init__(self, owner.cam)
-        self.owner = owner
-    def isHighlighted(self, operation):
-        return self.owner.isSelected
 
 class CAMTreeItem(QStandardItem):
     def __init__(self, document, name=None):
@@ -86,13 +76,13 @@ class DrawingItemTreeItem(CAMTreeItem):
         # avoid draft behaviour of thick lines
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
     def penForPath(self, path, modeData):
-        if modeData[0] == DrawingUIMode.MODE_ISLANDS:
+        if modeData[0] == canvas.DrawingUIMode.MODE_ISLANDS:
             if modeData[1].shape_id == self.shape_id:
                 return self.defaultDrawingPen
             if self.shape_id in modeData[1].islands:
                 return self.selectedItemDrawingPen2
             return self.defaultGrayPen
-        if modeData[0] == DrawingUIMode.MODE_TABS:
+        if modeData[0] == canvas.DrawingUIMode.MODE_TABS:
             if modeData[1].shape_id == self.shape_id:
                 return self.defaultDrawingPen
             return self.defaultGrayPen
@@ -240,24 +230,35 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def toShape(self):
         return process.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
         
-class DrawingTreeItem(CAMTreeItem):
-    prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
-    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
-    def __init__(self, document):
-        CAMTreeItem.__init__(self, document, "Drawing")
+class CAMListTreeItem(CAMTreeItem):
+    def __init__(self, document, name):
+        CAMTreeItem.__init__(self, document, name)
         self.reset()
     def reset(self):
         self.removeRows(0, self.rowCount())
         self.resetProperties()
     def resetProperties(self):
-        self.x_offset = 0
-        self.y_offset = 0
-        self.emitDataChanged()
+        pass
     def items(self):
         i = 0
         while i < self.rowCount():
             yield self.child(i)
             i += 1
+    
+class ToolListTreeItem(CAMListTreeItem):
+    def __init__(self, document):
+        CAMListTreeItem.__init__(self, document, "Tool list")
+        self.reset()
+    
+class DrawingTreeItem(CAMListTreeItem):
+    prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
+    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
+    def __init__(self, document):
+        CAMListTreeItem.__init__(self, document, "Drawing")
+    def resetProperties(self):
+        self.x_offset = 0
+        self.y_offset = 0
+        self.emitDataChanged()
     def bounds(self):
         b = None
         for item in self.items():
@@ -307,8 +308,6 @@ class DrawingTreeItem(CAMTreeItem):
             i.translated(-self.x_offset, -self.y_offset).renderTo(path, modeData)
     def addItem(self, item):
         self.appendRow(item)
-        # self.items.append(item)
-        # self.items_by_id[item.shape_id] = item
     def itemById(self, shape_id):
         # XXXKF slower than before
         for i in self.items():
@@ -465,8 +464,27 @@ class OperationType(EnumClass):
         (INTERPOLATED_HOLE, "H-Hole"),
     ]
 
+class CutterAdapter(object):
+    def getLookupData(self, item):
+        return inventory.inventory.getToolbitList(inventory.EndMillCutter)
+    def lookupById(self, id):
+        return inventory.IdSequence.lookup(id)    
+
+class ToolPresetAdapter(object):
+    def getLookupData(self, item):
+        item = item[0]
+        res = []
+        if item.cutter:
+            for preset in item.cutter.presets:
+                res.append((preset.id, preset.description()))
+        return res
+    def lookupById(self, id):
+        return inventory.IdSequence.lookup(id)    
+
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
+    prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
+    prop_preset = RefEditableProperty("Tool preset", "tool_preset", ToolPresetAdapter())
     prop_depth = FloatEditableProperty("Depth", "depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
     prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
@@ -480,6 +498,9 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = None
         self.orig_shape = None
         self.shape = None
+        self.cutter = CutterAdapter().lookupById(1)
+        self.tool_preset = ToolPresetAdapter().lookupById(100)
+        self.operation = OperationType.OUTSIDE_CONTOUR
         self.depth = None
         self.start_depth = 0
         self.tab_height = None
@@ -488,7 +509,6 @@ class OperationTreeItem(CAMTreeItem):
         self.extra_width = 0
         self.islands = set()
         self.user_tabs = set()
-        self.operation = OperationType.OUTSIDE_CONTOUR
         self.isSelected = False
         self.updateCAM()
     def isDropEnabled(self):
@@ -526,7 +546,11 @@ class OperationTreeItem(CAMTreeItem):
         self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
         self.updateCAM()
     def properties(self):
-        return [self.prop_operation, self.prop_depth, self.prop_start_depth, self.prop_tab_height, self.prop_tab_count, self.prop_offset, self.prop_extra_width, self.prop_islands, self.prop_user_tabs]
+        return [self.prop_operation, self.prop_cutter, self.prop_preset, 
+            self.prop_depth, self.prop_start_depth, 
+            self.prop_tab_height, self.prop_tab_count, 
+            self.prop_offset, self.prop_extra_width,
+            self.prop_islands, self.prop_user_tabs]
     def onPropertyValueSet(self, name):
         self.updateCAM()
         self.emitDataChanged()
@@ -549,7 +573,7 @@ class OperationTreeItem(CAMTreeItem):
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
         self.cam = gcodegen.Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
-        self.renderer = OperationsRendererWithSelection(self)
+        self.renderer = canvas.OperationsRendererWithSelection(self)
         if self.shape:
             if len(self.user_tabs):
                 tabs = self.user_tabs
@@ -651,22 +675,25 @@ class DocumentModel(QObject):
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
-        self.material = WorkpieceTreeItem(self)
-        self.tool = ToolTreeItem(self)
         self.drawing = DrawingTreeItem(self)
         self.filename = None
         self.drawingFilename = None
-        self.make_machine_params()
-        self.make_tool()
 
+        self.material = WorkpieceTreeItem(self)
+        self.tool_list = ToolListTreeItem(self)
+        self.tool = ToolTreeItem(self)
+        self.tool_list.appendRow(self.tool)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
         self.shapeModel.appendRow(self.material)
-        self.shapeModel.appendRow(self.tool)
+        self.shapeModel.appendRow(self.tool_list)
         self.shapeModel.appendRow(self.drawing)
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
+
+        self.make_machine_params()
+        self.make_tool()
     def store(self):
         data = {}
         data['material'] = self.material.store()
