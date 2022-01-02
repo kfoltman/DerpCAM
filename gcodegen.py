@@ -31,6 +31,10 @@ class Gcode(object):
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
+    def prompt_for_tool(self, name):
+        name = name.replace("(", "<").replace(")",">")
+        self.add(f"M1 ({name})")
+        self.reset()
     def finish(self):
         self.add("M2")
     def feed(self, feed):
@@ -490,6 +494,17 @@ class Operation(object):
             return self.operation_name() + ", " + ("%0.2fmm deep" % (self.props.start_depth - self.props.depth))
     def operation_name(self):
         return self.__class__.__name__
+
+class ToolChangeOperation(Operation):
+    def __init__(self, cutter):
+        Operation.__init__(self, None, None, None)
+        self.cutter = cutter
+    def to_text(self):
+        return "Tool change: " + self.cutter.name
+    def to_preview(self):
+        return []
+    def to_gcode(self, gcode, machine_params):
+        gcode.prompt_for_tool(self.cutter.name)
 
 class UntabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths):

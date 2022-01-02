@@ -224,7 +224,9 @@ class CAMMainWindow(QMainWindow):
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
     def materialChanged(self):
-        self.document.tool.model().itemChanged.emit(self.document.tool)
+        self.propsDW.updateProperties()
+        self.document.updateCAM()
+        self.viewer.majorUpdate()
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.updateCAM()
@@ -309,6 +311,7 @@ class CAMMainWindow(QMainWindow):
         self.viewer.majorUpdate()
         self.updateSelection()
         self.setWindowFilePath(fn)
+        self.projectDW.shapeTree.expandAll()
     def fileImport(self):
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         dlg.setFileMode(QFileDialog.ExistingFile)
@@ -350,6 +353,7 @@ class CAMMainWindow(QMainWindow):
         self.document.drawingFilename = None
         self.document.load(data)
         self.drawingChanged()
+        self.projectDW.shapeTree.expandAll()
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()
@@ -372,9 +376,24 @@ class CAMMainWindow(QMainWindow):
             fn = dlg.selectedFiles()[0]
             self.exportGcode(fn)
     def exportGcode(self, fn):
-        operations = gcodegen.Operations(self.document.gcode_machine_params)
-        self.document.forEachOperation(lambda item: operations.add_all(item.cam.operations))
-        operations.to_gcode_file(fn)
+        class OpExporter(object):
+            def __init__(self, document):
+                self.operations = gcodegen.Operations(document.gcode_machine_params)
+                self.all_cutters = set([])
+                self.cutter = None
+                document.forEachOperation(self.add_cutter)
+                document.forEachOperation(self.process_operation)
+            def add_cutter(self, item):
+                self.all_cutters.add(item.cutter)
+            def process_operation(self, item):
+                if item.cutter != self.cutter and len(self.all_cutters) > 1:
+                    self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
+                    self.cutter = item.cutter
+                self.operations.add_all(item.cam.operations)
+            def write(self, fn):
+                self.operations.to_gcode_file(fn)
+        exporter = OpExporter(self.document)
+        exporter.write(fn)
     def fileExit(self):
         self.close()
 
@@ -393,7 +412,7 @@ if len(sys.argv) > 1:
     elif fnl.endswith(".dcp"):
         w.loadProject(fn)
 
-w.show()
+w.showMaximized()
 retcode = app.exec_()
 w = None
 app = None

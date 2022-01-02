@@ -245,11 +245,6 @@ class CAMListTreeItem(CAMTreeItem):
             yield self.child(i)
             i += 1
     
-class ToolListTreeItem(CAMListTreeItem):
-    def __init__(self, document):
-        CAMListTreeItem.__init__(self, document, "Tool list")
-        self.reset()
-    
 class DrawingTreeItem(CAMListTreeItem):
     prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
     prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
@@ -341,23 +336,49 @@ class DrawingTreeItem(CAMListTreeItem):
         self.document.drawing.origin = (self.x_offset, self.y_offset)
         self.emitDataChanged()
         
+class ToolListTreeItem(CAMListTreeItem):
+    def __init__(self, document):
+        CAMListTreeItem.__init__(self, document, "Tool list")
+        self.reset()
+    def reset(self):
+        CAMListTreeItem.reset(self)
+        for tool in inventory.inventory.toolbits:
+            if isinstance(tool, inventory.EndMillCutter):
+                if tool.name not in self.document.project_toolbits:
+                    self.appendRow(ToolTreeItem(self, tool, False))
+        for tool in self.document.project_toolbits.values():
+            if isinstance(tool, inventory.EndMillCutter):
+                self.appendRow(ToolTreeItem(self, tool, True))
+
+def format_as_global(role, def_value):
+    if role == Qt.FontRole:
+        font = QFont(def_value)
+        font.setItalic(True)
+        return QVariant(font)
+    if role == Qt.TextColorRole:
+        return QVariant(QColor(128, 128, 128))
+    return def_value
+
 class ToolTreeItem(CAMListTreeItem):
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
     prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
-    def __init__(self, document, inventory_tool):
+    def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
+        self.is_local = is_local
         CAMListTreeItem.__init__(self, document, "Tool")
         self.setEditable(False)
         self.reset()
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Tool: " + self.inventory_tool.description())
+        if not self.is_local:
+            return format_as_global(role, CAMTreeItem.data(self, role))
         return CAMTreeItem.data(self, role)
     def reset(self):
         CAMListTreeItem.reset(self)
         for preset in self.inventory_tool.presets:
-            self.appendRow(ToolPresetTreeItem(self.document, preset))
+            self.appendRow(ToolPresetTreeItem(self.document, preset, self.is_local))
     def properties(self):
         return [self.prop_diameter, self.prop_flutes, self.prop_length]
     def resetProperties(self):
@@ -369,7 +390,6 @@ class ToolTreeItem(CAMListTreeItem):
             setattr(self.inventory_tool, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
-        self.document.make_tool()
         self.emitDataChanged()
 
 class ToolPresetTreeItem(CAMTreeItem):
@@ -379,8 +399,9 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
-    def __init__(self, document, preset):
+    def __init__(self, document, preset, is_local):
         self.inventory_preset = preset
+        self.is_local = is_local
         CAMTreeItem.__init__(self, document, "Tool preset")
         self.setEditable(False)
         self.resetProperties()
@@ -389,6 +410,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Preset: " + self.inventory_preset.description())
+        if not self.is_local:
+            return format_as_global(role, CAMTreeItem.data(self, role))
         return CAMTreeItem.data(self, role)
     def properties(self):
         return [self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
@@ -408,7 +431,6 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
-        self.document.make_tool()
         self.emitDataChanged()
 
 class MaterialType(EnumClass):
@@ -469,8 +491,9 @@ class OperationType(EnumClass):
     ]
 
 class CutterAdapter(object):
-    def getLookupData(self, item):
-        return inventory.inventory.getToolbitList(inventory.EndMillCutter)
+    def getLookupData(self, items):
+        assert items
+        return items[0].document.getToolbitList(inventory.EndMillCutter)
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
@@ -543,12 +566,13 @@ class OperationTreeItem(CAMTreeItem):
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted(self.user_tabs))
+        dump['cutter'] = self.cutter.id
+        dump['tool_preset'] = self.tool_preset.id
         return dump
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
-        self.updateCAM()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
@@ -571,6 +595,11 @@ class OperationTreeItem(CAMTreeItem):
             self.shape = self.orig_shape.translated(*translation).toShape()
         else:
             self.shape = None
+        if not self.cutter or not self.tool_preset:
+            # Null CAM
+            self.cam = gcodegen.Operations(self.document.gcode_machine_params, None, self.gcode_props)
+            self.renderer = canvas.OperationsRendererWithSelection(self)
+            return
         thickness = self.document.material.thickness
         if thickness is None:
             thickness = 0
@@ -578,11 +607,6 @@ class OperationTreeItem(CAMTreeItem):
         start_depth = self.start_depth if self.start_depth is not None else 0
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-        if not self.cutter or not self.tool_preset:
-            # Null CAM
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, None, self.gcode_props)
-            self.renderer = canvas.OperationsRendererWithSelection(self)
-            return
         tool = Tool(self.cutter.diameter, self.tool_preset.hfeed, self.tool_preset.vfeed, self.tool_preset.maxdoc, climb=(self.tool_preset.direction == inventory.MillDirection.CLIMB))
         self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
         self.renderer = canvas.OperationsRendererWithSelection(self)
@@ -623,6 +647,7 @@ class OperationsModel(QStandardItemModel):
                 row = self.rowCount(parent)
             for i in data:
                 item = CAMTreeItem.load(self.document, i)
+                item.updateCAM()
                 self.insertRow(row, item)
                 row += 1
             return True
@@ -691,11 +716,10 @@ class DocumentModel(QObject):
         self.filename = None
         self.drawingFilename = None
 
+        self.project_toolbits = {}
+        self.project_tool_presets = {}
         self.material = WorkpieceTreeItem(self)
         self.tool_list = ToolListTreeItem(self)
-        for tool in inventory.inventory.toolbits:
-            if isinstance(tool, inventory.EndMillCutter):
-                self.tool_list.appendRow(ToolTreeItem(self, tool))
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
         self.shapeModel.appendRow(self.material)
@@ -707,17 +731,66 @@ class DocumentModel(QObject):
 
         self.make_machine_params()
         self.make_tool()
+    def refreshToolList(self):
+        self.tool_list.reset()
     def store(self):
+        cutters = set(self.forEachOperation(lambda op: op.cutter))
+        presets = set(self.forEachOperation(lambda op: op.tool_preset))
         data = {}
         data['material'] = self.material.store()
-        data['tool'] = self.tool.store()
+        data['tools'] = [i.store() for i in cutters]
+        data['tool_presets'] = [i.store() for i in presets]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operations'] = self.forEachOperation(lambda op: op.store())
         return data
     def load(self, data):
         self.undoStack.clear()
         self.material.reload(data['material'])
-        # XXXKF convert
+        if 'tool' in data:
+            # Old style singleton tool
+            material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
+            tool = data['tool']
+            prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'])
+            std_tool = standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, carbide_uncoated).clone_with_overrides(
+                tool['hfeed'], tool['vfeed'], tool['rpm'], tool.get('stepover', None))
+            prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
+                std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
+                tool.get('direction', 0))
+            prj_cutter.presets.append(prj_preset)
+            self.project_toolbits[prj_cutter.name] = prj_cutter
+            self.refreshToolList()
+        if 'tools' in data:
+            std_cutters = { i.name : i for i in inventory.inventory.toolbits }
+            cutters = [inventory.EndMillCutter.load(i) for i in data['tools']]
+            presets = [inventory.EndMillPreset.load(i) for i in data['tool_presets']]
+            cutter_map = { i.orig_id : i for i in cutters }
+            preset_map = { i.orig_id : i for i in presets }
+            # Try to map to standard cutters
+            for cutter in cutters:
+                if cutter.name in std_cutters:
+                    std = std_cutters[cutter.name]
+                    if std.equals(cutter):
+                        # Substitute standard cutter
+                        cutter_map[cutter.orig_id] = std
+                    else:
+                        # Make a project private copy
+                        cutter.name += " (project)"
+                        self.project_toolbits[cutter.name] = cutter
+                else:
+                    print ("New tool", cutter.name)
+                    # New tool not present in the inventory
+                    self.project_toolbits[cutter.name] = cutter
+            # Fixup cutter references (they're initially loaded as ints instead)
+            for i in presets:
+                i.toolbit = cutter_map[i.toolbit]
+                for j in i.toolbit.presets:
+                    if j.equals(i):
+                        print ("Matched identical preset", j.name)
+                        preset_map[i.orig_id] = j
+                        break
+                else:
+                    i.toolbit.presets.append(i)
+            self.refreshToolList()
         #self.tool.reload(data['tool'])
         self.drawing.reload(data['drawing']['header'])
         self.drawing.reset()
@@ -725,6 +798,13 @@ class DocumentModel(QObject):
             self.drawing.appendRow(DrawingItemTreeItem.load(self, i))
         for i in data['operations']:
             operation = CAMTreeItem.load(self, i)
+            if ('cutter' not in i) and ('tool' in data):
+                operation.cutter = prj_cutter
+                operation.tool_preset = prj_preset
+            else:
+                operation.cutter = cutter_map[operation.cutter]
+                operation.tool_preset = preset_map[operation.tool_preset]
+            operation.updateCAM()
             if operation.orig_shape is None:
                 print ("Warning: dangling reference to shape %d, ignoring the referencing operation" % (operation.shape_id, ))
             else:
@@ -738,7 +818,9 @@ class DocumentModel(QObject):
     def reinitDocument(self):
         self.undoStack.clear()
         self.material.resetProperties()
-        self.tool.resetProperties()
+        self.project_toolbits = {}
+        self.project_tool_presets = {}
+        self.refreshToolList()
         self.drawing.reset()
         self.operModel.removeRows(0, self.operModel.rowCount())
     def importDrawing(self, fn):
@@ -756,6 +838,10 @@ class DocumentModel(QObject):
         self.make_machine_params()
         self.make_tool()
         self.forEachOperation(lambda item: item.updateCAM())
+    def getToolbitList(self, data_type):
+        res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type) and tb.name not in self.project_toolbits and tb.presets]
+        res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
+        return res
     def validateForOutput(self):
         def validateOperation(item):
             if item.depth is None:
@@ -780,6 +866,7 @@ class DocumentModel(QObject):
             rowCount = self.operModel.rowCount()
             for i in shapeIds:
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
+                item.updateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, rowCount))
                 indexes.append(self.operModel.index(rowCount, 0))
                 rowCount += 1
