@@ -343,12 +343,10 @@ class ToolListTreeItem(CAMListTreeItem):
     def reset(self):
         CAMListTreeItem.reset(self)
         for tool in inventory.inventory.toolbits:
-            if isinstance(tool, inventory.EndMillCutter):
-                if tool.name not in self.document.project_toolbits:
-                    self.appendRow(ToolTreeItem(self, tool, False))
+            if tool.name not in self.document.project_toolbits:
+                self.appendRow(ToolTreeItem(self, tool, False))
         for tool in self.document.project_toolbits.values():
-            if isinstance(tool, inventory.EndMillCutter):
-                self.appendRow(ToolTreeItem(self, tool, True))
+            self.appendRow(ToolTreeItem(self, tool, True))
 
 def format_as_global(role, def_value):
     if role == Qt.FontRole:
@@ -371,7 +369,7 @@ class ToolTreeItem(CAMListTreeItem):
         self.reset()
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant("Tool: " + self.inventory_tool.description())
+            return QVariant(self.inventory_tool.description())
         if not self.is_local:
             return format_as_global(role, CAMTreeItem.data(self, role))
         return CAMTreeItem.data(self, role)
@@ -761,8 +759,8 @@ class DocumentModel(QObject):
             self.refreshToolList()
         if 'tools' in data:
             std_cutters = { i.name : i for i in inventory.inventory.toolbits }
-            cutters = [inventory.EndMillCutter.load(i) for i in data['tools']]
-            presets = [inventory.EndMillPreset.load(i) for i in data['tool_presets']]
+            cutters = [inventory.CutterBase.load(i, default_type='EndMillCutter') for i in data['tools']]
+            presets = [inventory.PresetBase.load(i, default_type='EndMillPreset') for i in data['tool_presets']]
             cutter_map = { i.orig_id : i for i in cutters }
             preset_map = { i.orig_id : i for i in presets }
             # Try to map to standard cutters

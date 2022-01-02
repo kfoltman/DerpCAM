@@ -1,4 +1,5 @@
 from .propsheet import EnumClass
+import sys
 
 class IdSequence(object):
     last_id = 999
@@ -69,8 +70,16 @@ class Serializable(object):
                 return False
         return True
     @classmethod
-    def load(klass, data):
-        res = klass(None, data['name'])
+    def load(klass, data, default_type=None):
+        rtype = data.get('_type', default_type)
+        if rtype is not None:
+            klass2 = getattr(sys.modules[__name__], rtype)
+            if issubclass(klass2, klass):
+                res = klass2(None, data['name'])
+            else:
+                raise ValueError(f"{rtype} is not a subclass of {klass.__name__}")
+        else:
+            res = klass(None, data['name'])
         res.orig_id = data['id']
         for i in res.properties:
             if isinstance(i, EncodedProperty):
@@ -80,6 +89,7 @@ class Serializable(object):
         return res
     def store(self):
         data = {}
+        data['_type'] = self.__class__.__name__
         data['id'] = self.id
         data['name'] = self.name
         for i in self.properties:
@@ -116,7 +126,10 @@ class MillDirection(EnumClass):
         (CLIMB, "Climb", True),
     ]
 
-class EndMillPreset(Serializable):
+class PresetBase(Serializable):
+    pass
+
+class EndMillPreset(PresetBase):
     properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', IdRefProperty('toolbit') ]
     @classmethod
     def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction):
@@ -146,10 +159,26 @@ class EndMillCutter(CutterBase):
         optname = self.name + ": " if self.name is not None else ""
         return optname + f"{self.flutes}F D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
         
+class DrillBitPreset(PresetBase):
+    properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
+    @classmethod
+    def new(klass, id, name, toolbit, rpm, vfeed, maxdoc):
+        res = klass(id, name)
+        res.toolbit = toolbit
+        res.rpm = rpm
+        res.vfeed = vfeed
+        res.maxdoc = maxdoc
+        return res
+    def description(self):
+        return f"{self.name}: Fz{self.vfeed:0.0f} DOC{self.maxdoc:0.2f}"
+
 class DrillBitCutter(CutterBase):
     @classmethod
     def new(klass, id, name, material, diameter, length):
         return klass.new_impl(id, name, material, diameter, length)
+    def addPreset(self, id, name, rpm, vfeed, maxdoc):
+        self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
+        return self
     def description(self):
         return f"D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} drill bit"
     
@@ -171,7 +200,8 @@ class Inventory(object):
                 .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL),
             EndMillCutter.new(4, "cheapo 1F 2/8", CutterMaterial.carbide, 2, 8, 1),
             DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25),
-            DrillBitCutter.new(51, "3mm HSS", CutterMaterial.HSS, 3, 41),
+            DrillBitCutter.new(51, "3mm HSS", CutterMaterial.HSS, 3, 41)
+                .addPreset(200, "Wood-untested", 4000, 100, 6),
             DrillBitCutter.new(52, "4mm HSS", CutterMaterial.HSS, 4, 54),
             DrillBitCutter.new(53, "5mm HSS", CutterMaterial.HSS, 5, 62),
             DrillBitCutter.new(54, "6mm HSS", CutterMaterial.HSS, 6, 70),
