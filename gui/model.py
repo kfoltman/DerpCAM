@@ -378,7 +378,11 @@ class ToolTreeItem(CAMListTreeItem):
         for preset in self.inventory_tool.presets:
             self.appendRow(ToolPresetTreeItem(self.document, preset, self.is_local))
     def properties(self):
-        return [self.prop_diameter, self.prop_flutes, self.prop_length]
+        if isinstance(self.inventory_tool, inventory.EndMillCutter):
+            return [self.prop_diameter, self.prop_flutes, self.prop_length]
+        elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
+            return [self.prop_diameter, self.prop_length]
+        return []
     def resetProperties(self):
         self.emitDataChanged()
     def getPropertyValue(self, name):
@@ -412,7 +416,11 @@ class ToolPresetTreeItem(CAMTreeItem):
             return format_as_global(role, CAMTreeItem.data(self, role))
         return CAMTreeItem.data(self, role)
     def properties(self):
-        return [self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
+        if isinstance(self.inventory_preset, inventory.EndMillPreset):
+            return [self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
+        elif isinstance(self.inventory_preset, inventory.DrillBitPreset):
+            return [self.prop_doc, self.prop_vfeed, self.prop_rpm]
+        return []
     def getPropertyValue(self, name):
         if name == 'depth':
             return self.inventory_preset.maxdoc
