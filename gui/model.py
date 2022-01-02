@@ -341,67 +341,71 @@ class DrawingTreeItem(CAMListTreeItem):
         self.document.drawing.origin = (self.x_offset, self.y_offset)
         self.emitDataChanged()
         
-class MillDirection(EnumClass):
-    CONVENTIONAL = 0
-    CLIMB = 1
-    descriptions = [
-        (CONVENTIONAL, "Conventional", False),
-        (CLIMB, "Climb", True),
-    ]
-
-class ToolTreeItem(CAMTreeItem):
-    prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
+class ToolTreeItem(CAMListTreeItem):
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
-    prop_cel = FloatEditableProperty("Flute length", "cel", "%0.1f mm", min=0.1, max=100, allow_none=True)
+    prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
+    def __init__(self, document, inventory_tool):
+        self.inventory_tool = inventory_tool
+        CAMListTreeItem.__init__(self, document, "Tool")
+        self.setEditable(False)
+        self.reset()
+    def data(self, role):
+        if role == Qt.DisplayRole:
+            return QVariant("Tool: " + self.inventory_tool.description())
+        return CAMTreeItem.data(self, role)
+    def reset(self):
+        CAMListTreeItem.reset(self)
+        for preset in self.inventory_tool.presets:
+            self.appendRow(ToolPresetTreeItem(self.document, preset))
+    def properties(self):
+        return [self.prop_diameter, self.prop_flutes, self.prop_length]
+    def resetProperties(self):
+        self.emitDataChanged()
+    def getPropertyValue(self, name):
+        return getattr(self.inventory_tool, name)
+    def setPropertyValue(self, name, value):
+        if hasattr(self.inventory_tool, name):
+            setattr(self.inventory_tool, name, value)
+        else:
+            assert False, "Unknown attribute: " + repr(name)
+        self.document.make_tool()
+        self.emitDataChanged()
+
+class ToolPresetTreeItem(CAMTreeItem):
     prop_doc = FloatEditableProperty("Cut depth per pass", "depth", "%0.2f mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f/min", min=0.1, max=60000, allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
-    prop_direction = EnumEditableProperty("Direction", "direction", MillDirection, allow_none=False)
-    def __init__(self, document):
-        CAMTreeItem.__init__(self, document, "Tool")
+    prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
+    def __init__(self, document, preset):
+        self.inventory_preset = preset
+        CAMTreeItem.__init__(self, document, "Tool preset")
         self.setEditable(False)
         self.resetProperties()
     def resetProperties(self):
-        self.diameter = 3.2
-        self.flutes = 2
-        self.cel = 22
-        self.depth = None
-        self.hfeed = None
-        self.vfeed = None
-        self.rpm = None
-        self.stepover = None
-        self.direction = 0
         self.emitDataChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant("Tool: " + self.document.gcode_tool.short_info)
+            return QVariant("Preset: " + self.inventory_preset.description())
         return CAMTreeItem.data(self, role)
     def properties(self):
-        return [self.prop_diameter, self.prop_flutes, self.prop_cel, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
-    def getDefaultPropertyValue(self, name):
-        if name == 'depth':
-            return self.document.gcode_tool_orig.maxdoc
-        if name == 'hfeed':
-            return self.document.gcode_tool.hfeed
-        if name == 'vfeed':
-            return self.document.gcode_tool.vfeed
-        if name == 'rpm':
-            return self.document.gcode_tool.rpm
-        if name == 'stepover':
-            return 100 * self.document.gcode_tool.stepover
-        if name == 'direction':
-            return MillDirection.CLIMB if self.document.gcode_tool.climb else MillDirection.CONVENTIONAL
-        return None
+        return [self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_rpm, self.prop_stepover, self.prop_direction]
     def getPropertyValue(self, name):
-        if hasattr(self, name):
-            return getattr(self, name)
+        if name == 'depth':
+            return self.inventory_preset.maxdoc
+        elif name == 'stepover':
+            return 100 * self.inventory_preset.stepover
         else:
-            assert False, "Unknown attribute: " + repr(name)
+            return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
-        if hasattr(self, name):
-            setattr(self, name, value)
+        if name == 'depth':
+            self.inventory_preset.maxdoc = value
+        elif name == 'stepover':
+            self.inventory_preset.stepover = value / 100.0
+        elif hasattr(self.inventory_preset, name):
+            setattr(self.inventory_preset, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
         self.document.make_tool()
@@ -552,6 +556,8 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_offset, self.prop_extra_width,
             self.prop_islands, self.prop_user_tabs]
     def onPropertyValueSet(self, name):
+        if name == 'cutter' and (self.tool_preset is None or self.tool_preset.toolbit != self.cutter):
+            self.tool_preset = self.cutter.presets[0]
         self.updateCAM()
         self.emitDataChanged()
     def data(self, role):
@@ -572,7 +578,13 @@ class OperationTreeItem(CAMTreeItem):
         start_depth = self.start_depth if self.start_depth is not None else 0
         tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
         self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-        self.cam = gcodegen.Operations(self.document.gcode_machine_params, self.document.gcode_tool, self.gcode_props)
+        if not self.cutter or not self.tool_preset:
+            # Null CAM
+            self.cam = gcodegen.Operations(self.document.gcode_machine_params, None, self.gcode_props)
+            self.renderer = canvas.OperationsRendererWithSelection(self)
+            return
+        tool = Tool(self.cutter.diameter, self.tool_preset.hfeed, self.tool_preset.vfeed, self.tool_preset.maxdoc, climb=(self.tool_preset.direction == inventory.MillDirection.CLIMB))
+        self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
         self.renderer = canvas.OperationsRendererWithSelection(self)
         if self.shape:
             if len(self.user_tabs):
@@ -681,8 +693,9 @@ class DocumentModel(QObject):
 
         self.material = WorkpieceTreeItem(self)
         self.tool_list = ToolListTreeItem(self)
-        self.tool = ToolTreeItem(self)
-        self.tool_list.appendRow(self.tool)
+        for tool in inventory.inventory.toolbits:
+            if isinstance(tool, inventory.EndMillCutter):
+                self.tool_list.appendRow(ToolTreeItem(self, tool))
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
         self.shapeModel.appendRow(self.material)
@@ -704,7 +717,8 @@ class DocumentModel(QObject):
     def load(self, data):
         self.undoStack.clear()
         self.material.reload(data['material'])
-        self.tool.reload(data['tool'])
+        # XXXKF convert
+        #self.tool.reload(data['tool'])
         self.drawing.reload(data['drawing']['header'])
         self.drawing.reset()
         for i in data['drawing']['items']:
@@ -721,8 +735,6 @@ class DocumentModel(QObject):
     def make_tool(self):
         self.gcode_material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
         self.gcode_coating = carbide_uncoated
-        self.gcode_tool_orig = standard_tool(self.tool.diameter, self.tool.flutes, self.gcode_material, self.gcode_coating)
-        self.gcode_tool = self.gcode_tool_orig.clone_with_overrides(self.tool.hfeed, self.tool.vfeed, self.tool.depth, self.tool.rpm, self.tool.stepover * 0.01 if self.tool.stepover else None, self.tool.direction == MillDirection.CLIMB)
     def reinitDocument(self):
         self.undoStack.clear()
         self.material.resetProperties()
