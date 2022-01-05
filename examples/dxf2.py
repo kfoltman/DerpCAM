@@ -7,8 +7,10 @@ import gcodegen
 import view
 from gui import propsheet, settings, canvas
 from gui.model import *
+from gui.cutter_mgr import AddCutterDialog, AddPresetDialog, CreateCutterDialog
 import ezdxf
 import json
+from typing import Optional
 
 document = DocumentModel()
 
@@ -51,18 +53,37 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.tabs.setTabPosition(QTabWidget.South)
         self.tabs.currentChanged.connect(self.tabSelectionChanged)
         self.setWidget(self.tabs)
-    def customContextMenu(self, point):
-        opers = self.operSelection()
-        if len(opers) != 1:
+    def onCutterChanged(self, cutter):
+        self.shapeTree.repaint()
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
+            self.returnKeyPressed(self.activeSelection())
+        else:
+            QDockWidget.keyPressEvent(self, event)
+    def returnKeyPressed(self, selection):
+        mode, items = selection
+        if len(items) == 1:
+            item = items[0]
+            if isinstance(item, CycleTreeItem):
+                self.document.selectCutterCycle(item)
             return
+        print (selection)
+    def customContextMenu(self, point):
+        items = self.operSelection()
+        if len(items) != 1:
+            return
+        item = items[0]
         point = self.operTree.mapToGlobal(point)
         menu = QMenu(self)
-        if opers[0].operation == OperationType.OUTSIDE_CONTOUR or opers[0].operation == OperationType.INSIDE_CONTOUR:
-            menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
-        elif opers[0].operation == OperationType.POCKET:
-            menu.addAction("Islands").triggered.connect(self.operationIslands)
-        else:
-            return
+        if isinstance(item, OperationTreeItem):
+            if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
+                menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
+            elif item.operation == OperationType.POCKET:
+                menu.addAction("Islands").triggered.connect(self.operationIslands)
+            else:
+                return
+        elif isinstance(item, CycleTreeItem):
+            menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
         action = menu.exec_(point)
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
@@ -93,9 +114,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
             return "o", self.operSelection()
         assert False
     def operationHoldingTabs(self, checked):
-        self.modeChanged.emit(DrawingUIMode.MODE_TABS)
+        self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
     def operationIslands(self, checked):
-        self.modeChanged.emit(DrawingUIMode.MODE_ISLANDS)
+        self.modeChanged.emit(canvas.DrawingUIMode.MODE_ISLANDS)
+    def cycleSetAsCurrent(self, item):
+        self.document.selectCutterCycle(item)
 
 class CAMPropertiesDockWidget(QDockWidget):
     def __init__(self, document):
@@ -191,13 +214,16 @@ class CAMMainWindow(QMainWindow):
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
-        self.millMenu = self.addMenu("&Mill", [
+        self.operationsMenu = self.addMenu("&Machining", [
+            ("&Add tool...", self.millAddTool, QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
-            ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+T"), "Drill a circular hole with a twist drill bit"),
+            None,
+            ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
         ])
         self.coordLabel = QLabel("")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -205,6 +231,28 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
+    def millAddTool(self):
+        dlg = AddCutterDialog(self)
+        if dlg.exec_():
+            if dlg.cutter is Ellipsis:
+                dlg = CreateCutterDialog(self)
+                if dlg.exec_():
+                    cutter = dlg.cutter
+                else:
+                    return
+            else:
+                cutter = dlg.cutter
+        else:
+            return
+        cycle = self.document.opAddCutter(cutter)
+        self.projectDW.operTree.selectionModel().reset()
+        self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
+        #self.projectDW.operTree.selectionModel().select(cycle.index(), QItemSelectionModel.SelectCurrent)
+        self.projectDW.selectTab(1)
+        self.projectDW.operTree.setFocus()
+        #dlg = AddPresetDialog(self, cutter)
+        #if dlg.exec_():
+        #    cutter.presets.
     def updateOperations(self):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
@@ -271,6 +319,9 @@ class CAMMainWindow(QMainWindow):
         translation = self.document.drawing.translation()
         anyLeft = False
         shapeIds = []
+        if not selection:
+            QMessageBox.critical(self, None, "No objects selected")
+            return
         for i in selection:
             shape = i.translated(*translation).toShape()
             if checkFunc(i, shape):
@@ -281,7 +332,7 @@ class CAMMainWindow(QMainWindow):
         if not shapeIds:
             QMessageBox.warning(self, None, "No objects created")
             return
-        rowCount, operations = self.document.opCreateOperation(shapeIds, operType)
+        rowCount, cycle, operations = self.document.opCreateOperation(shapeIds, operType)
         # The logic behind this is a bit iffy
         if not anyLeft:
             self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
@@ -291,20 +342,33 @@ class CAMMainWindow(QMainWindow):
             self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
             if rowCount:
                 self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
+                pass
         self.updateOperations()
         self.propsDW.updateProperties()
+    def needEndMill(self):
+        return self.needCutterType(inventory.EndMillCutter, "an end mill")
+    def needDrillBit(self):
+        return self.needCutterType(inventory.DrillBitCutter, "a drill bit")
+    def needCutterType(self, klass, name):
+        if not self.document.current_cutter_cycle:
+            QMessageBox.critical(self, None, "No tool selected")
+            return False
+        if not isinstance(self.document.current_cutter_cycle.cutter, klass):
+            QMessageBox.critical(self, None, f"Current tool is not {name}")
+            return False
+        return True
     def millOutsideContour(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
+        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
     def millInsideContour(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
+        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
     def millPocket(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
+        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
     def millEngrave(self):
-        self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
+        self.needEndMill() and self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
     def millInterpolatedHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
+        self.needEndMill() and self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
     def drillHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
+        self.needDrillBit() and self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):
@@ -417,6 +481,6 @@ if len(sys.argv) > 1:
 
 w.showMaximized()
 retcode = app.exec_()
-w = None
-app = None
+del w
+del app
 sys.exit(retcode)

@@ -32,7 +32,8 @@ class EditableProperty(object):
     def createEditor(self, parent, item, objects):
         return None
     def setEditorData(self, editor, value):
-        pass
+        if isinstance(editor, QLineEdit):
+            editor.setText(value)
     def isEditable(self):
         return True
 
@@ -96,6 +97,8 @@ class RefEditableProperty(ComboEditableProperty):
         self.allow_none = allow_none
         self.none_value = none_value
     def getLookupData(self, item):
+        if self.allow_none:
+            return [(None, self.none_value)] + self.items_adapter.getLookupData(item)
         return self.items_adapter.getLookupData(item)
     def toEditString(self, value):
         return value.description() if value is not None else self.none_value
@@ -177,6 +180,8 @@ class FloatEditableProperty(EditableProperty):
         if value is None:
             return self.none_value
         return self.format % (value,)
+    def toEditString(self, value):
+        return "%s" % (value,)
     def validate(self, value):
         if value == "" and self.allow_none:
             return None
@@ -210,6 +215,19 @@ class IntEditableProperty(EditableProperty):
             value = self.min
         if self.max is not None and value > self.max:
             value = self.max
+        return value
+
+class StringEditableProperty(EditableProperty):
+    def __init__(self, name, attribute, allow_empty):
+        EditableProperty.__init__(self, name, attribute)
+        self.allow_empty = allow_empty
+    def toEditString(self, value):
+        return value
+    def toDisplayString(self, value):
+        return value
+    def validate(self, value):
+        if value == "" and not self.allow_empty:
+            raise ValueError("Empty value not permitted")
         return value
 
 class MultipleItem(object):
@@ -293,6 +311,7 @@ class PropertySheetWidget(QTableWidget):
         #self.verticalHeader().setResizeMode(QHeaderView.ResizeToContents)
         #self.verticalHeader().setClickable(False)
         self.horizontalHeader().setStretchLastSection(True)
+        self.horizontalHeader().hide()
         #self.horizontalHeader().setClickable(False)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
@@ -321,6 +340,7 @@ class PropertySheetWidget(QTableWidget):
         except Exception as e:
             box = QMessageBox(QMessageBox.Warning, "Warning", str(e), QMessageBox.Ok, self)
             box.exec_()
+            self.setFocus()
         finally:
             #self.refreshRow(row)
             self.refreshAll()

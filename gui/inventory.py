@@ -112,10 +112,12 @@ class CutterBase(Serializable):
         res = klass(id, name)
         res.material = material
         res.diameter = float(diameter)
-        res.length = float(length)
+        res.length = float(length) if length is not None else None
         res.presets = []
         return res
     def description(self):
+        return (self.name + ": " if self.name is not None else "") + self.description_only()
+    def description_only(self):
         assert False
         
 class MillDirection(EnumClass):
@@ -127,7 +129,8 @@ class MillDirection(EnumClass):
     ]
 
 class PresetBase(Serializable):
-    pass
+    def description(self):
+        return (self.name + ": " if self.name is not None else "") + self.description_only()
 
 class EndMillPreset(PresetBase):
     properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', IdRefProperty('toolbit') ]
@@ -143,9 +146,26 @@ class EndMillPreset(PresetBase):
         res.direction = direction
         return res
     def description(self):
-        return f"{self.name}: Fxy{self.hfeed:0.0f} Fz{self.vfeed:0.0f} DOC{self.maxdoc:0.2f} SO{100*self.stepover:0.0f}% {MillDirection.toString(self.direction)}"
+        if self.name:
+            return f"{self.name}: {self.description_only()}"
+        else:
+            return self.description_only()
+    def description_only(self):
+        res = []
+        if self.hfeed:
+            res.append(f"Fxy{self.hfeed:0.0f}")
+        if self.vfeed:
+            res.append(f"Fz{self.vfeed:0.0f}")
+        if self.maxdoc:
+            res.append(f"DOC{self.maxdoc:0.2f}")
+        if self.stepover:
+            res.append(f"SO{self.stepover:0.0f}%")
+        if self.direction is not None:
+            res.append(MillDirection.toString(self.direction))
+        return " ".join(res)
 
 class EndMillCutter(CutterBase):
+    cutter_type_name = "End mill"
     properties = CutterBase.properties + [ 'flutes' ]
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
@@ -155,9 +175,11 @@ class EndMillCutter(CutterBase):
     def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction):
         self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction))
         return self
-    def description(self):
-        optname = self.name + ": " if self.name is not None else ""
-        return optname + f"{self.flutes}F D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
+    def description_only(self):
+        if self.length is not None:
+            return f"{self.flutes}F D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
+        else:
+            return f"{self.flutes}F D{self.diameter:0.1f} {self.material.name} end mill"
         
 class DrillBitPreset(PresetBase):
     properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
@@ -169,18 +191,24 @@ class DrillBitPreset(PresetBase):
         res.vfeed = vfeed
         res.maxdoc = maxdoc
         return res
-    def description(self):
-        return f"{self.name}: Fz{self.vfeed:0.0f} DOC{self.maxdoc:0.2f}"
+    def description_only(self):
+        res = []
+        if self.vfeed:
+            res.append(f"Fz{self.vfeed:0.0f}")
+        if self.maxdoc:
+            res.append(f"DOC{self.maxdoc:0.2f}")
+        return " ".join(res)
 
 class DrillBitCutter(CutterBase):
+    cutter_type_name = "Drill bit"
     @classmethod
     def new(klass, id, name, material, diameter, length):
         return klass.new_impl(id, name, material, diameter, length)
     def addPreset(self, id, name, rpm, vfeed, maxdoc):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self
-    def description(self):
-        return f"{self.diameter:0.1f}mm {self.material.name} drill bit, L={self.length:0.0f}mm"
+    def description_only(self):
+        return f"{self.diameter:0.1f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
     
 class Inventory(object):
     def __init__(self):
