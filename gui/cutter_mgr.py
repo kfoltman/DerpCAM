@@ -4,6 +4,30 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from gui.model import *
 
+class CutterListWidget(QTreeWidget):
+    def __init__(self, parent, toolbits):
+        QTreeWidget.__init__(self, parent)
+        self.setMinimumSize(600, 200)
+        self.setColumnCount(3)
+        self.setHeaderItem(QTreeWidgetItem(["Type", "Name", "Description"]))
+        #self.tools.setHorizontalHeaderLabels(["Name", "Description"])
+        items = []
+        self.lookup = []
+        for i, tb in enumerate(toolbits):
+            self.lookup.append(tb)
+            items.append(QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()]))
+        self.setRootIsDecorated(False)
+        self.insertTopLevelItems(0, items)
+        self.resizeColumnToContents(0)
+        self.resizeColumnToContents(1)
+        self.resizeColumnToContents(2)
+        self.setCurrentItem(self.topLevelItem(0))
+    def selectedItem(self):
+        row = self.tools.indexFromItem(self.tools.currentItem()).row()
+        if row >= 0:
+            return self.lookup[row]
+        return None
+
 class AddCutterDialog(QDialog):
     def __init__(self, parent):
         QDialog.__init__(self, parent)
@@ -16,40 +40,24 @@ class AddCutterDialog(QDialog):
         self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
         #label.setBuddy(self.tools)
         self.form.addRow(self.selectRadio)
-        self.tools = QTreeWidget(self)
-        self.tools.setMinimumSize(600, 200)
-        self.tools.setColumnCount(3)
-        self.tools.setHeaderItem(QTreeWidgetItem(["Type", "Name", "Description"]))
-        #self.tools.setHorizontalHeaderLabels(["Name", "Description"])
-        items = []
-        self.lookup = []
-        for i, tb in enumerate(inventory.inventory.toolbits):
-            self.lookup.append(tb)
-            items.append(QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()]))
-        self.tools.setRootIsDecorated(False)
-        self.tools.insertTopLevelItems(0, items)
-        self.tools.resizeColumnToContents(0)
-        self.tools.resizeColumnToContents(1)
-        self.tools.resizeColumnToContents(2)
+        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
+        self.tools = CutterListWidget(self, toolbits)
         self.tools.doubleClicked.connect(self.accept)
         self.form.addRow(self.tools)
         self.addRadio = QRadioButton("&Add a new cutter", self)
         self.form.addRow(self.addRadio)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.form.addRow(self.buttonBox)
+        self.tools.setFocus(Qt.PopupFocusReason)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
-        self.form.addRow(self.buttonBox)
-        self.tools.setCurrentItem(self.tools.topLevelItem(0))
-        self.tools.setFocus(Qt.PopupFocusReason)
         self.selectRadio.pressed.connect(lambda: self.tools.setEnabled(True))
         self.addRadio.pressed.connect(lambda: self.tools.setEnabled(False))
     def accept(self):
         if self.addRadio.isChecked():
             self.cutter = Ellipsis
         else:
-            row = self.tools.indexFromItem(self.tools.currentItem()).row()
-            if row >= 0:
-                self.cutter = self.lookup[row]
+            self.cutter = self.tools.selectedItem()
         QDialog.accept(self)
 
 class CreateCutterDialog(QDialog):
@@ -168,4 +176,14 @@ class AddPresetDialog(QDialog):
             if row >= 0:
                 self.preset = self.lookup[row]
         QDialog.accept(self)
+
+def loadInventory():
+    toolsFile = QStandardPaths.locate(QStandardPaths.DataLocation, "tools.json")
+    if toolsFile != '':
+        inventory.inventory.readFrom(toolsFile)
+    else:
+        inventory.inventory.createStdCutters()
+
+def saveInventory():
+    inventory.inventory.writeTo(QStandardPaths.writableLocation(QStandardPaths.DataLocation), "tools.json")
 

@@ -20,9 +20,9 @@ class DocumentRenderer(object):
         modeData = (owner.mode, owner.mode_item)
         self.document.drawing.renderTo(owner, modeData)
         if owner.mode == DrawingUIMode.MODE_NORMAL:
-            self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner))
+            self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
             self.lastpt = (0, 0)
-            self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner))
+            self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 

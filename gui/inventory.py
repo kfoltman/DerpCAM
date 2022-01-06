@@ -1,4 +1,6 @@
 from .propsheet import EnumClass
+import os
+import json
 import sys
 
 class IdSequence(object):
@@ -166,6 +168,7 @@ class EndMillPreset(PresetBase):
 
 class EndMillCutter(CutterBase):
     cutter_type_name = "End mill"
+    cutter_type_priority = 1
     properties = CutterBase.properties + [ 'flutes' ]
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
@@ -201,6 +204,7 @@ class DrillBitPreset(PresetBase):
 
 class DrillBitCutter(CutterBase):
     cutter_type_name = "Drill bit"
+    cutter_type_priority = 2
     @classmethod
     def new(klass, id, name, material, diameter, length):
         return klass.new_impl(id, name, material, diameter, length)
@@ -217,6 +221,22 @@ class Inventory(object):
             material = CutterMaterial(None, name)
             setattr(CutterMaterial, name, material)
             self.cutter_materials.append(name)
+        self.toolbits = []
+    def readFrom(self, filename):
+        f = open(filename, "r")
+        data = json.load(f)
+        f.close()
+        cutter_map = {}
+        for i in data['tools']:
+            tool = CutterBase.load(i)
+            cutter_map[tool.orig_id] = tool
+            self.toolbits.append(tool)
+        for i in data['presets']:
+            preset = PresetBase.load(i)
+            preset.toolbit = cutter_map[preset.toolbit]
+            preset.toolbit.presets.append(preset)
+        return True
+    def createStdCutters(self):
         self.toolbits = [
             EndMillCutter.new(1, "cheapo 2F 3.2/15", CutterMaterial.carbide, 3.2, 15, 2)
                 .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL)
@@ -238,5 +258,12 @@ class Inventory(object):
             DrillBitCutter.new(54, "6mm HSS", CutterMaterial.HSS, 6, 70)
                 .addPreset(204, "Wood-untested", 3000, 100, 6),
         ]
+    def writeTo(self, dirname, filename):
+        res = { 'tools' : [ i.store() for i in self.toolbits ], 'presets' : [ j.store() for i in self.toolbits for j in i.presets ] }
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        f = open(os.path.join(dirname, filename), "w")
+        json.dump(res, f, indent=2)
+        f.close()
 
 inventory = Inventory()

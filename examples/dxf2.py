@@ -7,7 +7,7 @@ import gcodegen
 import view
 from gui import propsheet, settings, canvas
 from gui.model import *
-from gui.cutter_mgr import AddCutterDialog, AddPresetDialog, CreateCutterDialog
+from gui.cutter_mgr import AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
 import ezdxf
 import json
 from typing import Optional
@@ -238,6 +238,8 @@ class CAMMainWindow(QMainWindow):
                 dlg = CreateCutterDialog(self)
                 if dlg.exec_():
                     cutter = dlg.cutter
+                    inventory.inventory.toolbits.append(cutter)
+                    saveInventory()
                 else:
                     return
             else:
@@ -341,8 +343,8 @@ class CAMMainWindow(QMainWindow):
                 newSelection.select(index, index)
             self.projectDW.operTree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect)
             if rowCount:
-                self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
-                pass
+                if len(newSelection.indexes()):
+                    self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
         self.updateOperations()
         self.propsDW.updateProperties()
     def needEndMill(self):
@@ -456,7 +458,8 @@ class CAMMainWindow(QMainWindow):
                 if item.cutter != self.cutter and len(self.all_cutters) > 1:
                     self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
                     self.cutter = item.cutter
-                self.operations.add_all(item.cam.operations)
+                if item.cam:
+                    self.operations.add_all(item.cam.operations)
             def write(self, fn):
                 self.operations.to_gcode_file(fn)
         exporter = OpExporter(self.document)
@@ -469,6 +472,9 @@ QCoreApplication.setApplicationName("DerpCAM")
 
 app = QApplication(sys.argv)
 app.setApplicationDisplayName("My CAM experiment")
+
+loadInventory()
+
 w = CAMMainWindow(document)
 w.initUI()
 if len(sys.argv) > 1:
@@ -483,4 +489,7 @@ w.showMaximized()
 retcode = app.exec_()
 del w
 del app
+
+saveInventory()
+
 sys.exit(retcode)

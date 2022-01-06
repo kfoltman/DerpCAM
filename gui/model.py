@@ -343,8 +343,10 @@ class ToolListTreeItem(CAMListTreeItem):
         self.reset()
     def reset(self):
         CAMListTreeItem.reset(self)
-        for tool in self.document.project_toolbits.values():
-            self.appendRow(ToolTreeItem(self.document, tool, True))
+        cutters = self.document.project_toolbits.values()
+        cutters = sorted(cutters, key = lambda item: item.name)
+        for cutter in cutters:
+            self.appendRow(ToolTreeItem(self.document, cutter, True))
 
 def format_as_current(role, def_value):
     if role == Qt.FontRole:
@@ -473,8 +475,8 @@ class WorkpieceTreeItem(CAMTreeItem):
                 return QVariant("Workpiece: ? %s" % (MaterialType.toString(self.material)))
         return CAMTreeItem.data(self, role)
     def onPropertyValueSet(self, name):
-        if name == 'material':
-            self.document.make_tool()
+        #if name == 'material':
+        #    self.document.make_tool()
         if name in ('clearance', 'safe_entry_z'):
             self.document.make_machine_params()
         self.emitDataChanged()
@@ -525,12 +527,13 @@ class CycleTreeItem(CAMTreeItem):
     def __init__(self, document, cutter):
         CAMTreeItem.__init__(self, document, "Tool cycle")
         self.cutter = cutter
-    def removeItemAt(self, row):
-        self.takeRow(row)
-        return row
+    def toString(self):
+        return "Tool cycle"
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant(f"Tool: {self.cutter.description()}")
+            return QVariant(f"Use tool: {self.cutter.name}")
+        if role == Qt.ToolTipRole:
+            return QVariant(f"Use tool: {self.cutter.description()}")
         if (self.document.current_cutter_cycle is not None) and (self is self.document.current_cutter_cycle):
             return format_as_current(role, CAMTreeItem.data(self, role))
         return CAMTreeItem.data(self, role)
@@ -563,7 +566,7 @@ class OperationTreeItem(CAMTreeItem):
         self.warning = None
         self.updateCAM()
     def resetProperties(self):
-        self.cutter = CutterAdapter().lookupById(1)
+        self.cutter = None
         self.tool_preset = None
         self.operation = OperationType.OUTSIDE_CONTOUR
         self.depth = None
@@ -580,6 +583,8 @@ class OperationTreeItem(CAMTreeItem):
         self.doc = None
     def isDropEnabled(self):
         return False
+    def toString(self):
+        return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
         if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
@@ -644,6 +649,14 @@ class OperationTreeItem(CAMTreeItem):
             self.cutter.presets.append(self.tool_preset)
             self.document.refreshToolList()
             print ("New preset")
+        if name == 'cutter' and self.parent().cutter != self.cutter:
+            self.parent().takeRow(self.row())
+            cycle = self.document.cycleForCutter(self.cutter)
+            if cycle:
+                if self.operation == OperationType.OUTSIDE_CONTOUR:
+                    cycle.appendRow(self)
+                else:
+                    cycle.insertRow(0, self)
         if name == 'cutter' and self.tool_preset and self.tool_preset.toolbit != self.cutter:
             # Find a matching preset
             for i in self.cutter.presets:
@@ -755,8 +768,8 @@ class OperationTreeItem(CAMTreeItem):
                     raise ValueError("Unsupported operation")
             self.error = None
         except Exception as e:
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, None, self.gcode_props)
-            self.renderer = canvas.OperationsRendererWithSelection(self)
+            self.cam = None
+            self.renderer = None
             self.error = str(e)
 
 MIMETYPE = 'application/x-derpcam-operations'
@@ -783,10 +796,7 @@ class OperationsModel(QStandardItemModel):
         return False
     def findItem(self, item):
         index = self.indexFromItem(item)
-        if isinstance(item, OperationTreeItem):
-            return (index.parent().row(), index.row())
-        else:
-            return index.row(), None
+        return item.parent() or self.invisibleRootItem(), index.row()
     def removeItemAt(self, row):
         self.takeRow(row)
         return row
@@ -807,41 +817,39 @@ class OperationsModel(QStandardItemModel):
 class AddOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         if isinstance(item, OperationTreeItem):
-            QUndoCommand.__init__(self, "Create " + OperationType.toString(item.operation))
+            QUndoCommand.__init__(self, "Create " + item.toString())
         else:
-            QUndoCommand.__init__(self, "Add tool")
+            QUndoCommand.__init__(self, "Add tool cycle")
         self.document = document
         self.item = item
         self.parent = parent
         self.row = row
     def undo(self):
-        if isinstance(self.parent, CycleTreeItem):
-            self.parent.removeItemAt(self.row)
-        else:
-            self.parent.takeRow(self.row)
+        self.parent.takeRow(self.row)
     def redo(self):
         self.parent.insertRow(self.row, self.item)
 
 class DeleteOperationUndoCommand(QUndoCommand):
-    def __init__(self, document, item, cycleRow, operRow):
-        if isinstance(item, OperationTreeItem):
-            QUndoCommand.__init__(self, "Delete " + OperationType.toString(item.operation))
-        else:
-            QUndoCommand.__init__(self, "Delete tool")
+    def __init__(self, document, item, parent, row):
+        QUndoCommand.__init__(self, "Delete " + item.toString())
         self.document = document
         self.item = item
-        self.cycleRow = cycleRow
-        self.operRow = operRow
+        self.deleted_cutter = None
+        self.parent = parent
+        self.row = row
     def undo(self):
-        if self.operRow is not None:
-            self.document.operModel.item(self.cycleRow).insertRow(self.operRow, self.item)
-        else:
-            self.document.operModel.insertRow(self.cycleRow, self.item)
+        self.parent.insertRow(self.row, self.item)
+        if isinstance(self.item, CycleTreeItem) and self.deleted_cutter:
+            self.document.project_toolbits[self.item.cutter.name] = self.deleted_cutter
+            self.document.refreshToolList()
     def redo(self):
-        if self.operRow is not None:
-            self.document.operModel.item(self.cycleRow).removeItemAt(self.operRow)
-        else:
-            self.document.operModel.removeItemAt(self.cycleRow)
+        self.parent.takeRow(self.row)
+        if isinstance(self.item, CycleTreeItem):
+            # Check if there are other users of the same tool
+            if self.document.cycleForCutter(self.item.cutter) is None:
+                self.deleted_cutter = self.document.project_toolbits[self.item.cutter.name]
+                del self.document.project_toolbits[self.item.cutter.name]
+                self.document.refreshToolList()
 
 class PropertySetUndoCommand(QUndoCommand):
     def __init__(self, property, subject, old_value, new_value):
@@ -860,13 +868,14 @@ class DocumentModel(QObject):
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
+        self.material = WorkpieceTreeItem(self)
+        self.make_machine_params()
         self.drawing = DrawingTreeItem(self)
         self.filename = None
         self.drawingFilename = None
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.project_tool_presets = {}
-        self.material = WorkpieceTreeItem(self)
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
@@ -877,8 +886,6 @@ class DocumentModel(QObject):
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
 
-        self.make_machine_params()
-        self.make_tool()
     def reinitDocument(self):
         self.undoStack.clear()
         self.material.resetProperties()
@@ -927,26 +934,26 @@ class DocumentModel(QObject):
             preset_map = { i.orig_id : i for i in presets }
             # Try to map to standard cutters
             for cutter in cutters:
-                if False and cutter.name in std_cutters:
+                if cutter.name in std_cutters:
                     std = std_cutters[cutter.name]
                     if std.equals(cutter):
                         # Substitute standard cutter
-                        cutter_map[cutter.orig_id] = std
+                        cutter = std
+                        print ("Matched library tool", cutter.name)
                     else:
-                        # Make a project private copy
-                        cutter.name += " (project)"
-                        self.project_toolbits[cutter.name] = cutter
+                        print ("Found different library tool with same name", cutter.name)
+                    cutter_map[cutter.orig_id] = cutter
+                    self.project_toolbits[cutter.name] = cutter
                 else:
                     print ("New tool", cutter.name)
-                    cycle = CycleTreeItem(self, cutter)
-                    cycleForCutter[cutter.orig_id] = cycle
                     if cutter.orig_id == data.get('current_cutter_id', None):
                         currentCutterCycle = cycle
-                    self.operModel.appendRow(cycle)
                     # New tool not present in the inventory
                     self.project_toolbits[cutter.name] = cutter
-            if self.operModel.rowCount() and currentCutterCycle is None:
-                currentCutterCycle = self.operModel.item(0)
+                cycle = CycleTreeItem(self, cutter)
+                cycleForCutter[cutter.orig_id] = cycle
+                self.operModel.appendRow(cycle)
+                currentCutterCycle = currentCutterCycle or cycle
             # Fixup cutter references (they're initially loaded as ints instead)
             for i in presets:
                 i.toolbit = cutter_map[i.toolbit]
@@ -983,15 +990,11 @@ class DocumentModel(QObject):
             self.selectCutterCycle(currentCutterCycle)
     def make_machine_params(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
-    def make_tool(self):
-        self.gcode_material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
-        self.gcode_coating = carbide_uncoated
     def importDrawing(self, fn):
         self.reinitDocument()
         self.filename = None
         self.drawingFilename = fn
         self.drawing.importDrawing(fn)
-        self.make_tool()
     def forEachOperation(self, func):
         res = []
         for i in range(self.operModel.rowCount()):
@@ -1002,10 +1005,9 @@ class DocumentModel(QObject):
         return res
     def updateCAM(self):
         self.make_machine_params()
-        self.make_tool()
         self.forEachOperation(lambda item: item.updateCAM())
     def getToolbitList(self, data_type: type):
-        res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type) and tb.presets]
+        res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
         return res
     def validateForOutput(self):
@@ -1024,6 +1026,12 @@ class DocumentModel(QObject):
                 operation.isSelected = isIn
                 return True
         return any(self.forEachOperation(setSelected))
+    def cycleForCutter(self, cutter: inventory.CutterBase):
+        for i in range(self.operModel.rowCount()):
+            cycle: CycleTreeItem = self.operModel.item(i)
+            if cycle.cutter == cutter:
+                return cycle
+        return None
     def selectCutterCycle(self, cycle):
         old = self.current_cutter_cycle
         self.current_cutter_cycle = cycle
@@ -1051,6 +1059,7 @@ class DocumentModel(QObject):
             rowCount = cycle.rowCount()
             for i in shapeIds:
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
+                item.cutter = cycle.cutter
                 item.updateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
@@ -1073,8 +1082,8 @@ class DocumentModel(QObject):
             self.undoStack.beginMacro("Delete %d operations" % (len(items), ))
         try:
             for item in items:
-                cycleRow, operRow = self.operModel.findItem(item)
-                self.undoStack.push(DeleteOperationUndoCommand(self, item, cycleRow, operRow))
+                parent, row = self.operModel.findItem(item)
+                self.undoStack.push(DeleteOperationUndoCommand(self, item, parent, row))
         finally:
             if len(items) > 1:
                 self.undoStack.endMacro()
