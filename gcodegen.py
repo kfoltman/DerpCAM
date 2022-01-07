@@ -246,7 +246,7 @@ class CutPath2D(object):
 class TabbedCutPath2D(CutPath2D):
     def __init__(self, path_notabs, path_withtabs):
         CutPath2D.__init__(self, path_notabs)
-        self.subpaths_tabbed = path_withtabs
+        self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
         if GeometrySettings.simplify_arcs:
             self.subpaths_tabbed = self.simplifySubpathsArcs(self.subpaths_tabbed)
         if GeometrySettings.simplify_lines:
@@ -570,6 +570,16 @@ class TabbedOperation(Operation):
             else:
                 preview.append((self.props.depth, path))
         return preview
+    def add_tabs_if_close(self, contours, tabs_dict, tabs, maxd):
+        for i in contours.flattened():
+            if i not in tabs_dict:
+                # Filter by distance
+                thistabs = []
+                for t in tabs:
+                    pos, dist = closest_point(i.points, True, t)
+                    if dist < maxd:
+                        thistabs.append(t)
+                tabs_dict[i] = thistabs
 
 class Contour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, tabs, extra_width=0):
@@ -607,15 +617,7 @@ class Contour(TabbedOperation):
             contours = toolpath.Toolpaths(res)
         else:
             contours = toolpath.Toolpaths(contours)
-        for i in contours.flattened():
-            if i not in tabs_dict:
-                # Filter by distance
-                thistabs = []
-                for t in tabs:
-                    pos, dist = closest_point(i.points, True, t)
-                    if dist < tool.diameter * sqrt(2):
-                        thistabs.append(t)
-                tabs_dict[i] = thistabs
+        self.add_tabs_if_close(contours, tabs_dict, tabs, tool.diameter * sqrt(2))
         TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
         self.outside = outside
     def operation_name(self):
@@ -645,10 +647,23 @@ class TrochoidalContour(TabbedOperation):
         self.nspeed = nspeed
         if not outside:
             nrad = -nrad
-        contour = shape.contour(tool, outside=outside, displace=nrad + props.margin)
-        trochoidal_func = lambda contour: trochoidal_transform(contour, nrad, nspeed)
-        contour = Toolpath(contour.points, contour.closed, tool, transform=trochoidal_func)
-        TabbedOperation.__init__(self, shape, tool, props, contour, tabs=tabs)
+        contours = shape.contour(tool, outside=outside, displace=nrad + props.margin)
+        trochoidal_func = lambda contour: process.trochoidal_transform(contour, nrad, nspeed)
+        if isinstance(tabs, int):
+            newtabs = []
+            for contour in contours.toolpaths:
+                newtabs += contour.autotabs(tool, tabs, width=self.tabs_width())
+        else:
+            # Offset the tabs
+            newtabs = []
+            for pt in tabs:
+                pos, dist = closest_point(shape.boundary, True, pt)
+                pt2 = offset_point_on_path(shape.boundary, pos, tool.diameter / 2 * (1 if outside else -1))
+                newtabs.append(pt2)
+        contours = toolpath.Toolpaths([toolpath.Toolpath(tp.points, tp.closed, tool, transform=trochoidal_func) for tp in contours.toolpaths])
+        tabs_dict = {}
+        self.add_tabs_if_close(contours, tabs_dict, newtabs, tool.diameter * sqrt(2) + self.nrad)
+        TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
     def tabs_width(self):
         # This needs tweaking
         return 1 + self.nrad
