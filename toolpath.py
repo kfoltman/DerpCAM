@@ -126,9 +126,11 @@ class Toolpath(object):
         return [self]
 
     def autotabs(self, tool, ntabs, width=1):
+        if not ntabs:
+            return []
         orient = Orientation(PtsToInts(self.points))
         tlength = path_length(self.points, self.closed)
-        offset = tlength / (1 + ntabs)
+        offset = tlength / (2 * ntabs)
         tablist = []
         tabw = tool.diameter * (1 + width)
         for i in range(ntabs):
