@@ -555,6 +555,8 @@ class OperationTreeItem(CAMTreeItem):
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_doc = FloatEditableProperty("Cut depth per pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
+    prop_trc_rate = FloatEditableProperty("Trochoid: rate", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=True)
+
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
         self.shape_id = None
@@ -581,6 +583,7 @@ class OperationTreeItem(CAMTreeItem):
         self.vfeed = None
         self.stepover = None
         self.doc = None
+        self.trc_rate = 0.0
     def isDropEnabled(self):
         return False
     def toString(self):
@@ -591,6 +594,8 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation != OperationType.POCKET and name == 'islands':
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name == 'user_tabs':
+            return False
+        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name.startswith("trc_"):
             return False
         if (self.operation == OperationType.INSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
             return False
@@ -642,7 +647,8 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_tab_height, self.prop_tab_count, 
             self.prop_offset, self.prop_extra_width,
             self.prop_islands, self.prop_user_tabs,
-            self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover]
+            self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
+            self.prop_trc_rate]
     def onPropertyValueSet(self, name):
         if name == 'tool_preset' and self.tool_preset is Ellipsis:
             self.tool_preset = inventory.EndMillPreset.new(None, "New preset", self.cutter, None, self.hfeed, self.vfeed, self.doc, self.stepover, inventory.MillDirection.CONVENTIONAL)
@@ -749,9 +755,15 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
-                    self.cam.outside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
+                    if self.trc_rate:
+                        self.cam.outside_contour_trochoidal(self.shape, self.extra_width / 100.0, self.trc_rate / 100.0, tabs=tabs)
+                    else:
+                        self.cam.outside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
                 elif self.operation == OperationType.INSIDE_CONTOUR:
-                    self.cam.inside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
+                    if self.trc_rate:
+                        self.cam.inside_contour_trochoidal(self.shape, self.extra_width / 100.0, self.trc_rate / 100.0, tabs=tabs)
+                    else:
+                        self.cam.inside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
                 elif self.operation == OperationType.POCKET:
                     for island in self.islands:
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
@@ -934,6 +946,7 @@ class DocumentModel(QObject):
             preset_map = { i.orig_id : i for i in presets }
             # Try to map to standard cutters
             for cutter in cutters:
+                orig_id = cutter.orig_id
                 if cutter.name in std_cutters:
                     std = std_cutters[cutter.name]
                     if std.equals(cutter):
@@ -951,7 +964,7 @@ class DocumentModel(QObject):
                     # New tool not present in the inventory
                     self.project_toolbits[cutter.name] = cutter
                 cycle = CycleTreeItem(self, cutter)
-                cycleForCutter[cutter.orig_id] = cycle
+                cycleForCutter[orig_id] = cycle
                 self.operModel.appendRow(cycle)
                 currentCutterCycle = currentCutterCycle or cycle
             # Fixup cutter references (they're initially loaded as ints instead)

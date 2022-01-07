@@ -647,7 +647,7 @@ class TrochoidalContour(TabbedOperation):
         self.nspeed = nspeed
         if not outside:
             nrad = -nrad
-        contours = shape.contour(tool, outside=outside, displace=nrad + props.margin)
+        contours = shape.contour(tool, outside=outside, displace=abs(nrad) + props.margin)
         trochoidal_func = lambda contour: process.trochoidal_transform(contour, nrad, nspeed)
         if isinstance(tabs, int):
             newtabs = []
@@ -832,6 +832,8 @@ class Operations(object):
         self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, True, draft_angle_deg, layer_thickness, tabs, props)
+    def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
+        self.add(TrochoidalContour(shape, False, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
     def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
     def contour_with_draft(self, shape, outside, draft_angle_deg, layer_thickness, tabs, props=None):
