@@ -14,6 +14,13 @@ from typing import Optional
 
 document = DocumentModel()
 
+class TreeViewWithAltArrows(QTreeView):
+    def keyPressEvent(self, event):
+        if (event.key() == Qt.Key_Down or event.key() == Qt.Key_Up) and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
+            event.setAccepted(False)
+        else:
+            return QTreeView.keyPressEvent(self, event)
+
 class CAMObjectTreeDockWidget(QDockWidget):
     selectionChanged = pyqtSignal([])
     modeChanged = pyqtSignal([int])
@@ -27,24 +34,21 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.setMinimumSize(400, 100)
         self.tabs = QTabWidget()
         
-        tree = QTreeView()
+        tree = TreeViewWithAltArrows()
         tree.setSelectionBehavior(QAbstractItemView.SelectRows)
         tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         tree.setModel(self.document.shapeModel)
         tree.selectionModel().selectionChanged.connect(self.shapeSelectionChanged)
+        tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        tree.customContextMenuRequested.connect(self.customContextMenu)
         tree.expandAll()
         self.shapeTree = tree
         self.tabs.addTab(tree, "&Input")
         
-        tree = QTreeView()
+        tree = TreeViewWithAltArrows()
         tree.setSelectionBehavior(QAbstractItemView.SelectRows)
         tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         tree.setModel(self.document.operModel)
-        tree.setDragEnabled(True)
-        #tree.setAcceptDrops(True)
-        tree.setDropIndicatorShown(True)
-        tree.setDragDropOverwriteMode(False)
-        tree.setDragDropMode(QAbstractItemView.InternalMove)
         tree.selectionModel().selectionChanged.connect(self.operationSelectionChanged)
         tree.setContextMenuPolicy(Qt.CustomContextMenu)
         tree.customContextMenuRequested.connect(self.customContextMenu)
@@ -58,22 +62,38 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
             self.returnKeyPressed(self.activeSelection())
+        elif (event.key() == Qt.Key_Down or event.key() == Qt.Key_Up) and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
+            self.altArrowPressed(self.activeSelection(), -1 if event.key() == Qt.Key_Up else +1)
         else:
             QDockWidget.keyPressEvent(self, event)
+    def altArrowPressed(self, selection, direction):
+        mode, items = selection
+        if len(items) == 1:
+            item = items[0]
+            if hasattr(item, 'reorderItem'):
+                index = item.reorderItem(direction)
+                if index is None:
+                    return
+                tree = self.activeTree()
+                tree.selectionModel().setCurrentIndex(index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
+                tree.selectionModel().select(index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
     def returnKeyPressed(self, selection):
         mode, items = selection
         if len(items) == 1:
             item = items[0]
-            if isinstance(item, CycleTreeItem):
-                self.document.selectCutterCycle(item)
+            if hasattr(item, 'returnKeyPressed'):
+                item.returnKeyPressed()
             return
         print (selection)
     def customContextMenu(self, point):
-        items = self.operSelection()
+        mode, items = self.activeSelection()
         if len(items) != 1:
             return
         item = items[0]
-        point = self.operTree.mapToGlobal(point)
+        if mode == 's':
+            point = self.shapeTree.mapToGlobal(point)
+        else:
+            point = self.operTree.mapToGlobal(point)
         menu = QMenu(self)
         if isinstance(item, OperationTreeItem):
             if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
@@ -84,7 +104,38 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 return
         elif isinstance(item, CycleTreeItem):
             menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
-        action = menu.exec_(point)
+        elif isinstance(item, ToolPresetTreeItem):
+            menu.addAction("Set as current").triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
+            action = menu.addAction("Save to inventory")
+            action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
+            action.setEnabled(item.isLocal() and not item.parent().isLocal())
+            action = menu.addAction("Reload from inventory")
+            action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
+            action.setEnabled(item.isModifiedStock())
+        menu.exec_(point)
+    def toolPresetSetAsCurrent(self, item):
+        self.document.selectPresetAsDefault(item.inventory_preset)
+    def toolPresetRevertFromInventory(self, item):
+        if item.inventory_preset.base_object:
+            item.inventory_preset.resetTo(item.inventory_preset.base_object)
+            item.inventory_preset.toolbit = item.parent().inventory_tool
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
+    def toolPresetSaveToInventory(self, item):
+        inv_toolbit = item.inventory_preset.toolbit.base_object
+        if inv_toolbit is None:
+            return
+        inv_preset = inv_toolbit.presetByName(item.inventory_preset.name)
+        if inv_preset is None:
+            preset_copy = item.inventory_preset.newInstance()
+            preset_copy.toolbit = inv_toolbit
+            inv_toolbit.presets.append(preset_copy)
+        else:
+            inv_preset.resetTo(item.inventory_preset)
+            inv_preset.toolbit = inv_toolbit
+        saveInventory()
+        self.document.refreshToolList()
+        self.shapeTree.expandAll()
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
         for idx, item in enumerate(self.document.drawing.items()):
@@ -112,6 +163,12 @@ class CAMObjectTreeDockWidget(QDockWidget):
             return "s", self.shapeSelection()
         if self.tabs.currentIndex() == 1:
             return "o", self.operSelection()
+        assert False
+    def activeTree(self):
+        if self.tabs.currentIndex() == 0:
+            return self.shapeTree
+        if self.tabs.currentIndex() == 1:
+            return self.operTree
         assert False
     def operationHoldingTabs(self, checked):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
@@ -233,25 +290,37 @@ class CAMMainWindow(QMainWindow):
         self.updateOperations()
     def millAddTool(self):
         dlg = AddCutterDialog(self)
+        preset = None
         if dlg.exec_():
-            if dlg.cutter is Ellipsis:
+            if dlg.choice is Ellipsis:
                 dlg = CreateCutterDialog(self)
                 if dlg.exec_():
                     cutter = dlg.cutter
-                    inventory.inventory.toolbits.append(cutter)
-                    saveInventory()
+                    # inventory.inventory.toolbits.append(cutter)
+                    cutter = cutter.newInstance()
+                    # saveInventory()
                 else:
                     return
             else:
-                cutter = dlg.cutter
+                if isinstance(dlg.choice, inventory.CutterBase):
+                    cutter = dlg.choice.newInstance()
+                else:
+                    cutter, preset, add = self.document.opAddLibraryPreset(dlg.choice)
+                    if not add:
+                        self.document.selectPresetAsDefault(preset)
+                        self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
+                        return
         else:
             return
         cycle = self.document.opAddCutter(cutter)
+        if preset:
+            self.document.selectPresetAsDefault(preset)
+        self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         #self.projectDW.operTree.selectionModel().select(cycle.index(), QItemSelectionModel.SelectCurrent)
-        self.projectDW.selectTab(1)
-        self.projectDW.operTree.setFocus()
+        #self.projectDW.selectTab(1)
+        #self.projectDW.operTree.setFocus()
         #dlg = AddPresetDialog(self, cutter)
         #if dlg.exec_():
         #    cutter.presets.
@@ -423,6 +492,7 @@ class CAMMainWindow(QMainWindow):
         self.document.load(data)
         self.drawingChanged()
         self.projectDW.shapeTree.expandAll()
+        self.projectDW.operTree.expandAll()
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()

@@ -33,6 +33,8 @@ class EncodedProperty(object):
         assert False
     def decode(self, value):
         assert False
+    def copyValue(self, dst, src):
+        setattr(dst, self.name, getattr(src, self.name))
 
 # Material types are encoded as names
 class MaterialProperty(EncodedProperty):
@@ -50,13 +52,14 @@ class IdRefProperty(EncodedProperty):
         # Requires a fixup step
         return value
     def equals(self, v1, v2):
-        return getattr(v1, self.name).id == getattr(v2, self.name).id
+        return getattr(v1, self.name).name == getattr(v2, self.name).name
 
 class Serializable(object):
     def __init__(self, id, name):
         self.id = IdSequence.register(id, self)
         self.name = name
         self.orig_id = None
+        self.base_object = None
         for i in self.properties:
             if isinstance(i, EncodedProperty):
                 setattr(self, i.name, None)
@@ -100,6 +103,21 @@ class Serializable(object):
             else:
                 data[i] = getattr(self, i)
         return data
+    def resetTo(self, src):
+        for i in self.properties:
+            if isinstance(i, EncodedProperty):
+                i.copyValue(self, src)
+            else:
+                setattr(self, i, getattr(src, i))
+    def newInstance(self):
+        res = self.__class__(None, self.name)
+        res.base_object = self
+        for i in self.properties:
+            if isinstance(i, EncodedProperty):
+                i.copyValue(res, self)
+            else:
+                setattr(res, i, getattr(self, i))
+        return res
 
 class CutterMaterial(Serializable):
     properties = []
@@ -121,6 +139,11 @@ class CutterBase(Serializable):
         return (self.name + ": " if self.name is not None else "") + self.description_only()
     def description_only(self):
         assert False
+    def presetByName(self, name):
+        for i in self.presets:
+            if i.name == name:
+                return i
+        return None
         
 class MillDirection(EnumClass):
     CONVENTIONAL = 0
@@ -132,7 +155,10 @@ class MillDirection(EnumClass):
 
 class PresetBase(Serializable):
     def description(self):
-        return (self.name + ": " if self.name is not None else "") + self.description_only()
+        if self.name:
+            return f"{self.name} ({self.description_only()})"
+        else:
+            return self.description_only()
 
 class EndMillPreset(PresetBase):
     properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', IdRefProperty('toolbit') ]
@@ -147,21 +173,18 @@ class EndMillPreset(PresetBase):
         res.stepover = stepover
         res.direction = direction
         return res
-    def description(self):
-        if self.name:
-            return f"{self.name}: {self.description_only()}"
-        else:
-            return self.description_only()
     def description_only(self):
         res = []
         if self.hfeed:
-            res.append(f"Fxy{self.hfeed:0.0f}")
+            res.append(f"f\u2194{self.hfeed:0.0f}")
         if self.vfeed:
-            res.append(f"Fz{self.vfeed:0.0f}")
+            res.append(f"f\u2193{self.vfeed:0.0f}")
         if self.maxdoc:
-            res.append(f"DOC{self.maxdoc:0.2f}")
+            res.append(f"\u21a7{self.maxdoc:0.2f}")
         if self.stepover:
-            res.append(f"SO{self.stepover:0.0f}%")
+            res.append(f"\u27f7{100 * self.stepover:0.0f}%")
+        if self.rpm:
+            res.append(f"\u27f3{self.rpm:0.0f}")
         if self.direction is not None:
             res.append(MillDirection.toString(self.direction))
         return " ".join(res)
@@ -173,16 +196,19 @@ class EndMillCutter(CutterBase):
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
         res = klass.new_impl(id, name, material, diameter, length)
-        res.flutes = flutes
+        res.flutes = int(flutes)
         return res
     def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction):
         self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction))
         return self
     def description_only(self):
         if self.length is not None:
-            return f"{self.flutes}F D{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
+            if (int(self.length * 10) % 10) != 0:
+                return f"{self.flutes}F \u2300{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
+            else:
+                return f"{self.flutes}F \u2300{self.diameter:0.1f} L{self.length:0.0f} {self.material.name} end mill"
         else:
-            return f"{self.flutes}F D{self.diameter:0.1f} {self.material.name} end mill"
+            return f"{self.flutes}F \u2300{self.diameter:0.1f} {self.material.name} end mill"
         
 class DrillBitPreset(PresetBase):
     properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
@@ -197,9 +223,11 @@ class DrillBitPreset(PresetBase):
     def description_only(self):
         res = []
         if self.vfeed:
-            res.append(f"Fz{self.vfeed:0.0f}")
+            res.append(f"f\u2193{self.vfeed:0.0f}")
         if self.maxdoc:
-            res.append(f"DOC{self.maxdoc:0.2f}")
+            res.append(f"\u21a7{self.maxdoc:0.2f}")
+        if self.rpm:
+            res.append(f"\u27f3{self.rpm:0.0f}")
         return " ".join(res)
 
 class DrillBitCutter(CutterBase):
@@ -212,7 +240,10 @@ class DrillBitCutter(CutterBase):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self
     def description_only(self):
-        return f"{self.diameter:0.1f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
+        if (int(self.diameter * 10) % 10) != 0:
+            return f"{self.diameter:0.1f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
+        else:
+            return f"{self.diameter:0.0f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
     
 class Inventory(object):
     def __init__(self):

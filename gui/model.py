@@ -23,6 +23,18 @@ class CAMTreeItem(QStandardItem):
         QStandardItem.__init__(self, name)
         self.document = document
         self.setEditable(False)
+    def format_item_as(self, role, def_value, bold=None, italic=None, color=None):
+        if role == Qt.FontRole:
+            font = QFont()
+            if bold is not None:
+                font.setBold(bold)
+            if italic is not None:
+                font.setItalic(italic)
+            return QVariant(font)
+        if color is not None and role == Qt.TextColorRole:
+            return QVariant(color)
+        return def_value
+
     def store(self):
         dump = {}
         dump['_type'] = type(self).__name__
@@ -60,6 +72,15 @@ class CAMTreeItem(QStandardItem):
         return res
     def properties(self):
         return []
+    def reorderItemImpl(self, direction, parent):
+        row = self.row()
+        if direction < 0 and row > 0:
+            self.document.opMoveItem(parent, self, parent, row - 1)
+            return self.index()
+        elif direction > 0 and row < parent.rowCount() - 1:
+            self.document.opMoveItem(parent, self, parent, row + 1)
+            return self.index()
+        return None
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -155,7 +176,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
-        return self.label() + ("(X=%0.2f, Y=%0.2f, D=%0.2f)" % (*self.centre, 2 * self.r))
+        return self.label() + (" (%0.2f, %0.2f) \u2300%0.2f" % (*self.centre, 2 * self.r))
     def toShape(self):
         return process.Shape.circle(*self.centre, self.r)
     def translated(self, dx, dy):
@@ -348,15 +369,6 @@ class ToolListTreeItem(CAMListTreeItem):
         for cutter in cutters:
             self.appendRow(ToolTreeItem(self.document, cutter, True))
 
-def format_as_current(role, def_value):
-    if role == Qt.FontRole:
-        font = QFont(def_value)
-        font.setBold(True)
-        return QVariant(font)
-    #if role == Qt.TextColorRole:
-    #    return QVariant(QColor(128, 128, 128))
-    return def_value
-
 class ToolTreeItem(CAMListTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
@@ -364,18 +376,20 @@ class ToolTreeItem(CAMListTreeItem):
     prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
-        self.is_local = is_local
         CAMListTreeItem.__init__(self, document, "Tool")
         self.setEditable(False)
         self.reset()
+    def isLocal(self):
+        return not self.inventory_tool.base_object or not (self.inventory_tool.equals(self.inventory_tool.base_object))
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(self.inventory_tool.description())
-        return CAMTreeItem.data(self, role)
+        is_local = self.isLocal()
+        return self.format_item_as(role, CAMTreeItem.data(self, role), italic=not is_local)
     def reset(self):
         CAMListTreeItem.reset(self)
         for preset in self.inventory_tool.presets:
-            self.appendRow(ToolPresetTreeItem(self.document, preset, self.is_local))
+            self.appendRow(ToolPresetTreeItem(self.document, preset))
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
             return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length]
@@ -401,9 +415,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
-    def __init__(self, document, preset, is_local):
+    def __init__(self, document, preset):
         self.inventory_preset = preset
-        self.is_local = is_local
         CAMTreeItem.__init__(self, document, "Tool preset")
         self.setEditable(False)
         self.resetProperties()
@@ -412,9 +425,13 @@ class ToolPresetTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Preset: " + self.inventory_preset.description())
-        if not self.is_local:
-            return format_as_global(role, CAMTreeItem.data(self, role))
-        return CAMTreeItem.data(self, role)
+        is_default = self.parent() and self.document.default_preset_by_tool.get(self.parent().inventory_tool, None) is self.inventory_preset
+        is_local = self.isLocal()
+        return self.format_item_as(role, CAMTreeItem.data(self, role), bold=is_default, italic=not is_local)
+    def isLocal(self):
+        return not self.inventory_preset.base_object or not (self.inventory_preset.equals(self.inventory_preset.base_object))
+    def isModifiedStock(self):
+        return self.parent().inventory_tool.base_object is not None and self.inventory_preset.base_object is not None and not (self.inventory_preset.equals(self.inventory_preset.base_object))
     def properties(self):
         if isinstance(self.inventory_preset, inventory.EndMillPreset):
             return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm]
@@ -433,11 +450,21 @@ class ToolPresetTreeItem(CAMTreeItem):
             self.inventory_preset.maxdoc = value
         elif name == 'stepover':
             self.inventory_preset.stepover = value / 100.0
+        elif name == 'name':
+            self.inventory_preset.name = value
+            # Update link to inventory object
+            base_tool = self.inventory_preset.toolbit.base_object
+            if base_tool:
+                self.inventory_preset.base_object = base_tool.presetByName(value)
+            else:
+                assert self.inventory_preset.base_object is None
         elif hasattr(self.inventory_preset, name):
             setattr(self.inventory_preset, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
         self.emitDataChanged()
+    def returnKeyPressed(self):
+        self.document.selectPresetAsDefault(self.inventory_preset)
 
 class MaterialType(EnumClass):
     WOOD = 0
@@ -535,8 +562,36 @@ class CycleTreeItem(CAMTreeItem):
         if role == Qt.ToolTipRole:
             return QVariant(f"Use tool: {self.cutter.description()}")
         if (self.document.current_cutter_cycle is not None) and (self is self.document.current_cutter_cycle):
-            return format_as_current(role, CAMTreeItem.data(self, role))
+            return self.format_item_as(role, CAMTreeItem.data(self, role), bold=True)
         return CAMTreeItem.data(self, role)
+    def returnKeyPressed(self):
+        self.document.selectCutterCycle(self)
+    def reorderItem(self, direction: int):
+        return self.reorderItemImpl(direction, self.model().invisibleRootItem())
+    def canAccept(self, child: CAMTreeItem):
+        if not isinstance(child, OperationTreeItem):
+            return False
+        if not self.cutter:
+            return False
+        if not (self.cutter.__class__ is child.cutter.__class__):
+            return False
+        if child.tool_preset is not None:
+            for preset in self.cutter.presets:
+                if preset.name == child.tool_preset.name:
+                    break
+            else:
+                return False
+        return True
+    def updateItemAfterMove(self, child):
+        if child.cutter != self.cutter:
+            child.cutter = self.cutter
+            if child.tool_preset:
+                for preset in self.cutter.presets:
+                    if preset.name == child.tool_preset.name:
+                        child.tool_preset = preset
+                        break
+                else:
+                    child.tool_preset = None
 
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
@@ -545,10 +600,10 @@ class OperationTreeItem(CAMTreeItem):
     prop_depth = FloatEditableProperty("Depth", "depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
     prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
-    prop_tab_count = IntEditableProperty("Tab Count", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
+    prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
+    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]))
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
-    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]))
     prop_islands = SetEditableProperty("Islands", "islands")
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
@@ -644,14 +699,15 @@ class OperationTreeItem(CAMTreeItem):
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
-            self.prop_tab_height, self.prop_tab_count, 
-            self.prop_offset, self.prop_extra_width,
-            self.prop_islands, self.prop_user_tabs,
+            self.prop_offset,
+            self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
+            self.prop_extra_width,
+            self.prop_islands,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
             self.prop_trc_rate]
     def onPropertyValueSet(self, name):
         if name == 'tool_preset' and self.tool_preset is Ellipsis:
-            self.tool_preset = inventory.EndMillPreset.new(None, "New preset", self.cutter, None, self.hfeed, self.vfeed, self.doc, self.stepover, inventory.MillDirection.CONVENTIONAL)
+            self.tool_preset = inventory.EndMillPreset.new(None, "New preset", self.cutter, None, self.hfeed, self.vfeed, self.doc, self.stepover / 100.0 if self.stepover else None, inventory.MillDirection.CONVENTIONAL)
             self.cutter.presets.append(self.tool_preset)
             self.document.refreshToolList()
             print ("New preset")
@@ -783,6 +839,28 @@ class OperationTreeItem(CAMTreeItem):
             self.cam = None
             self.renderer = None
             self.error = str(e)
+    def reorderItem(self, direction):
+        index = self.reorderItemImpl(direction, self.parent())
+        if index is not None:
+            return index
+        if direction < 0:
+            parentRow = self.parent().row() - 1
+            while parentRow >= 0:
+                otherParent = self.model().invisibleRootItem().child(parentRow)
+                if otherParent.canAccept(self):
+                    self.document.opMoveItem(self.parent(), self, otherParent, otherParent.rowCount())
+                    return self.index()
+                parentRow -= 1
+            return None
+        elif direction > 0:
+            parentRow = self.parent().row() + 1
+            while parentRow < self.model().invisibleRootItem().rowCount():
+                otherParent = self.model().invisibleRootItem().child(parentRow)
+                if otherParent.canAccept(self):
+                    self.document.opMoveItem(self.parent(), self, otherParent, 0)
+                    return self.index()
+                parentRow += 1
+            return None
 
 MIMETYPE = 'application/x-derpcam-operations'
 
@@ -875,6 +953,25 @@ class PropertySetUndoCommand(QUndoCommand):
     def redo(self):
         self.property.setData(self.subject, self.new_value)
 
+class MoveItemUndoCommand(QUndoCommand):
+    def __init__(self, oldParent, child, newParent, pos):
+        QUndoCommand.__init__(self, "Move item")
+        self.oldParent = oldParent
+        self.oldPos = child.row()
+        self.child = child
+        self.newParent = newParent
+        self.newPos = pos
+    def undo(self):
+        self.newParent.takeRow(self.newPos)
+        self.oldParent.insertRow(self.oldPos, self.child)
+        if hasattr(self.newParent, 'updateItemAfterMove'):
+            self.oldParent.updateItemAfterMove(self.child)
+    def redo(self):
+        self.oldParent.takeRow(self.oldPos)
+        self.newParent.insertRow(self.newPos, self.child)
+        if hasattr(self.newParent, 'updateItemAfterMove'):
+            self.newParent.updateItemAfterMove(self.child)
+
 class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
     def __init__(self):
@@ -888,6 +985,7 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.project_tool_presets = {}
+        self.default_preset_by_tool = {}
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
@@ -904,6 +1002,7 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.project_tool_presets = {}
+        self.default_preset_by_tool = {}
         self.refreshToolList()
         self.drawing.reset()
         self.operModel.removeRows(0, self.operModel.rowCount())
@@ -916,12 +1015,14 @@ class DocumentModel(QObject):
         data['material'] = self.material.store()
         data['tools'] = [i.store() for i in self.project_toolbits.values()]
         data['tool_presets'] = [j.store() for i in self.project_toolbits.values() for j in i.presets]
+        data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items()]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operations'] = self.forEachOperation(lambda op: op.store())
         data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
     def load(self, data):
         self.undoStack.clear()
+        self.default_preset_by_tool = {}
         self.material.reload(data['material'])
         currentCutterCycle = None
         cycleForCutter = {}
@@ -949,16 +1050,15 @@ class DocumentModel(QObject):
                 orig_id = cutter.orig_id
                 if cutter.name in std_cutters:
                     std = std_cutters[cutter.name]
+                    cutter.base_object = std
                     if std.equals(cutter):
-                        # Substitute standard cutter
-                        cutter = std
                         print ("Matched library tool", cutter.name)
                     else:
                         print ("Found different library tool with same name", cutter.name)
                     cutter_map[cutter.orig_id] = cutter
                     self.project_toolbits[cutter.name] = cutter
                 else:
-                    print ("New tool", cutter.name)
+                    print ("New tool without library prototype", cutter.name)
                     if cutter.orig_id == data.get('current_cutter_id', None):
                         currentCutterCycle = cycle
                     # New tool not present in the inventory
@@ -970,14 +1070,13 @@ class DocumentModel(QObject):
             # Fixup cutter references (they're initially loaded as ints instead)
             for i in presets:
                 i.toolbit = cutter_map[i.toolbit]
-                for j in i.toolbit.presets:
-                    if j.equals(i):
-                        print ("Matched identical preset", j.name)
-                        preset_map[i.orig_id] = j
-                        break
-                else:
-                    i.toolbit.presets.append(i)
+                if i.toolbit.base_object is not None:
+                    i.base_object = i.toolbit.base_object.presetByName(i.name)
+                i.toolbit.presets.append(i)
             self.refreshToolList()
+        if 'default_presets' in data:
+            for i in data['default_presets']:
+                self.default_preset_by_tool[cutter_map[i['tool_id']]] = preset_map[i['preset_id']]
         #self.tool.reload(data['tool'])
         self.drawing.reload(data['drawing']['header'])
         self.drawing.reset()
@@ -1051,6 +1150,23 @@ class DocumentModel(QObject):
         self.current_cutter_cycle.emitDataChanged()
         if old:
             old.emitDataChanged()
+    def selectPresetAsDefault(self, preset):
+        old = self.default_preset_by_tool.get(preset.toolbit, None)
+        self.default_preset_by_tool[preset.toolbit] = preset
+        if old:
+            self.itemForPreset(old).emitDataChanged()
+        self.itemForPreset(preset).emitDataChanged()
+    def itemForCutter(self, cutter):
+        for i in range(self.tool_list.rowCount()):
+            tool = self.tool_list.child(i)
+            if tool.inventory_tool is cutter:
+                return tool
+    def itemForPreset(self, preset):
+        tool = self.itemForCutter(preset.toolbit)
+        for i in range(tool.rowCount()):
+            p = tool.child(i)
+            if p.inventory_preset is preset:
+                return p
     def opAddCutter(self, cutter: inventory.CutterBase):
         # XXXKF undo
         self.project_toolbits[cutter.name] = cutter
@@ -1060,6 +1176,20 @@ class DocumentModel(QObject):
         self.refreshToolList()
         self.cutterSelected.emit(self.current_cutter_cycle)
         return self.current_cutter_cycle
+    def opAddLibraryPreset(self, library_preset: inventory.PresetBase):
+        for cutter in self.project_toolbits.values():
+            if cutter.base_object is library_preset.toolbit:
+                preset = library_preset.newInstance()
+                preset.toolbit = cutter
+                cutter.presets.append(preset)
+                self.refreshToolList()
+                return cutter, preset, False
+        else:
+            preset = library_preset.newInstance()
+            cutter = library_preset.toolbit.newInstance()
+            preset.toolbit = cutter
+            cutter.presets.append(preset)
+            return cutter, preset, True
     def opCreateOperation(self, shapeIds, operationType, cycle=None):
         if cycle is None:
             cycle = self.current_cutter_cycle
@@ -1073,6 +1203,7 @@ class DocumentModel(QObject):
             for i in shapeIds:
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
                 item.cutter = cycle.cutter
+                item.tool_preset = self.default_preset_by_tool.get(item.cutter, None)
                 item.updateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
@@ -1100,3 +1231,5 @@ class DocumentModel(QObject):
         finally:
             if len(items) > 1:
                 self.undoStack.endMacro()
+    def opMoveItem(self, oldParent, child, newParent, pos):
+        self.undoStack.push(MoveItemUndoCommand(oldParent, child, newParent, pos))

@@ -7,35 +7,61 @@ from gui.model import *
 class CutterListWidget(QTreeWidget):
     def __init__(self, parent, toolbits):
         QTreeWidget.__init__(self, parent)
-        self.setMinimumSize(600, 200)
+        self.setMinimumSize(800, 400)
         self.setColumnCount(3)
         self.setHeaderItem(QTreeWidgetItem(["Type", "Name", "Description"]))
+        self.setAlternatingRowColors(True)
         #self.tools.setHorizontalHeaderLabels(["Name", "Description"])
         items = []
         self.lookup = []
-        for i, tb in enumerate(toolbits):
+        larger = QFont()
+        larger.setBold(True)
+        #larger.setPointSize(larger.pointSize() * 1.1)
+        italic = QFont()
+        italic.setItalic(True)
+        for tb in toolbits:
             self.lookup.append(tb)
-            items.append(QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()]))
-        self.setRootIsDecorated(False)
+            cutter = QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()])
+            cutter.content = tb
+            cutter.setFont(0, larger)
+            cutter.setFont(1, larger)
+            cutter.setFont(2, larger)
+            for j in tb.presets:
+                preset = QTreeWidgetItem(["Preset", j.name, j.description_only()])
+                preset.setFont(0, italic)
+                preset.setFont(1, italic)
+                preset.setFont(2, italic)
+                preset.content = j
+                cutter.addChild(preset)
+            if False:
+                addnew = QTreeWidgetItem(["Preset", "<add new>", "Add new preset for this cutter"])
+                addnew.setFont(0, italic)
+                addnew.setFont(1, italic)
+                addnew.setFont(2, italic)
+                addnew.setForeground(0, QColor(128, 128, 128))
+                addnew.setForeground(1, QColor(128, 128, 128))
+                addnew.setForeground(2, QColor(128, 128, 128))
+                cutter.addChild(addnew)
+            items.append(cutter)
+        #self.setRootIsDecorated(False)
         self.insertTopLevelItems(0, items)
+        self.expandAll()
         self.resizeColumnToContents(0)
         self.resizeColumnToContents(1)
         self.resizeColumnToContents(2)
         self.setCurrentItem(self.topLevelItem(0))
     def selectedItem(self):
-        row = self.tools.indexFromItem(self.tools.currentItem()).row()
-        if row >= 0:
-            return self.lookup[row]
-        return None
+        return self.currentItem().content
 
 class AddCutterDialog(QDialog):
     def __init__(self, parent):
         QDialog.__init__(self, parent)
         self.initUI()
     def initUI(self):
+        self.setWindowTitle("Add a tool or a preset to the project")
         self.cutter = None
         self.form = QFormLayout(self)
-        self.selectRadio = QRadioButton("&Select an existing cutter", self)
+        self.selectRadio = QRadioButton("&Select a cutter and a preset from the inventory", self)
         self.selectRadio.setChecked(True)
         self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
         #label.setBuddy(self.tools)
@@ -44,7 +70,7 @@ class AddCutterDialog(QDialog):
         self.tools = CutterListWidget(self, toolbits)
         self.tools.doubleClicked.connect(self.accept)
         self.form.addRow(self.tools)
-        self.addRadio = QRadioButton("&Add a new cutter", self)
+        self.addRadio = QRadioButton("&Create a new cutter", self)
         self.form.addRow(self.addRadio)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.form.addRow(self.buttonBox)
@@ -55,9 +81,9 @@ class AddCutterDialog(QDialog):
         self.addRadio.pressed.connect(lambda: self.tools.setEnabled(False))
     def accept(self):
         if self.addRadio.isChecked():
-            self.cutter = Ellipsis
+            self.choice = Ellipsis
         else:
-            self.cutter = self.tools.selectedItem()
+            self.choice = self.tools.selectedItem()
         QDialog.accept(self)
 
 class CreateCutterDialog(QDialog):
@@ -65,16 +91,17 @@ class CreateCutterDialog(QDialog):
         QDialog.__init__(self, parent)
         self.initUI()
     def initUI(self):
+        self.setWindowTitle("Create a new tool and add it to the project")
         self.cutter = None
         self.form = QFormLayout(self)
+        self.nameEdit = QLineEdit()
+        self.form.addRow("Name", self.nameEdit)
         self.form.addRow(QLabel("Select the type of a cutter to create"))
         self.emRadio = QRadioButton("&End mill", self)
         self.emRadio.setChecked(True)
         self.form.addRow(self.emRadio)
         self.drillRadio = QRadioButton("&Drill bit", self)
         self.form.addRow(self.drillRadio)
-        self.nameEdit = QLineEdit()
-        self.form.addRow("Name", self.nameEdit)
         self.flutesEdit = QLineEdit()
         self.form.addRow("# Flutes (opt.)", self.flutesEdit)
         self.diameterEdit = QLineEdit()
@@ -131,6 +158,7 @@ class CreateCutterDialog(QDialog):
             self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, length)
         QDialog.accept(self)
 
+# Not used yet
 class AddPresetDialog(QDialog):
     def __init__(self, parent, cutter):
         QDialog.__init__(self, parent)
