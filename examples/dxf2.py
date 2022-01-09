@@ -105,17 +105,52 @@ class CAMObjectTreeDockWidget(QDockWidget):
         elif isinstance(item, CycleTreeItem):
             menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
         elif isinstance(item, ToolPresetTreeItem):
-            menu.addAction("Set as current").triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
+            menu.addAction("Set as default").triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
             action.setEnabled(item.isLocal() and not item.parent().isLocal())
             action = menu.addAction("Reload from inventory")
             action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
             action.setEnabled(item.isModifiedStock())
+        elif isinstance(item, ToolTreeItem):
+            action = menu.addAction("Save to inventory")
+            action.triggered.connect(lambda: self.toolSaveToInventory(item))
+            action.setEnabled(item.isNewObject())
+            action = menu.addAction("Update in inventory")
+            action.triggered.connect(lambda: self.toolUpdateInInventory(item))
+            action.setEnabled(item.isModifiedStock())
+            action = menu.addAction("Reload from inventory")
+            action.triggered.connect(lambda: self.toolRevertFromInventory(item))
+            action.setEnabled(item.isModifiedStock())
         menu.exec_(point)
+    def toolSaveToInventory(self, item):
+        if not item.inventory_tool.base_object:
+            item.inventory_tool.base_object.resetTo(item.inventory_tool)
+            tool_copy = item.inventory_tool.newInstance()
+            tool_copy.presets = [i.newInstance() for i in item.inventory_tool.presets]
+            for i in tool_copy.presets:
+                i.toolbit = tool_copy
+            inventory.inventory.toolbits.append(tool_copy)
+            inv_toolbit.presets.append(preset_copy)
+            saveInventory()
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
+    def toolUpdateInInventory(self, item):
+        if item.inventory_tool.base_object:
+            item.inventory_tool.base_object.resetTo(item.inventory_tool)
+            saveInventory()
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
+    def toolRevertFromInventory(self, item):
+        # XXXKF undo
+        if item.inventory_tool.base_object:
+            item.inventory_tool.resetTo(item.inventory_tool.base_object)
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
     def toolPresetSetAsCurrent(self, item):
         self.document.selectPresetAsDefault(item.inventory_preset)
     def toolPresetRevertFromInventory(self, item):
+        # XXXKF undo
         if item.inventory_preset.base_object:
             item.inventory_preset.resetTo(item.inventory_preset.base_object)
             item.inventory_preset.toolbit = item.parent().inventory_tool

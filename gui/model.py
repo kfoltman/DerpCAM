@@ -381,6 +381,10 @@ class ToolTreeItem(CAMListTreeItem):
         self.reset()
     def isLocal(self):
         return not self.inventory_tool.base_object or not (self.inventory_tool.equals(self.inventory_tool.base_object))
+    def isNewObject(self):
+        return self.inventory_tool.base_object is None
+    def isModifiedStock(self):
+        return self.inventory_tool.base_object is not None and not (self.inventory_tool.equals(self.inventory_tool.base_object))
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(self.inventory_tool.description())
@@ -401,7 +405,10 @@ class ToolTreeItem(CAMListTreeItem):
     def getPropertyValue(self, name):
         return getattr(self.inventory_tool, name)
     def setPropertyValue(self, name, value):
-        if hasattr(self.inventory_tool, name):
+        if name == 'name':
+            self.inventory_tool.name = value
+            self.inventory_tool.base_object = inventory.inventory.toolbitByName(value, type(self.inventory_tool))
+        elif hasattr(self.inventory_tool, name):
             setattr(self.inventory_tool, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)

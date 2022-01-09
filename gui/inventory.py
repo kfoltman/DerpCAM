@@ -253,6 +253,11 @@ class Inventory(object):
             setattr(CutterMaterial, name, material)
             self.cutter_materials.append(name)
         self.toolbits = []
+    def toolbitByName(self, name, klass=CutterBase):
+        for i in self.toolbits:
+            if i.name == name and isinstance(i, klass):
+                return i
+        return None
     def readFrom(self, filename):
         f = open(filename, "r")
         data = json.load(f)
