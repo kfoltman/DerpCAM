@@ -567,7 +567,7 @@ class CycleTreeItem(CAMTreeItem):
         if role == Qt.DisplayRole:
             return QVariant(f"Use tool: {self.cutter.name}")
         if role == Qt.ToolTipRole:
-            return QVariant(f"Use tool: {self.cutter.description()}")
+            return QVariant(f"{self.cutter.description()}")
         if (self.document.current_cutter_cycle is not None) and (self is self.document.current_cutter_cycle):
             return self.format_item_as(role, CAMTreeItem.data(self, role), bold=True)
         return CAMTreeItem.data(self, role)
@@ -747,7 +747,8 @@ class OperationTreeItem(CAMTreeItem):
         return OperationType.toString(self.operation)
     def data(self, role):
         if role == Qt.DisplayRole:
-            return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
+            preset_if = ", " + self.tool_preset.name if self.tool_preset else ""
+            return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + ((f"{self.depth:0.2f} mm") if self.depth is not None else "full") + f" depth{preset_if}")
         if role == Qt.DecorationRole and self.error is not None:
             return QVariant(QApplication.instance().style().standardIcon(QStyle.SP_MessageBoxCritical))
         if role == Qt.DecorationRole and self.warning is not None:
@@ -758,7 +759,7 @@ class OperationTreeItem(CAMTreeItem):
             elif self.warning is not None:
                 return QVariant(self.warning)
             else:
-                return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + " depth")
+                return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + (("%0.2f mm" % self.depth) if self.depth is not None else "full") + f" depth, preset: {self.tool_preset.name if self.tool_preset else 'none'}")
         return CAMTreeItem.data(self, role)
     def addWarning(self, warning):
         if self.warning is None:
