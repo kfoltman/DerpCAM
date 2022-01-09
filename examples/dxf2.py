@@ -181,6 +181,10 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if item_selection.indexes():
             self.shapeTree.scrollTo(item_selection.indexes()[0])
     def tabSelectionChanged(self):
+        if self.tabs.currentIndex() == 0:
+            self.shapeTree.setFocus()
+        elif self.tabs.currentIndex() == 1:
+            self.operTree.setFocus()
         self.selectionChanged.emit()
     def shapeSelectionChanged(self):
         self.selectionChanged.emit()
