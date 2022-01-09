@@ -387,6 +387,7 @@ class PropertySheetWidget(QTableWidget):
                         item.setFlags((item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled) &~ Qt.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() &~ (Qt.ItemIsSelectable | Qt.ItemIsEditable | Qt.ItemIsEnabled ))
+                self.setRowHidden(row, not isValid)
                 self.setItem(row, 0, item)
             finally:
                 self.updating = False
