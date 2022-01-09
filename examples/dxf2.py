@@ -487,6 +487,22 @@ class CAMMainWindow(QMainWindow):
         self.updateSelection()
         self.setWindowFilePath(fn)
         self.projectDW.shapeTree.expandAll()
+    def loadProject(self, fn):
+        f = open(fn, "r")
+        data = json.load(f)
+        f.close()
+        self.document.filename = fn
+        self.document.drawingFilename = None
+        self.document.load(data)
+        self.drawingChanged()
+        self.projectDW.shapeTree.expandAll()
+        self.projectDW.operTree.expandAll()
+        self.setWindowFilePath(fn)
+    def saveProject(self, fn):
+        data = self.document.store()
+        f = open(fn, "w")
+        json.dump(data, f, indent=2)
+        f.close()
     def fileImport(self):
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         dlg.setFileMode(QFileDialog.ExistingFile)
@@ -515,21 +531,6 @@ class CAMMainWindow(QMainWindow):
             self.fileSaveAs()
         else:
             self.saveProject(self.document.filename)
-    def saveProject(self, fn):
-        data = self.document.store()
-        f = open(fn, "w")
-        json.dump(data, f, indent=2)
-        f.close()
-    def loadProject(self, fn):
-        f = open(fn, "r")
-        data = json.load(f)
-        f.close()
-        self.document.filename = fn
-        self.document.drawingFilename = None
-        self.document.load(data)
-        self.drawingChanged()
-        self.projectDW.shapeTree.expandAll()
-        self.projectDW.operTree.expandAll()
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()
