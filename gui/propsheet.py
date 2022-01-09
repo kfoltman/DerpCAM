@@ -38,18 +38,24 @@ class EditableProperty(object):
         return True
 
 class SetEditableProperty(EditableProperty):
-    def __init__(self, name, attribute, format_func=None):
+    def __init__(self, name, attribute, format_func=None, edit_func=None):
         EditableProperty.__init__(self, name, attribute)
         self.format_func = format_func
+        self.edit_func = edit_func
     def toDisplayString(self, value):
         if self.format_func is None:
-            return "%d items" % (len(value))
+            return f"{len(value)} items"
         else:
             return self.format_func(value)
     def validate(self, value):
         raise ValueError("Manual entry not supported")
     def isEditable(self):
-        return False
+        return self.edit_func is not None
+    def createEditor(self, parent, item, objects):
+        if self.edit_func is not None:
+            if len(objects) == 1:
+                self.edit_func(objects[0])
+            return Ellipsis
 
 class EnumClass(object):
     @classmethod
@@ -284,6 +290,8 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         row = index.row()
         editor = self.properties[row].createEditor(parent, self.props_widget.itemFromIndex(index), self.props_widget.objects)
+        if editor is Ellipsis:
+            return None
         if editor is not None:
             return editor
         return QStyledItemDelegate.createEditor(self, parent, option, index)

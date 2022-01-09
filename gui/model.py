@@ -608,10 +608,10 @@ class OperationTreeItem(CAMTreeItem):
     prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
-    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]))
+    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
-    prop_islands = SetEditableProperty("Islands", "islands")
+    prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
@@ -646,8 +646,10 @@ class OperationTreeItem(CAMTreeItem):
         self.stepover = None
         self.doc = None
         self.trc_rate = 0.0
-    def isDropEnabled(self):
-        return False
+    def editTabLocations(self):
+        self.document.tabEditRequested.emit(self)
+    def editIslands(self):
+        self.document.islandsEditRequested.emit(self)
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
@@ -870,47 +872,16 @@ class OperationTreeItem(CAMTreeItem):
                 parentRow += 1
             return None
 
-MIMETYPE = 'application/x-derpcam-operations'
-
 class OperationsModel(QStandardItemModel):
     def __init__(self, document):
         QStandardItemModel.__init__(self)
         self.document = document
-    def supportedDropActions(self):
-        return Qt.MoveAction
-    def canDropMimeData(self, data, action, row, column, parent):
-        return data.hasFormat(MIMETYPE)
-    def dropMimeData(self, data, action, row, column, parent):
-        if data.hasFormat(MIMETYPE):
-            data = json.loads(data.data(MIMETYPE).data())
-            if row == -1:
-                row = self.rowCount(parent)
-            for i in data:
-                item = CAMTreeItem.load(self.document, i)
-                item.updateCAM()
-                self.insertRow(row, item)
-                row += 1
-            return True
-        return False
     def findItem(self, item):
         index = self.indexFromItem(item)
         return item.parent() or self.invisibleRootItem(), index.row()
     def removeItemAt(self, row):
         self.takeRow(row)
         return row
-    def mimeData(self, indexes):
-        data = []
-        for i in indexes:
-            data.append(self.itemFromIndex(i).store())
-        mime = QMimeData()
-        mime.setData(MIMETYPE, json.dumps(data).encode("utf-8"))
-        return mime
-    def flags(self, index):
-        defaultFlags = QStandardItemModel.flags(self, index) &~ Qt.ItemIsDropEnabled
-        if index.isValid():
-            return Qt.ItemIsDragEnabled | defaultFlags
-        else:
-            return Qt.ItemIsDropEnabled | defaultFlags
 
 class AddOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
@@ -982,6 +953,8 @@ class MoveItemUndoCommand(QUndoCommand):
 
 class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
+    tabEditRequested = pyqtSignal([OperationTreeItem])
+    islandsEditRequested = pyqtSignal([OperationTreeItem])
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)

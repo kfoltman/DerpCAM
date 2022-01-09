@@ -35,6 +35,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
 
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
+    modeChanged = pyqtSignal(int)
     def __init__(self, document, configSettings):
         self.document = document
         self.configSettings = configSettings
@@ -98,6 +99,17 @@ class DrawingViewer(view.PathViewer):
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
             qp.setOpacity(1.0)
+    def keyPressEvent(self, e):
+        if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
+            self.exitEditMode()
+        return view.PathViewer.keyPressEvent(self, e)
+    def exitEditMode(self):
+        item = self.mode_item
+        item.updateCAM()
+        self.changeMode(DrawingUIMode.MODE_NORMAL, None)
+        self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
+        self.renderDrawing()
+        self.majorUpdate()
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
@@ -108,11 +120,7 @@ class DrawingViewer(view.PathViewer):
             if self.mode != DrawingUIMode.MODE_NORMAL:
                 lpos = e.localPos()
                 if lpos.x() >= 5 and lpos.x() < 35 and lpos.y() >= 5 and lpos.y() < 35:
-                    item = self.mode_item
-                    item.updateCAM()
-                    self.changeMode(DrawingUIMode.MODE_NORMAL, None)
-                    self.renderDrawing()
-                    self.majorUpdate()
+                    self.exitEditMode()
                     return
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
                     self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])

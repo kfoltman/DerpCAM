@@ -209,9 +209,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return self.operTree
         assert False
-    def operationHoldingTabs(self, checked):
+    def operationHoldingTabs(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
-    def operationIslands(self, checked):
+    def operationIslands(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_ISLANDS)
     def cycleSetAsCurrent(self, item):
         self.document.selectCutterCycle(item)
@@ -280,6 +280,7 @@ class CAMMainWindow(QMainWindow):
             return action
         self.viewer = canvas.DrawingViewer(self.document, self.configSettings)
         self.viewer.initUI()
+        self.viewer.modeChanged.connect(self.operationEditMode)
         self.setCentralWidget(self.viewer)
         self.projectDW = CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
@@ -290,6 +291,8 @@ class CAMMainWindow(QMainWindow):
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
+        self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
+        self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
@@ -400,7 +403,14 @@ class CAMMainWindow(QMainWindow):
     def operRemoved(self):
         self.viewer.majorUpdate()
     def operationEditMode(self, mode):
+        oldEnabled = self.propsDW.isEnabled()
+        self.projectDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
+        self.propsDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
         self.viewer.changeMode(mode, self.projectDW.operSelection()[0])
+        if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
+            self.propsDW.propsheet.setFocus()
+        elif mode != canvas.DrawingUIMode.MODE_NORMAL:
+            self.viewer.setFocus()
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
