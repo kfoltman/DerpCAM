@@ -125,14 +125,13 @@ class CAMObjectTreeDockWidget(QDockWidget):
         menu.exec_(point)
     def toolSaveToInventory(self, item):
         if not item.inventory_tool.base_object:
-            item.inventory_tool.base_object.resetTo(item.inventory_tool)
             tool_copy = item.inventory_tool.newInstance()
             tool_copy.presets = [i.newInstance() for i in item.inventory_tool.presets]
             for i in tool_copy.presets:
                 i.toolbit = tool_copy
             inventory.inventory.toolbits.append(tool_copy)
-            inv_toolbit.presets.append(preset_copy)
             saveInventory()
+            item.inventory_tool.base_object = tool_copy
             self.document.refreshToolList()
             self.shapeTree.expandAll()
     def toolUpdateInInventory(self, item):
@@ -332,7 +331,6 @@ class CAMMainWindow(QMainWindow):
                 if dlg.exec_():
                     cutter = dlg.cutter
                     # inventory.inventory.toolbits.append(cutter)
-                    cutter = cutter.newInstance()
                     # saveInventory()
                 else:
                     return
