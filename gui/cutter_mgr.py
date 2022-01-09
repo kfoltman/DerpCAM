@@ -115,6 +115,15 @@ class CreateCutterDialog(QDialog):
         self.emRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(True))
         self.drillRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(False))
     def accept(self):
+        name = self.nameEdit.text()
+        if name == '':
+            QMessageBox.critical(self, None, "Name is required")
+            self.nameEdit.setFocus()
+            return
+        if inventory.inventory.toolbitByName(name):
+            QMessageBox.critical(self, None, "Name is required to be unique")
+            self.nameEdit.setFocus()
+            return
         if self.emRadio.isChecked():
             try:
                 if self.flutesEdit.text() != '':
