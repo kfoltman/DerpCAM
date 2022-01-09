@@ -31,7 +31,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.document = document
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setMinimumSize(400, 100)
+        screen_width = self.screen().size().width()
+        self.setMinimumSize(max(300, screen_width // 4), 100)
         self.tabs = QTabWidget()
         
         tree = TreeViewWithAltArrows()
