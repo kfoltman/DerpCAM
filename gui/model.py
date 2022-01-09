@@ -81,6 +81,11 @@ class CAMTreeItem(QStandardItem):
             self.document.opMoveItem(parent, self, parent, row + 1)
             return self.index()
         return None
+    def items(self):
+        i = 0
+        while i < self.rowCount():
+            yield self.child(i)
+            i += 1
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -261,11 +266,6 @@ class CAMListTreeItem(CAMTreeItem):
         self.resetProperties()
     def resetProperties(self):
         pass
-    def items(self):
-        i = 0
-        while i < self.rowCount():
-            yield self.child(i)
-            i += 1
     
 class DrawingTreeItem(CAMListTreeItem):
     prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
@@ -1015,6 +1015,8 @@ class DocumentModel(QObject):
         self.operModel.removeRows(0, self.operModel.rowCount())
     def refreshToolList(self):
         self.tool_list.reset()
+    def allCycles(self):
+        return [self.operModel.item(i) for i in range(self.operModel.rowCount())]
     def store(self):
         #cutters = set(self.forEachOperation(lambda op: op.cutter))
         #presets = set(self.forEachOperation(lambda op: op.tool_preset))
@@ -1024,8 +1026,8 @@ class DocumentModel(QObject):
         data['tool_presets'] = [j.store() for i in self.project_toolbits.values() for j in i.presets]
         data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items()]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
-        data['operations'] = self.forEachOperation(lambda op: op.store())
-        data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
+        data['operation_cycles'] = [ { 'tool_id' : cycle.cutter.id, 'is_current' : (self.current_cutter_cycle is cycle), 'operations' : [op.store() for op in cycle.items()] } for cycle in self.allCycles() ]
+        #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
     def load(self, data):
         self.undoStack.clear()
@@ -1044,8 +1046,9 @@ class DocumentModel(QObject):
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
                 tool.get('direction', 0))
             prj_cutter.presets.append(prj_preset)
-            self.document.opAddCutter(prj_cutter)
+            self.opAddCutter(prj_cutter)
             self.refreshToolList()
+        add_cycles = 'operation_cycles' not in data
         if 'tools' in data:
             std_cutters = { i.name : i for i in inventory.inventory.toolbits }
             cutters = [inventory.CutterBase.load(i, default_type='EndMillCutter') for i in data['tools']]
@@ -1070,10 +1073,11 @@ class DocumentModel(QObject):
                         currentCutterCycle = cycle
                     # New tool not present in the inventory
                     self.project_toolbits[cutter.name] = cutter
-                cycle = CycleTreeItem(self, cutter)
-                cycleForCutter[orig_id] = cycle
-                self.operModel.appendRow(cycle)
-                currentCutterCycle = currentCutterCycle or cycle
+                if add_cycles:
+                    cycle = CycleTreeItem(self, cutter)
+                    cycleForCutter[orig_id] = cycle
+                    self.operModel.appendRow(cycle)
+                    currentCutterCycle = currentCutterCycle or cycle
             # Fixup cutter references (they're initially loaded as ints instead)
             for i in presets:
                 i.toolbit = cutter_map[i.toolbit]
@@ -1089,21 +1093,34 @@ class DocumentModel(QObject):
         self.drawing.reset()
         for i in data['drawing']['items']:
             self.drawing.appendRow(DrawingItemTreeItem.load(self, i))
-        for i in data['operations']:
-            operation = CAMTreeItem.load(self, i)
-            if ('cutter' not in i) and ('tool' in data):
-                cycle = self.operModel.item(0)
-                operation.cutter = prj_cutter
-                operation.tool_preset = prj_preset
-            else:
-                cycle = cycleForCutter[operation.cutter]
-                operation.cutter = cutter_map[operation.cutter]
-                operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
-            operation.updateCAM()
-            if operation.orig_shape is None:
-                print ("Warning: dangling reference to shape %d, ignoring the referencing operation" % (operation.shape_id, ))
-            else:
-                cycle.appendRow(operation)
+        if 'operations' in data:
+            for i in data['operations']:
+                operation = CAMTreeItem.load(self, i)
+                if ('cutter' not in i) and ('tool' in data):
+                    cycle = self.operModel.item(0)
+                    operation.cutter = prj_cutter
+                    operation.tool_preset = prj_preset
+                else:
+                    cycle = cycleForCutter[operation.cutter]
+                    operation.cutter = cutter_map[operation.cutter]
+                    operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
+                operation.updateCAM()
+                if operation.orig_shape is None:
+                    print ("Warning: dangling reference to shape %d, ignoring the referencing operation" % (operation.shape_id, ))
+                else:
+                    cycle.appendRow(operation)
+        elif 'operation_cycles' in data:
+            for i in data['operation_cycles']:
+                cycle = CycleTreeItem(self, cutter_map[i['tool_id']])
+                cycleForCutter[orig_id] = cycle
+                self.operModel.appendRow(cycle)
+                if i['is_current']:
+                    currentCutterCycle = cycle
+                for j in i['operations']:
+                    operation = CAMTreeItem.load(self, j)
+                    operation.cutter = cutter_map[operation.cutter]
+                    operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
+                    cycle.appendRow(operation)
         self.updateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
