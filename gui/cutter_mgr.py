@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from gui.model import *
 
 class CutterListWidget(QTreeWidget):
-    def __init__(self, parent, toolbits):
+    def __init__(self, parent, toolbits, cutter_type):
         QTreeWidget.__init__(self, parent)
         self.setMinimumSize(800, 400)
         self.setColumnCount(3)
@@ -20,6 +20,8 @@ class CutterListWidget(QTreeWidget):
         italic = QFont()
         italic.setItalic(True)
         for tb in toolbits:
+            if cutter_type is not None and not isinstance(tb, cutter_type):
+                continue
             self.lookup.append(tb)
             cutter = QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()])
             cutter.content = tb
@@ -54,8 +56,9 @@ class CutterListWidget(QTreeWidget):
         return self.currentItem().content
 
 class AddCutterDialog(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, cutter_type=None):
         QDialog.__init__(self, parent)
+        self.cutter_type = cutter_type
         self.initUI()
     def initUI(self):
         self.setWindowTitle("Add a tool or a preset to the project")
@@ -67,7 +70,7 @@ class AddCutterDialog(QDialog):
         #label.setBuddy(self.tools)
         self.form.addRow(self.selectRadio)
         toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
-        self.tools = CutterListWidget(self, toolbits)
+        self.tools = CutterListWidget(self, toolbits, self.cutter_type)
         self.tools.doubleClicked.connect(self.accept)
         self.form.addRow(self.tools)
         self.addRadio = QRadioButton("&Create a new cutter", self)

@@ -330,8 +330,8 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
-    def millAddTool(self):
-        dlg = AddCutterDialog(self)
+    def millAddTool(self, cutter_type=None):
+        dlg = AddCutterDialog(self, cutter_type=cutter_type)
         preset = None
         if dlg.exec_():
             if dlg.choice is Ellipsis:
@@ -359,12 +359,6 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
-        #self.projectDW.operTree.selectionModel().select(cycle.index(), QItemSelectionModel.SelectCurrent)
-        #self.projectDW.selectTab(1)
-        #self.projectDW.operTree.setFocus()
-        #dlg = AddPresetDialog(self, cutter)
-        #if dlg.exec_():
-        #    cutter.presets.
     def updateOperations(self):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
@@ -468,11 +462,14 @@ class CAMMainWindow(QMainWindow):
         return self.needCutterType(inventory.EndMillCutter, "an end mill")
     def needDrillBit(self):
         return self.needCutterType(inventory.DrillBitCutter, "a drill bit")
-    def needCutterType(self, klass, name):
+    def needCutterType(self, cutter_type, name):
         if not self.document.current_cutter_cycle:
-            QMessageBox.critical(self, None, "No tool selected")
-            return False
-        if not isinstance(self.document.current_cutter_cycle.cutter, klass):
+            if not self.document.project_toolbits:
+                self.millAddTool(cutter_type=cutter_type)
+            if not self.document.current_cutter_cycle:
+                QMessageBox.critical(self, None, "No tool selected")
+                return False
+        if not isinstance(self.document.current_cutter_cycle.cutter, cutter_type):
             QMessageBox.critical(self, None, f"Current tool is not {name}")
             return False
         return True
