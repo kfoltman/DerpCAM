@@ -537,6 +537,7 @@ class CAMMainWindow(QMainWindow):
             fn = dlg.selectedFiles()[0]
             self.document.filename = fn
             self.saveProject(fn)
+            self.setWindowFilePath(fn)
     def fileSave(self):
         if self.document.filename is None:
             self.fileSaveAs()
