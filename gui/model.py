@@ -471,7 +471,7 @@ class ToolPresetTreeItem(CAMTreeItem):
             assert False, "Unknown attribute: " + repr(name)
         self.emitDataChanged()
     def returnKeyPressed(self):
-        self.document.selectPresetAsDefault(self.inventory_preset)
+        self.document.selectPresetAsDefault(self.inventory_preset.toolbit, self.inventory_preset)
 
 class MaterialType(EnumClass):
     WOOD = 0
@@ -749,7 +749,7 @@ class OperationTreeItem(CAMTreeItem):
         return OperationType.toString(self.operation)
     def data(self, role):
         if role == Qt.DisplayRole:
-            preset_if = ", " + self.tool_preset.name if self.tool_preset else ""
+            preset_if = ", " + self.tool_preset.name if self.tool_preset else ", no preset"
             return QVariant(self.operationTypeLabel() + ": " + self.orig_shape.label() + ", " + ((f"{self.depth:0.2f} mm") if self.depth is not None else "full") + f" depth{preset_if}")
         if role == Qt.DecorationRole and self.error is not None:
             return QVariant(QApplication.instance().style().standardIcon(QStyle.SP_MessageBoxCritical))
@@ -1148,12 +1148,13 @@ class DocumentModel(QObject):
         self.current_cutter_cycle.emitDataChanged()
         if old:
             old.emitDataChanged()
-    def selectPresetAsDefault(self, preset):
-        old = self.default_preset_by_tool.get(preset.toolbit, None)
-        self.default_preset_by_tool[preset.toolbit] = preset
+    def selectPresetAsDefault(self, toolbit, preset):
+        old = self.default_preset_by_tool.get(toolbit, None)
+        self.default_preset_by_tool[toolbit] = preset
         if old:
             self.itemForPreset(old).emitDataChanged()
-        self.itemForPreset(preset).emitDataChanged()
+        if preset:
+            self.itemForPreset(preset).emitDataChanged()
     def itemForCutter(self, cutter):
         for i in range(self.tool_list.rowCount()):
             tool = self.tool_list.child(i)

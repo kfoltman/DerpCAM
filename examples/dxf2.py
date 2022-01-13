@@ -7,7 +7,7 @@ import gcodegen
 import view
 from gui import propsheet, settings, canvas
 from gui.model import *
-from gui.cutter_mgr import AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
+from gui.cutter_mgr import SelectCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
 import ezdxf
 import json
 from typing import Optional
@@ -152,7 +152,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.refreshToolList()
             self.shapeTree.expandAll()
     def toolPresetSetAsCurrent(self, item):
-        self.document.selectPresetAsDefault(item.inventory_preset)
+        self.document.selectPresetAsDefault(item.inventory_preset.toolbit, item.inventory_preset)
     def toolPresetRevertFromInventory(self, item):
         # XXXKF undo
         if item.inventory_preset.base_object:
@@ -318,8 +318,8 @@ class CAMMainWindow(QMainWindow):
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            ("&Add tool...", self.millAddTool, QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
-            None,
+            #("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            #None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
@@ -334,8 +334,8 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
-    def millAddTool(self, cutter_type=None):
-        dlg = AddCutterDialog(self, cutter_type=cutter_type)
+    def millSelectTool(self, cutter_type=None):
+        dlg = SelectCutterDialog(self, document=self.document, cutter_type=cutter_type)
         preset = None
         if dlg.exec_():
             if dlg.choice is Ellipsis:
@@ -345,24 +345,39 @@ class CAMMainWindow(QMainWindow):
                     # inventory.inventory.toolbits.append(cutter)
                     # saveInventory()
                 else:
-                    return
+                    return False
             else:
-                if isinstance(dlg.choice, inventory.CutterBase):
+                if isinstance(dlg.choice, CycleTreeItem):
+                    # project's tool/cycle
+                    self.document.selectCutterCycle(dlg.choice)
+                    self.document.selectPresetAsDefault(dlg.choice.cutter, None)
+                    return True
+                elif isinstance(dlg.choice, inventory.CutterBase):
+                    # inventory tool
                     cutter = dlg.choice.newInstance()
                 else:
-                    cutter, preset, add = self.document.opAddLibraryPreset(dlg.choice)
-                    if not add:
-                        self.document.selectPresetAsDefault(preset)
-                        self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
-                        return
+                    assert isinstance(dlg.choice, tuple)
+                    parent, parent_preset = dlg.choice
+                    if isinstance(parent, CycleTreeItem):
+                        # project's preset
+                        self.document.selectCutterCycle(parent)
+                        self.document.selectPresetAsDefault(parent.cutter, parent_preset)
+                        return True
+                    else:
+                        cutter, preset, add = self.document.opAddLibraryPreset(parent_preset)
+                        if not add:
+                            self.document.selectPresetAsDefault(cutter, preset)
+                            self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
+                            return False
         else:
-            return
+            return False
         cycle = self.document.opAddCutter(cutter)
         if preset:
-            self.document.selectPresetAsDefault(preset)
+            self.document.selectPresetAsDefault(cycle.cutter, preset)
         self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
+        return True
     def updateOperations(self):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
@@ -439,6 +454,10 @@ class CAMMainWindow(QMainWindow):
         if not selection:
             QMessageBox.critical(self, None, "No objects selected")
             return
+        if operType == OperationType.DRILLED_HOLE and not self.needDrillBit():
+            return
+        elif operType != OperationType.DRILLED_HOLE and not self.needEndMill():
+            return
         for i in selection:
             shape = i.translated(*translation).toShape()
             if checkFunc(i, shape):
@@ -467,28 +486,27 @@ class CAMMainWindow(QMainWindow):
     def needDrillBit(self):
         return self.needCutterType(inventory.DrillBitCutter, "a drill bit")
     def needCutterType(self, cutter_type, name):
+        if not self.millSelectTool(cutter_type=cutter_type):
+            return False
         if not self.document.current_cutter_cycle:
-            if not self.document.project_toolbits:
-                self.millAddTool(cutter_type=cutter_type)
-            if not self.document.current_cutter_cycle:
-                QMessageBox.critical(self, None, "No tool selected")
-                return False
+            QMessageBox.critical(self, None, "No tool selected")
+            return False
         if not isinstance(self.document.current_cutter_cycle.cutter, cutter_type):
             QMessageBox.critical(self, None, f"Current tool is not {name}")
             return False
         return True
     def millOutsideContour(self):
-        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
     def millInsideContour(self):
-        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
     def millPocket(self):
-        self.needEndMill() and self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
     def millEngrave(self):
-        self.needEndMill() and self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
+        self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
     def millInterpolatedHole(self):
-        self.needEndMill() and self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
+        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
     def drillHole(self):
-        self.needDrillBit() and self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
+        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):
