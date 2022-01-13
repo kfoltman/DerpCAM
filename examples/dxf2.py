@@ -366,9 +366,14 @@ class CAMMainWindow(QMainWindow):
                     else:
                         cutter, preset, add = self.document.opAddLibraryPreset(parent_preset)
                         if not add:
+                            if self.document.current_cutter_cycle.cutter is not cutter:
+                                for i in self.document.allCycles():
+                                    if i.cutter is cutter:
+                                        self.document.selectCutterCycle(i)
+                                        break
                             self.document.selectPresetAsDefault(cutter, preset)
                             self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
-                            return False
+                            return True
         else:
             return False
         cycle = self.document.opAddCutter(cutter)
