@@ -18,6 +18,11 @@ from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
 import ezdxf
 import json
 
+def overrides(*data):
+    for i in data:
+        if i is not None:
+            return i
+
 class CAMTreeItem(QStandardItem):
     def __init__(self, document, name=None):
         QStandardItem.__init__(self, name)
@@ -416,7 +421,7 @@ class ToolTreeItem(CAMListTreeItem):
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
-    prop_doc = FloatEditableProperty("Cut depth per pass", "depth", "%0.2f mm", min=0.01, max=100, allow_none=True)
+    prop_doc = FloatEditableProperty("Cut depth/pass", "depth", "%0.2f mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f/min", min=0.1, max=60000, allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
@@ -549,8 +554,9 @@ class ToolPresetAdapter(object):
         if item.cutter:
             for preset in item.cutter.presets:
                 res.append((preset.id, preset.description()))
-            if item.hfeed or item.vfeed or item.doc or item.stepover:
-                res.append((Ellipsis, "<save as new preset>"))
+            pda = PresetDerivedAttributes(item)
+            if pda.dirty:
+                res.append((Ellipsis, "<Make a preset>"))
         return res
     def lookupById(self, id):
         if id == Ellipsis:
@@ -600,6 +606,40 @@ class CycleTreeItem(CAMTreeItem):
                 else:
                     child.tool_preset = None
 
+class PresetDerivedAttributes(object):
+    def __init__(self, operation, preset=None):
+        if preset is None:
+            preset = operation.tool_preset
+        self.operation = operation
+        self.vfeed = overrides(operation.vfeed, preset and preset.vfeed)
+        self.doc = overrides(operation.doc, preset and preset.maxdoc)
+        if isinstance(operation.cutter, inventory.EndMillCutter):
+            self.hfeed = overrides(operation.hfeed, preset and preset.hfeed)
+            self.stepover = overrides(operation.stepover, preset and 100.0 * preset.stepover)
+            self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
+            self.dirty = operation.hfeed or operation.vfeed or operation.doc or operation.stepover
+        elif isinstance(operation.cutter, inventory.DrillBitCutter):
+            self.dirty = operation.vfeed or operation.doc
+    def validate(self, errors):
+        if self.vfeed is None:
+            errors.append("Plunge rate is not set")
+        if self.doc is None:
+            errors.append("Maximum depth of cut per pass is not set")
+        if isinstance(self.operation.cutter, inventory.EndMillCutter):
+            if self.hfeed is None:
+                errors.append("Feed rate is not set")
+            elif self.hfeed < 0.1 or self.hfeed > 10000:
+                errors.append("Feed rate is out of range (0.1-10000)")
+            if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
+                if self.operation.operation == OperationType.POCKET:
+                    if stepover is None:
+                        errors.append("Horizontal stepover is not set")
+                    else:
+                        errors.append("Horizontal stepover is out of range")
+                else:
+                    # Fake value that is never used
+                    self.stepover = 0.5
+
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
@@ -616,8 +656,9 @@ class OperationTreeItem(CAMTreeItem):
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
-    prop_doc = FloatEditableProperty("Cut depth per pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: rate", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=True)
+    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
+    prop_trc_rate = FloatEditableProperty("Trochoid: rate", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=False) # TBD
+    prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
 
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -638,14 +679,15 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_height = None
         self.tab_count = None
         self.offset = 0
-        self.extra_width = 0
         self.islands = set()
         self.user_tabs = set()
         self.hfeed = None
         self.vfeed = None
-        self.stepover = None
         self.doc = None
+        self.stepover = None
         self.trc_rate = 0.0
+        self.extra_width = 0
+        self.direction = None
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
@@ -667,7 +709,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation == OperationType.INTERPOLATED_HOLE and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
-        if self.operation == OperationType.DRILLED_HOLE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'hfeed', 'stepover']:
+        if self.operation == OperationType.DRILLED_HOLE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'hfeed', 'stepover', 'trc_rate', 'direction']:
             return False
         return True
     def getValidEnumValues(self, name):
@@ -682,16 +724,21 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
+        if isinstance(self.cutter, inventory.DrillBitCutter):
+            if name == 'hfeed' or name == 'stepover' or name == 'direction':
+                return None
         if self.tool_preset:
-            if isinstance(self.cutter, inventory.DrillBitCutter):
-                if name == 'hfeed' or name == 'stepover':
-                    return None
             if name == 'hfeed' or name == 'vfeed':
                 return getattr(self.tool_preset, name)
             if name == 'stepover':
                 return self.tool_preset.stepover * 100 if self.tool_preset.stepover else None
             if name == 'doc':
                 return self.tool_preset.maxdoc
+            if name == 'direction':
+                return self.tool_preset.direction
+        else:
+            if name == 'direction':
+                return inventory.MillDirection.toString(inventory.MillDirection.CONVENTIONAL)
         return None
     def store(self):
         dump = CAMTreeItem.store(self)
@@ -713,13 +760,28 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_extra_width,
             self.prop_islands,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
-            self.prop_trc_rate]
+            self.prop_trc_rate, self.prop_direction]
+    def resetPresetDerivedValues(self):
+        self.hfeed = None
+        self.vfeed = None
+        self.stepover = None
+        self.doc = None
+        self.emitDataChanged()
+    def setPropertyValue(self, name, value):
+        if name == 'tool_preset' and value is Ellipsis:
+            from . import cutter_mgr
+            dlg = cutter_mgr.AddPresetDialog()
+            if dlg.exec_():
+                pda = PresetDerivedAttributes(self)
+                self.tool_preset = inventory.EndMillPreset.new(None, dlg.presetName, self.cutter, None, pda.hfeed, pda.vfeed, pda.doc, pda.stepover / 100.0 if pda.stepover else None, pda.direction)
+                self.cutter.presets.append(self.tool_preset)
+                self.resetPresetDerivedValues()
+                self.document.refreshToolList()
+                self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
+            return
+        setattr(self, name, value)
+        self.onPropertyValueSet(name)
     def onPropertyValueSet(self, name):
-        if name == 'tool_preset' and self.tool_preset is Ellipsis:
-            self.tool_preset = inventory.EndMillPreset.new(None, "New preset", self.cutter, None, self.hfeed, self.vfeed, self.doc, self.stepover / 100.0 if self.stepover else None, inventory.MillDirection.CONVENTIONAL)
-            self.cutter.presets.append(self.tool_preset)
-            self.document.refreshToolList()
-            print ("New preset")
         if name == 'cutter' and self.parent().cutter != self.cutter:
             self.parent().takeRow(self.row())
             cycle = self.document.cycleForCutter(self.cutter)
@@ -772,6 +834,7 @@ class OperationTreeItem(CAMTreeItem):
     def updateCAM(self):
         try:
             self.warning = None
+            errors = []
             self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
             if self.orig_shape:
                 translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
@@ -781,9 +844,9 @@ class OperationTreeItem(CAMTreeItem):
             if not self.cutter:
                 raise ValueError("Cutter not set")
             thickness = self.document.material.thickness
-            if thickness is None or thickness == 0:
-                raise ValueError("Material thickness not set")
             depth = self.depth if self.depth is not None else thickness
+            if depth is None or depth == 0:
+                raise ValueError("Neither material thickness nor cut depth is set")
             start_depth = self.start_depth if self.start_depth is not None else 0
             if self.cutter.length and depth > self.cutter.length:
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than usable flute length ({self.cutter.length:0.1f} mm)")
@@ -792,27 +855,15 @@ class OperationTreeItem(CAMTreeItem):
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
             tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
             self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)            
-            vfeed = self.vfeed or (self.tool_preset.vfeed if self.tool_preset else None)
-            doc = self.doc or (self.tool_preset.maxdoc if self.tool_preset else None)
-            if vfeed is None:
-                raise ValueError("Plunge rate is not set")
-            if doc is None:
-                raise ValueError("Maximum depth of cut per pass is not set")
+
+            pda = PresetDerivedAttributes(self)
+            pda.validate(errors)
+            if errors:
+                raise ValueError("\n".join(errors))
             if isinstance(self.cutter, inventory.EndMillCutter):
-                hfeed = self.hfeed or (self.tool_preset.hfeed if self.tool_preset else None)
-                stepover = self.stepover or (self.tool_preset.stepover if self.tool_preset else None)
-                direction = self.tool_preset.direction if self.tool_preset is not None else inventory.MillDirection.CONVENTIONAL
-                if hfeed is None or hfeed < 0.1 or hfeed > 10000:
-                    raise ValueError("Feed rate is not set")
-                if stepover is None or stepover < 0.1 or stepover > 100:
-                    if self.operation == OperationType.POCKET:
-                        raise ValueError("Horizontal stepover is not set")
-                    else:
-                        # Fake value that is never used
-                        stepover = 0.5
-                tool = Tool(self.cutter.diameter, hfeed, vfeed, doc, climb=(direction == inventory.MillDirection.CLIMB), stepover=stepover)
+                tool = Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, climb=(pda.direction == inventory.MillDirection.CLIMB), stepover=pda.stepover)
             else:
-                tool = Tool(self.cutter.diameter, 0, vfeed, doc)
+                tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
@@ -955,6 +1006,7 @@ class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
+    toolListRefreshed = pyqtSignal([])
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
@@ -989,6 +1041,7 @@ class DocumentModel(QObject):
         self.operModel.removeRows(0, self.operModel.rowCount())
     def refreshToolList(self):
         self.tool_list.reset()
+        self.toolListRefreshed.emit()
     def allCycles(self):
         return [self.operModel.item(i) for i in range(self.operModel.rowCount())]
     def store(self):

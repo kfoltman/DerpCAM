@@ -2,17 +2,20 @@ import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
 import process
 import gcodegen
 import view
-from gui import propsheet, settings, canvas
-from gui.model import *
+from gui import propsheet, settings, canvas, model
 from gui.cutter_mgr import SelectCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
 import ezdxf
 import json
 from typing import Optional
 
-document = DocumentModel()
+document = model.DocumentModel()
 
 class TreeViewWithAltArrows(QTreeView):
     def keyPressEvent(self, event):
@@ -100,16 +103,16 @@ class CAMObjectTreeDockWidget(QDockWidget):
         else:
             point = self.operTree.mapToGlobal(point)
         menu = QMenu(self)
-        if isinstance(item, OperationTreeItem):
+        if isinstance(item, model.OperationTreeItem):
             if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
                 menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
             elif item.operation == OperationType.POCKET:
                 menu.addAction("Islands").triggered.connect(self.operationIslands)
             else:
                 return
-        elif isinstance(item, CycleTreeItem):
+        elif isinstance(item, model.CycleTreeItem):
             menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
-        elif isinstance(item, ToolPresetTreeItem):
+        elif isinstance(item, model.ToolPresetTreeItem):
             menu.addAction("Set as default").triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
@@ -117,7 +120,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             action = menu.addAction("Reload from inventory")
             action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
             action.setEnabled(item.isModifiedStock())
-        elif isinstance(item, ToolTreeItem):
+        elif isinstance(item, model.ToolTreeItem):
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolSaveToInventory(item))
             action.setEnabled(item.isNewObject())
@@ -138,13 +141,13 @@ class CAMObjectTreeDockWidget(QDockWidget):
             saveInventory()
             item.inventory_tool.base_object = tool_copy
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
     def toolUpdateInInventory(self, item):
         if item.inventory_tool.base_object:
             item.inventory_tool.base_object.resetTo(item.inventory_tool)
             saveInventory()
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
+    def onToolListRefreshed(self):
+        self.shapeTree.expandAll()
     def toolRevertFromInventory(self, item):
         # XXXKF undo
         if item.inventory_tool.base_object:
@@ -297,6 +300,7 @@ class CAMMainWindow(QMainWindow):
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
+        self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
@@ -347,7 +351,7 @@ class CAMMainWindow(QMainWindow):
                 else:
                     return False
             else:
-                if isinstance(dlg.choice, CycleTreeItem):
+                if isinstance(dlg.choice, model.CycleTreeItem):
                     # project's tool/cycle
                     self.document.selectCutterCycle(dlg.choice)
                     self.document.selectPresetAsDefault(dlg.choice.cutter, None)
@@ -358,7 +362,7 @@ class CAMMainWindow(QMainWindow):
                 else:
                     assert isinstance(dlg.choice, tuple)
                     parent, parent_preset = dlg.choice
-                    if isinstance(parent, CycleTreeItem):
+                    if isinstance(parent, model.CycleTreeItem):
                         # project's preset
                         self.document.selectCutterCycle(parent)
                         self.document.selectPresetAsDefault(parent.cutter, parent_preset)
@@ -395,11 +399,11 @@ class CAMMainWindow(QMainWindow):
             self.viewer.majorUpdate()
     def shapeModelChanged(self, index):
         item = self.document.shapeModel.itemFromIndex(index)
-        if type(item) == WorkpieceTreeItem:
+        if type(item) == model.WorkpieceTreeItem:
             self.materialChanged()
-        elif type(item) == ToolTreeItem:
+        elif type(item) == model.ToolTreeItem:
             self.toolChanged()
-        elif type(item) == DrawingTreeItem:
+        elif type(item) == model.DrawingTreeItem:
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
     def materialChanged(self):
@@ -432,7 +436,7 @@ class CAMMainWindow(QMainWindow):
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
-            self.viewer.setSelection([item for item in items if isinstance(item, DrawingItemTreeItem)])
+            self.viewer.setSelection([item for item in items if isinstance(item, model.DrawingItemTreeItem)])
             self.propsDW.setSelection(items)
         else:
             self.propsDW.setSelection(items)
@@ -509,9 +513,9 @@ class CAMMainWindow(QMainWindow):
     def millEngrave(self):
         self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
     def millInterpolatedHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
+        self.millSelectedShapes(lambda item, shape: isinstance(item, model.DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
     def drillHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
+        self.millSelectedShapes(lambda item, shape: isinstance(item, model.DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):

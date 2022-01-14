@@ -2,7 +2,11 @@ import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from gui.model import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+
+from . import inventory
 
 class CutterListWidget(QTreeWidget):
     def __init__(self, parent, toolbits, document, cutter_type):
@@ -205,51 +209,25 @@ class CreateCutterDialog(QDialog):
             self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, length)
         QDialog.accept(self)
 
-# Not used yet
 class AddPresetDialog(QDialog):
-    def __init__(self, parent, cutter):
+    def __init__(self, parent=None):
         QDialog.__init__(self, parent)
-        self.cutter = cutter
-        self.preset = None
         self.initUI()
     def initUI(self):
         self.form = QFormLayout(self)
-        self.selectRadio = QRadioButton("&Select an existing preset", self)
-        self.selectRadio.setChecked(True)
-        self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
-        self.form.addRow(self.selectRadio)
-        self.presets = QTreeWidget(self)
-        self.presets.setMinimumSize(600, 200)
-        self.presets.setColumnCount(2)
-        self.presets.setHeaderItem(QTreeWidgetItem(["Name", "Description"]))
-        items = []
-        self.lookup = []
-        for i, preset in enumerate(self.cutter.presets):
-            self.lookup.append(preset)
-            items.append(QTreeWidgetItem([preset.name, preset.description_only()]))
-        self.presets.setRootIsDecorated(False)
-        self.presets.insertTopLevelItems(0, items)
-        self.presets.resizeColumnToContents(0)
-        self.presets.resizeColumnToContents(1)
-        self.presets.doubleClicked.connect(self.accept)
-        self.form.addRow(self.presets)
-        self.addRadio = QRadioButton("&Add a new preset", self)
-        self.form.addRow(self.addRadio)
+        self.nameEdit = QLineEdit()
+        self.form.addRow("Name", self.nameEdit)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         self.form.addRow(self.buttonBox)
-        self.presets.setCurrentItem(self.presets.topLevelItem(0))
-        self.presets.setFocus(Qt.PopupFocusReason)
-        self.selectRadio.pressed.connect(lambda: self.presets.setEnabled(True))
-        self.addRadio.pressed.connect(lambda: self.presets.setEnabled(False))
     def accept(self):
-        if self.addRadio.isChecked():
-            self.preset = Ellipsis
-        else:
-            row = self.presets.indexFromItem(self.presets.currentItem()).row()
-            if row >= 0:
-                self.preset = self.lookup[row]
+        name = self.nameEdit.text()
+        if name == '':
+            QMessageBox.critical(self, None, "Name is required")
+            self.nameEdit.setFocus()
+            return
+        self.presetName = name
         QDialog.accept(self)
 
 def loadInventory():
