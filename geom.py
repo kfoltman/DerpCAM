@@ -99,7 +99,7 @@ class PathArc(PathNode):
     def reversed(self):
         return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan)
     def translated(self, dx, dy):
-        return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.points, self.sstart, self.sspan)
+        return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan)
 
 def is_arc(seg):
     return seg.is_arc()

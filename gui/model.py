@@ -254,7 +254,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def textDescription(self):
         if len(self.points) == 2:
             if self.points[1].is_point():
-                return self.label() + ("(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1]))
+                return self.label() + ("(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (self.points[0].x, self.points[0].y, self.points[1].x, self.points[1].y))
             else:
                 assert self.points[1].is_arc()
                 arc = self.points[1]
@@ -306,13 +306,13 @@ class DrawingTreeItem(CAMListTreeItem):
             elif dxftype == 'LINE':
                 start = tuple(entity.dxf.start)[0:2]
                 end = tuple(entity.dxf.end)[0:2]
-                self.addItem(DrawingPolylineTreeItem(self.document, [start, end], False))
+                self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(start[0], start[1]), PathPoint(end[0], end[1])], False))
             elif dxftype == 'CIRCLE':
                 centre = PathPoint(entity.dxf.center[0], entity.dxf.center[1])
                 self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
             elif dxftype == 'ARC':
-                start = tuple(entity.start_point)[0:2]
-                end = tuple(entity.end_point)[0:2]
+                start = PathPoint(entity.start_point[0], entity.start_point[1])
+                end = PathPoint(entity.end_point[0], entity.end_point[1])
                 centre = tuple(entity.dxf.center)[0:2]
                 c = CandidateCircle(*centre, entity.dxf.radius)
                 sangle = entity.dxf.start_angle * pi / 180
@@ -321,9 +321,7 @@ class DrawingTreeItem(CAMListTreeItem):
                     sspan = eangle - sangle + 2 * pi
                 else:
                     sspan = eangle - sangle
-                tag = "ARC_CCW"
-                # tag, p1, p2, c, points, sstart, sspan
-                points = [start, ( tag, start, end, c, 50, sangle, sspan)]
+                points = [start, PathArc( start, end, c, 50, sangle, sspan)]
                 self.addItem(DrawingPolylineTreeItem(self.document, points, False))
             else:
                 print ("Ignoring DXF entity: %s" % dxftype)
@@ -663,7 +661,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
     prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
-    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i[0], i[1]) for i in value]), edit_func=lambda item: item.editTabLocations())
+    prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
