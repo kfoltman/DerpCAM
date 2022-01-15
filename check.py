@@ -64,7 +64,7 @@ def verify_path_circles(path):
             arcdir, startpt, endpt, circ, res, sangle, sspan = item
             assert startpt == lastpt
             lastpt = endpt
-            assert len(item) == 7
+            assert is_arc(item)
             (circ.cx, circ.cy) = roundpt((circ.cx, circ.cy))
             startpt = roundpt(startpt)
             endpt = roundpt(endpt)

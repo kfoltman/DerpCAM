@@ -44,10 +44,16 @@ def dist_fast(a, b):
 def maxaxisdist(a, b):
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
+def is_arc(seg):
+    return len(seg) == 7
+
+def is_point(seg):
+    return len(seg) == 2
+
 def seg_start(seg):
-    return seg[1] if len(seg) == 7 else seg
+    return seg[1] if is_arc(seg) else seg
 def seg_end(seg):
-    return seg[2] if len(seg) == 7 else seg
+    return seg[2] if is_arc(seg) else seg
 
 def dist(a, b):
     a = seg_end(a)
@@ -65,9 +71,9 @@ def weighted(p1, p2, alpha):
     return p1[0] + (p2[0] - p1[0]) * alpha, p1[1] + (p2[1] - p1[1]) * alpha
 
 def weighted_with_arcs(p1, p2, alpha):
-    if len(p1) == 7:
+    if is_arc(p1):
         p1 = p1[2]
-    if len(p2) == 7:
+    if is_arc(p2):
         return p2[3].at_angle(p2[5] + alpha * p2[6])
     return weighted(p1, p2, alpha)
 
@@ -83,9 +89,6 @@ def inside_bounds(b1, b2):
 def point_inside_bounds(b, p):
     sx, sy, ex, ey = b
     return p[0] >= sx and p[0] <= ex and p[1] >= sy and p[1] <= ey
-
-def point_is_arc(p):
-    return len(p) == 7
 
 def dist_line_to_point(p1, p2, p):
     xlen = p2[0] - p1[0]
@@ -120,15 +123,16 @@ def max_bounds(b1, *b2etc):
 def path_length(path, closed=False):
     if closed:
         return path_length(path, False) + dist(seg_end(path[-1]), path[0])
-    return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc_length(arc) for arc in path if len(arc) == 7])
+    return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc_length(arc) for arc in path if is_arc(arc)])
 
 def path_lengths(path):
     res = [0]
     lval = 0
     for i in range(len(path) - 1):
-        if len(path[i + 1]) == 2:
+        if is_point(path[i + 1]):
             lval += dist(path[i], path[i + 1])
         else:
+            assert is_arc(path[i + 1])
             lval += arc_length(path[i + 1])
         res.append(lval)
     return res   
@@ -138,7 +142,7 @@ def reverse_path(path):
     i = len(path) - 1
     while i >= 0:
         pi = path[i]
-        if len(pi) == 2:
+        if not is_arc(pi):
             res.append(pi)
         else: # arc
             # tag, p1, p2, c, steps, sangle, sspan = p
@@ -171,7 +175,7 @@ def path_point(path, pos, closed=False):
     tlen = 0
     i = 1
     last = path[0]
-    assert len(last) == 2
+    assert is_point(last)
     if closed:
         # That's a bit wasteful, but we'll live with this for now.
         path = path + path[0:1]
@@ -179,7 +183,7 @@ def path_point(path, pos, closed=False):
         if pos <= tlen:
             return last
         p = path[i]
-        if len(p) == 7: # Arc
+        if is_arc(p):
             tseg = arc_length(p)
             p2 = p[2]
         else:
@@ -187,7 +191,7 @@ def path_point(path, pos, closed=False):
             tseg = dist(last, p)
         if pos < tlen + tseg:
             alpha = (pos - tlen) / tseg
-            if len(p) == 7:
+            if is_arc(p):
                 return p[3].at_angle(p[5] + p[6] * alpha)
             else:
                 return weighted(last, p, alpha)
@@ -205,9 +209,9 @@ def calc_subpath(path, start, end, closed=False):
         # That's a bit wasteful, but we'll live with this for now.
         path = path + path[0:1]
     last = path[0]
-    assert len(last) == 2
+    assert is_point(last)
     for p in path[1:]:
-        if len(p) == 7: # Arc
+        if is_arc(p):
             tag, p1, p2, c, points, sstart, sspan = p
             assert dist(last, p1) < 1 / GeometrySettings.RESOLUTION
             d = arc_length(p)
@@ -465,7 +469,7 @@ class LineOptimizer(object):
     @staticmethod
     def simplify(points):
         last = points[0]
-        assert len(last) == 2
+        assert is_point(last)
         # XXXKF make it settable
         # Detection threshold (the shortest line that will initiate coalescing)
         threshold = 1.0
@@ -475,7 +479,7 @@ class LineOptimizer(object):
         output = points[0:1]
         for i in range(1, len(points)):
             pt = points[i]
-            if len(pt) == 7:
+            if is_arc(pt):
                 # Copy arcs verbatim
                 if run_start is not None:
                     output.append(last)
@@ -571,20 +575,18 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
 def translate_point(point, dx, dy):
     return (point[0] + dx, point[1] + dy)
 def translate_gen_point(point, dx, dy):
-    if len(point) == 2:
+    if is_point(point):
         return (point[0] + dx, point[1] + dy)
     else:
-        assert len(point) == 7
         tag, p1, p2, c, points, sstart, sspan = point
         return (tag, translate_point(p1, dx, dy), translate_point(p2, dx, dy), c.translated(dx, dy), points, sstart, sspan)
 
 def scale_point(point, cx, cy, scale):
     return (point[0] - cx) * scale + cx, (point[1] - cy) * scale + cy
 def scale_gen_point(point, cx, cy, scale):
-    if len(point) == 2:
+    if is_point(point):
         return scale_point(point, cx, cy, scale)
     else:
-        assert len(point) == 7
         tag, p1, p2, c, points, sstart, sspan = point
         return (tag, scale_point(p1, cx, cy, scale), scale_point(p2, dx, dy), c.scaled(cx, cy, r), points, sstart, sspan)
 
@@ -632,7 +634,7 @@ def closest_point(path, closed, pt):
         pt1 = seg_end(path[i])
         pt2 = path[i + 1]
         dist1 = dist(pt, pt1)
-        if len(pt2) == 7:
+        if is_arc(pt2):
             tag, pt1, pt2, c, points, sstart, sspan = pt2
             if mindist is None or dist1 < mindist:
                 mindist = dist1

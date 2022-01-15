@@ -207,8 +207,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
         if points:
-            xcoords = [p[0] for p in self.points if len(p) == 2]
-            ycoords = [p[1] for p in self.points if len(p) == 2]
+            xcoords = [p[0] for p in self.points if is_point(p)]
+            ycoords = [p[1] for p in self.points if is_point(p)]
             self.bounds = (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
         else:
             self.bounds = None
@@ -226,9 +226,9 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         for i in range(len(self.points)):
             dist = None
             if self.closed or i > 0:
-                if len(self.points[i - 1]) == 2 and len(self.points[i]) == 2:
+                if is_point(self.points[i - 1]) and is_point(self.points[i]):
                     dist = dist_line_to_point(self.points[i - 1], self.points[i], pt)
-                # XXXKF arcs
+                # XXXKF arcs - use closest_point?
             if dist is not None:
                 if mindist is None:
                     mindist = dist
@@ -245,16 +245,17 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         path.addLines(self.penForPath(path, modeData), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def label(self):
         if len(self.points) == 2:
-            if len(self.points[1]) == 2:
+            if is_point(self.points[1]):
                 return "Line%d" % self.shape_id
             else:
                 return "Arc%d" % self.shape_id
         return "Polyline%d" % self.shape_id
     def textDescription(self):
         if len(self.points) == 2:
-            if len(self.points[1]) == 2:
+            if is_point(self.points[1]):
                 return self.label() + ("(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1]))
-            elif len(self.points[1]) == 7:
+            else:
+                assert is_arc(self.points[1])
                 arc = self.points[1]
                 c = arc[3]
                 return self.label() + "(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)

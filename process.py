@@ -160,8 +160,8 @@ class Shape(object):
     def add_island(self, island):
         self.islands.append(island)
     def calc_bounds(self):
-        xcoords = [p[0] if len(p) == 2 else p[2][0] for p in self.boundary]
-        ycoords = [p[1] if len(p) == 2 else p[2][1] for p in self.boundary]
+        xcoords = [seg_start(p)[0] for p in self.boundary]
+        ycoords = [seg_start(p)[1] for p in self.boundary]
         return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
     def default_tab_count(self, min_tabs, max_tabs, distance):
         plen = path_length(self.boundary + (self.boundary[0:1] if self.closed else []))
