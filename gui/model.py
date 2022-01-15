@@ -858,7 +858,7 @@ class OperationTreeItem(CAMTreeItem):
             if errors:
                 raise ValueError("\n".join(errors))
             if isinstance(self.cutter, inventory.EndMillCutter):
-                tool = Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, climb=(pda.direction == inventory.MillDirection.CLIMB), stepover=pda.stepover)
+                tool = Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, climb=(pda.direction == inventory.MillDirection.CLIMB), stepover=pda.stepover / 100.0)
             else:
                 tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
