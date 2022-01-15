@@ -27,9 +27,9 @@ outside = Shape.union(
     Shape.circle(width / 2, length - width / 2, d = width)
 )
 holes = [
-    (width / 2, length - width / 4),
-    (width / 4, length - width / 2 - hole_diameter / 2),
-    (3 * width / 4, length - width / 2 - hole_diameter / 2),
+    PathPoint(width / 2, length - width / 4),
+    PathPoint(width / 4, length - width / 2 - hole_diameter / 2),
+    PathPoint(3 * width / 4, length - width / 2 - hole_diameter / 2),
 ]
 
 # Rotate everything by 45 degrees
@@ -51,8 +51,8 @@ holes = Shape._scale_points(holes, 1 + shrinkage)
 props_fulldepth = OperationProps(depth=depth, tab_depth=tab_depth)
 
 operations = Operations(machine_params=machine_params, tool=tool, props=props_fulldepth)
-for x, y in holes:
-    operations.helical_drill(x=x, y=y, d=hole_diameter)
+for p in holes:
+    operations.helical_drill(x=p.x, y=p.y, d=hole_diameter)
 operations.outside_contour(outside, tabs=4)
 
 operations.to_gcode_file("halfbracket.ngc")

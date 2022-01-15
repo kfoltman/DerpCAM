@@ -51,10 +51,10 @@ def text_to_shapes(x, y, width, height, text, font_family, size, weight, italic)
     shapes = []
     for outline, islands in sort_polygons(polygons):
         # print (outline, islands)
-        pts = [(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in outline]
+        pts = [PathPoint(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in outline]
         islands_out = []
         for i in islands:
-            islands_out.append([(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in i])
+            islands_out.append([PathPoint(x + q.x() / GeometrySettings.RESOLUTION, y - q.y() / GeometrySettings.RESOLUTION) for q in i])
         if pts[0] == pts[-1]:
             shapes.append(Shape(pts[:-1], True, islands_out))
         else:

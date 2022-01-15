@@ -39,10 +39,10 @@ operations.helical_drill_full_depth(x=30, y=30, d=10.2)
 operations.pocket(recess, props=props_recess)
 
 tabs = [
-    (30, 0),
-    (60, 30),
-    (30, 60),
-    (0, 30),
+    PathPoint(30, 0),
+    PathPoint(60, 30),
+    PathPoint(30, 60),
+    PathPoint(0, 30),
 ]
 
 for x, y, d in holes:

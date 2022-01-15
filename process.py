@@ -77,6 +77,11 @@ def joinClosePaths(tps):
         last = tp
     return res
 
+class HelicalEntry(object):
+    def __init__(self, point, r):
+        self.point = point
+        self.r = r
+
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
     boundary_path = IntPath(boundary)
     boundary_path = boundary_path.force_orientation(True)
@@ -95,10 +100,10 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
             d = tool.diameter * -0.5
             candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
-        for startx, starty in candidates:
+        for start in candidates:
             # Size of the helical entry hole
             d = tool.diameter * (1 + 2 * tool.stepover) + margin
-            c = IntPath(circle(startx, starty, d / 2))
+            c = IntPath(circle(start.x, start.y, d / 2))
             # Check if it sticks outside of the final shape
             # XXXKF could be optimized by doing a simple bounds check first
             if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
@@ -106,7 +111,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             # Check for collision with islands
             if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
                 continue
-            toolpath.helical_entry = (startx, starty, tool.diameter * tool.stepover / 2)
+            toolpath.helical_entry = HelicalEntry(start, tool.diameter * tool.stepover / 2)
             break
 
 def startWithClosestPoint(path, pt, dia):
@@ -153,6 +158,8 @@ def mergeToolpaths(tps, new, dia):
 
 class Shape(object):
     def __init__(self, boundary, closed=True, islands=None):
+        for i in boundary:
+            assert isinstance(i, PathPoint)
         self.boundary = boundary
         self.closed = closed
         self.islands = list(islands) if islands is not None else []
@@ -160,8 +167,8 @@ class Shape(object):
     def add_island(self, island):
         self.islands.append(island)
     def calc_bounds(self):
-        xcoords = [seg_start(p)[0] for p in self.boundary]
-        ycoords = [seg_start(p)[1] for p in self.boundary]
+        xcoords = [seg_start(p).x for p in self.boundary]
+        ycoords = [seg_start(p).y for p in self.boundary]
         return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
     def default_tab_count(self, min_tabs, max_tabs, distance):
         plen = path_length(self.boundary + (self.boundary[0:1] if self.closed else []))
@@ -300,27 +307,27 @@ class Shape(object):
                 for i in range(segs):
                     res.append(weighted(p1, p2, i / segs))
             return res
-        return Shape([transform(p[0], p[1]) for p in interpolate(self.boundary)], self.closed,
-            [[transform(p[0], p[1]) for p in interpolate(island)] for island in self.islands])
+        return Shape([transform(p.x, p.y) for p in interpolate(self.boundary)], self.closed,
+            [[transform(p.x, p.y) for p in interpolate(island)] for island in self.islands])
     @staticmethod
     def _rotate_points(points, angle, x=0, y=0):
         def rotate(x, y, cosv, sinv, sx, sy):
             x -= sx
             y -= sy
-            return sx + x * cosv - y * sinv, sy + x * sinv + y * cosv
-        return [rotate(p[0], p[1], cos(angle), sin(angle), x, y) for p in points]
+            return PathPoint(sx + x * cosv - y * sinv, sy + x * sinv + y * cosv)
+        return [rotate(p.x, p.y, cos(angle), sin(angle), x, y) for p in points]
     def rotated(self, angle, x, y):
         return Shape(self._rotate_points(self.boundary, angle, x, y), self.closed, [self._rotate_points(island, angle, x, y) for island in self.islands])
     @staticmethod
     def _scale_points(points, mx, my=None, sx=0, sy=0):
         if my is None:
             my = mx
-        return [(sx + (x - sx) * mx, sy + (y - sy) * my) for x, y in points]
+        return [PathPoint(sx + (p.x - sx) * mx, sy + (p.y - sy) * my) for p in points]
     def scaled(self, mx, my=None, sx=0, sy=0):
         return Shape(self._scale_points(self.boundary, mx, my, sx, sy), self.closed, [self._scale_points(island, mx, my, sx, sy) for island in self.islands])
     @staticmethod
     def _translate_points(points, dx, dy):
-        return [(p[0] + dx, p[1] + dy) for p in points]
+        return [p.translated(dx, dy) for p in points]
     def translated(self, dx, dy):
         return Shape(self._translate_points(self.boundary, dx, dy), self.closed, [self._translate_points(island, dx, dy) for island in self.islands])
     @staticmethod
@@ -328,7 +335,7 @@ class Shape(object):
         return Shape(circle(x, y, r if r else 0.5 * d, n, sa, ea), True, None)
     @staticmethod
     def rectangle(sx, sy, ex, ey):
-        polygon = [(sx, sy), (ex, sy), (ex, ey), (sx, ey)]
+        polygon = [PathPoint(sx, sy), PathPoint(ex, sy), PathPoint(ex, ey), PathPoint(sx, ey)]
         #polygon = list(reversed(polygon))
         return Shape(polygon, True, None)
     def round_rectangle(sx, sy, ex, ey, r):
@@ -415,7 +422,7 @@ def trochoidal_transform(contour, nrad, nspeed):
     res.append(path[-1])
     if res and contour.closed:
         assert res[-1] == res[0]
-        return Toolpath(points=res[:-1], closed=True, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)
+        return Toolpath(points=res[:-1], closed=True, tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
     else:
-        return Toolpath(points=res, closed=False, tool=contour.tool, helical_entry=(*path[0], nrad), is_tab=contour.is_tab)
+        return Toolpath(points=res, closed=False, tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
 

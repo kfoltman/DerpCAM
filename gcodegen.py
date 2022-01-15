@@ -109,26 +109,26 @@ class Gcode(object):
             self.rapid(z=new_z)
 
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
+        assert isinstance(lastpt, PathNode)
         assert dist(lastpt, subpath[0]) < 1 / GeometrySettings.RESOLUTION
         tdist = 0
         for pt in subpath[1:]:
-            if len(pt) > 2:
-                # Arc
-                tag, spt, ept, c, steps, sangle, sspan = pt
-                cdist = (c.cx - spt[0], c.cy - spt[1])
-                assert dist(lastpt, spt) < 1 / GeometrySettings.RESOLUTION
-                tdist += arc_length(pt)
+            if pt.is_arc():
+                arc = pt
+                cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
+                assert dist(lastpt, arc.p1) < 1 / GeometrySettings.RESOLUTION
+                tdist += arc.length()
                 if new_z is not None:
-                    self.arc(1 if sspan > 0 else -1, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1], z=old_z + (new_z - old_z) * tdist / tlength)
+                    self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
-                    self.arc(1 if sspan > 0 else -1, x=ept[0], y=ept[1], i=cdist[0], j=cdist[1])
-                lastpt = ept
+                    self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y)
+                lastpt = arc.p2
             else:
                 if new_z is not None:
                     tdist += dist(lastpt, pt)
-                    self.linear(x=pt[0], y=pt[1], z=old_z + (new_z - old_z) * tdist / tlength)
+                    self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
-                    self.linear(x=pt[0], y=pt[1])
+                    self.linear(x=pt.x, y=pt.y)
                 lastpt = pt
         return lastpt
 
@@ -142,7 +142,7 @@ class Gcode(object):
         return old_z
 
     def helical_move_z(self, new_z, old_z, helical_entry, tool, semi_safe_z, already_cut_z=None):
-        x, y, r = helical_entry
+        c, r = helical_entry.point, helical_entry.r
         if new_z >= old_z:
             self.rapid(z=new_z)
             return
@@ -150,11 +150,11 @@ class Gcode(object):
         cur_z = old_z
         while cur_z > new_z:
             next_z = max(new_z, cur_z - 2 * pi * r / tool.slope())
-            self.helix_turn(x, y, r, cur_z, next_z)
+            self.helix_turn(c.x, c.y, r, cur_z, next_z)
             cur_z = next_z
-        self.helix_turn(x, y, r, next_z, next_z)
-        self.linear(x=x, y=y, z=new_z)
-        return (x, y)
+        self.helix_turn(c.x, c.y, r, next_z, next_z)
+        self.linear(x=c.x, y=c.y, z=new_z)
+        return c
 
     def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
         if False:
@@ -176,7 +176,7 @@ class Gcode(object):
         if debug_ramp:
             self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
         subpath_reverse = reverse_path(subpath)
-        self.linear(x=subpath[0][0], y=subpath[0][1])
+        self.linear(x=subpath[0].x, y=subpath[0].y)
         lastpt = subpath[0]
         per_level = tlengths[-1] / tool.slope()
         cur_z = old_z
@@ -305,12 +305,12 @@ class BaseCut2D(Cut):
         firstpt = subpaths[0].points[0]
         if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
             if layer.force_join:
-                gcode.linear(x=firstpt[0], y=firstpt[1])
+                gcode.linear(x=firstpt.x, y=firstpt.y)
             else:
                 self.go_to_safe_z(gcode)
                 # Note: it's not ideal because of the helical entry, but it's
                 # good enough.
-                gcode.rapid(x=firstpt[0], y=firstpt[1])
+                gcode.rapid(x=firstpt.x, y=firstpt.y)
             self.lastpt = firstpt
         # print ("Layer at %f, %d subpaths" % (self.depth, len(subpaths)))
         for subpath in subpaths:
@@ -331,7 +331,9 @@ class BaseCut2D(Cut):
         self.enter_or_leave_cut(gcode, subpath, newz)
         points = subpath.points + subpath.points[0:1] if subpath.closed else subpath.points
         assert self.lastpt is not None
+        assert isinstance(self.lastpt, PathNode)
         self.lastpt = gcode.apply_subpath(points, self.lastpt)
+        assert isinstance(self.lastpt, PathNode)
         self.end_subpath(subpath)
 
     def enter_or_leave_cut(self, gcode, subpath, newz):
@@ -370,10 +372,10 @@ class BaseCut2D(Cut):
         if subpath.helical_entry is not None:
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-            if subpath.helical_entry != subpath.points[0]:
+            if subpath.helical_entry.point != subpath.points[0]:
                 # The helical entry ends somewhere else in the pocket, so feed to the right spot
                 self.lastpt = subpath.points[0]
-                gcode.linear(x=self.lastpt[0], y=self.lastpt[1])
+                gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
             assert self.lastpt is not None
         else:
             if newz < self.curz:
@@ -626,11 +628,12 @@ class Contour(TabbedOperation):
         if not contour.closed:
             return contour
         points = contour.points
-        offset = process.Shape._offset(PtsToInts(points), True, GeometrySettings.RESOLUTION * extension)
+        points_int = PtsToInts(points)
+        offset = process.Shape._offset(points_int, True, GeometrySettings.RESOLUTION * extension)
         if len(offset) == 1:
             extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
             if process.startWithClosestPoint(extension, points[0], tool.diameter):
-                if SameOrientation(points, extension.points):
+                if SameOrientation(points_int, extension.points):
                     extension.points = reverse_path(extension.points)
                 points = extension.points + points + points[0:1] + extension.points[0:1]
                 return toolpath.Toolpath(points, contour.closed, tool)
@@ -697,7 +700,7 @@ class RetractBy(RetractSchedule):
 class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
-        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath([(x, y)], True, tool))
+        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath([PathPoint(x, y)], True, tool))
         self.x = x
         self.y = y
         self.dwell_bottom = dwell_bottom

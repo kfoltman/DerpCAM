@@ -33,7 +33,7 @@ def curve_transform(x, y):
     pos = 0.5 + 0.5 * x / (inner_width / 2)
     r = width / 2 - 25 + y * 1.4
     angle = (1 - pos) * pi
-    return r * cos(angle), r * sin(angle)
+    return PathPoint(r * cos(angle), r * sin(angle))
 
 #def curve_transform(x, y):
 #    ax = x / width - 0.5
@@ -45,7 +45,7 @@ def curve_transform(x, y):
     
 def curve2_transform(x, y):
     y += 10 * cos((x - width / 2) / (width / 2) * pi)
-    return x, y
+    return PathPoint(x, y)
 
 from ptext import *
 init_app()

@@ -26,11 +26,11 @@ points = []
 for i in range(20, 250):
     r = 10 + i * 0.12
     a = -0.05 * i
-    points.append((r * cos(a), r * sin(a)))
+    points.append(PathPoint(r * cos(a), r * sin(a)))
 for i in range(249, 21, -1):
     r = 5 + i * 0.12
     a = -0.05 * i
-    points.append((r * cos(a), r * sin(a)))
+    points.append(PathPoint(r * cos(a), r * sin(a)))
 
 outside = Shape(points)
 

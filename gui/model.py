@@ -125,9 +125,10 @@ class DrawingItemTreeItem(CAMTreeItem):
     def load(klass, document, dump):
         rtype = dump['_type']
         if rtype == 'DrawingPolyline' or rtype == 'DrawingPolylineTreeItem':
-            item = DrawingPolylineTreeItem(document, dump['points'], dump.get('closed', True))
+            points = [PathPoint.from_tuple(i) for i in dump['points']]
+            item = DrawingPolylineTreeItem(document, points, dump.get('closed', True))
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
-            item = DrawingCircleTreeItem(document, (dump['cx'], dump['cy']), dump['r'])
+            item = DrawingCircleTreeItem(document, PathPoint(dump['cx'], dump['cy']), dump['r'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
         item.shape_id = dump['shape_id']
@@ -147,7 +148,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f mm", min=0, max=100, allow_none=False)
     def __init__(self, document, centre, r, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
-        self.centre = (centre[0], centre[1])
+        self.centre = centre
         self.r = r
         self.calcBounds()
         self.untransformed = untransformed if untransformed is not None else self
@@ -155,9 +156,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         return [self.prop_x, self.prop_y, self.prop_dia, self.prop_radius]
     def getPropertyValue(self, name):
         if name == 'x':
-            return self.centre[0]
+            return self.centre.x
         elif name == 'y':
-            return self.centre[1]
+            return self.centre.y
         elif name == 'radius':
             return self.r
         elif name == 'diameter':
@@ -166,9 +167,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             assert False, "Unknown property: " + name
     def setPropertyValue(self, name, value):
         if name == 'x':
-            self.centre = (value, self.centre[1])
+            self.centre = PathPoint(value, self.centre.y)
         elif name == 'y':
-            self.centre = (self.centre[0], value)
+            self.centre = PathPoint(self.x, value)
         elif name == 'radius':
             self.r = value
         elif name == 'diameter':
@@ -177,28 +178,28 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             assert False, "Unknown property: " + name
         self.emitDataChanged()
     def calcBounds(self):
-        self.bounds = (self.centre[0] - self.r, self.centre[1] - self.r,
-            self.centre[0] + self.r, self.centre[1] + self.r)
+        self.bounds = (self.centre.x - self.r, self.centre.y - self.r,
+            self.centre.x + self.r, self.centre.y + self.r)
     def distanceTo(self, pt):
         return abs(dist(self.centre, pt) - self.r)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), circle(self.centre[0], self.centre[1], self.r), True)
+        path.addLines(self.penForPath(path, modeData), circle(self.centre.x, self.centre.y, self.r), True)
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
-        return self.label() + (" (%0.2f, %0.2f) \u2300%0.2f" % (*self.centre, 2 * self.r))
+        return self.label() + (" (%0.2f, %0.2f) \u2300%0.2f" % (self.centre.x, self.centre.y, 2 * self.r))
     def toShape(self):
-        return process.Shape.circle(*self.centre, self.r)
+        return process.Shape.circle(self.centre.x, self.centre.y, self.r)
     def translated(self, dx, dy):
-        cti = DrawingCircleTreeItem(self.document, translate_point(self.centre, dx, dy), self.r, self.untransformed)
+        cti = DrawingCircleTreeItem(self.document, self.centre.translated(dx, dy), self.r, self.untransformed)
         cti.shape_id = self.shape_id
         return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, scale_point(self.centre, cx, cy, scale), self.r * scale, self.untransformed)
     def store(self):
         res = DrawingItemTreeItem.store(self)
-        res['cx'] = self.centre[0]
-        res['cy'] = self.centre[1]
+        res['cx'] = self.centre.x
+        res['cy'] = self.centre.y
         res['r'] = self.r
         return res
 
@@ -207,8 +208,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
         if points:
-            xcoords = [p[0] for p in self.points if is_point(p)]
-            ycoords = [p[1] for p in self.points if is_point(p)]
+            xcoords = [p.x for p in self.points if p.is_point()]
+            ycoords = [p.y for p in self.points if p.is_point()]
             self.bounds = (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
         else:
             self.bounds = None
@@ -216,7 +217,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         self.untransformed = untransformed if untransformed is not None else self
     def store(self):
         res = DrawingItemTreeItem.store(self)
-        res['points'] = [ i for i in self.points ]
+        res['points'] = [ i.as_tuple() for i in self.points ]
         res['closed'] = self.closed
         return res
     def distanceTo(self, pt):
@@ -236,7 +237,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                     mindist = min(dist, mindist)
         return mindist
     def translated(self, dx, dy):
-        pti = DrawingPolylineTreeItem(self.document, [translate_gen_point(p, dx, dy) for p in self.points], self.closed, self.untransformed)
+        pti = DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed)
         pti.shape_id = self.shape_id
         return pti
     def scaled(self, cx, cy, scale):
@@ -245,20 +246,20 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         path.addLines(self.penForPath(path, modeData), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def label(self):
         if len(self.points) == 2:
-            if is_point(self.points[1]):
+            if self.points[1].is_point():
                 return "Line%d" % self.shape_id
             else:
                 return "Arc%d" % self.shape_id
         return "Polyline%d" % self.shape_id
     def textDescription(self):
         if len(self.points) == 2:
-            if is_point(self.points[1]):
+            if self.points[1].is_point():
                 return self.label() + ("(%0.2f, %0.2f)-(%0.2f, %0.2f)" % (*self.points[0], *self.points[1]))
             else:
-                assert is_arc(self.points[1])
+                assert self.points[1].is_arc()
                 arc = self.points[1]
-                c = arc[3]
-                return self.label() + "(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc[5] * 180 / pi, arc[6] * 180 / pi)
+                c = arc.c
+                return self.label() + "(X=%0.2f, Y=%0.2f, R=%0.2f, start=%0.2f, span=%0.2f" % (c.cx, c.cy, c.r, arc.sstart * 180 / pi, arc.sspan * 180 / pi)
         return self.label() + "(%0.2f, %0.2f)-(%0.2f, %0.2f)" % self.bounds
     def toShape(self):
         return process.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
@@ -307,7 +308,8 @@ class DrawingTreeItem(CAMListTreeItem):
                 end = tuple(entity.dxf.end)[0:2]
                 self.addItem(DrawingPolylineTreeItem(self.document, [start, end], False))
             elif dxftype == 'CIRCLE':
-                self.addItem(DrawingCircleTreeItem(self.document, entity.dxf.center, entity.dxf.radius))
+                centre = PathPoint(entity.dxf.center[0], entity.dxf.center[1])
+                self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
             elif dxftype == 'ARC':
                 start = tuple(entity.start_point)[0:2]
                 end = tuple(entity.end_point)[0:2]
@@ -337,7 +339,7 @@ class DrawingTreeItem(CAMListTreeItem):
             if i.shape_id == shape_id:
                 return i
     def objectsNear(self, pos, margin):
-        xy = (pos.x() + self.x_offset, pos.y() + self.y_offset)
+        xy = PathPoint(pos.x() + self.x_offset, pos.y() + self.y_offset)
         found = []
         for item in self.items():
             if point_inside_bounds(expand_bounds(item.bounds, margin), xy):
@@ -361,7 +363,6 @@ class DrawingTreeItem(CAMListTreeItem):
     def translation(self):
         return (-self.x_offset, -self.y_offset)
     def onPropertyValueSet(self, name):
-        self.document.drawing.origin = (self.x_offset, self.y_offset)
         self.emitDataChanged()
         
 class ToolListTreeItem(CAMListTreeItem):
@@ -747,14 +748,14 @@ class OperationTreeItem(CAMTreeItem):
         dump = CAMTreeItem.store(self)
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
-        dump['user_tabs'] = list(sorted(self.user_tabs))
+        dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
         dump['cutter'] = self.cutter.id
         dump['tool_preset'] = self.tool_preset.id if self.tool_preset else None
         return dump
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
-        self.user_tabs = set((i[0], i[1]) for i in dump.get('user_tabs', []))
+        self.user_tabs = set(PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
@@ -829,8 +830,14 @@ class OperationTreeItem(CAMTreeItem):
             self.warning += "\n"
         self.warning += warning
     def updateCAM(self):
+        self.error = None
+        self.warning = None
+        self.cam = None
+        self.renderer = None
+        if not self.cutter:
+            self.error = "Cutter not set"
+            return
         try:
-            self.warning = None
             errors = []
             self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
             if self.orig_shape:
@@ -838,8 +845,6 @@ class OperationTreeItem(CAMTreeItem):
                 self.shape = self.orig_shape.translated(*translation).toShape()
             else:
                 self.shape = None
-            if not self.cutter:
-                raise ValueError("Cutter not set")
             thickness = self.document.material.thickness
             depth = self.depth if self.depth is not None else thickness
             if depth is None or depth == 0:
@@ -887,9 +892,9 @@ class OperationTreeItem(CAMTreeItem):
                 elif self.operation == OperationType.ENGRAVE:
                     self.cam.engrave(self.shape)
                 elif self.operation == OperationType.INTERPOLATED_HOLE:
-                    self.cam.helical_drill(self.orig_shape.centre[0] + translation[0], self.orig_shape.centre[1] + translation[1], 2 * self.orig_shape.r)
+                    self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
                 elif self.operation == OperationType.DRILLED_HOLE:
-                    self.cam.peck_drill(self.orig_shape.centre[0] + translation[0], self.orig_shape.centre[1] + translation[1])
+                    self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
                 else:
                     raise ValueError("Unsupported operation")
             self.error = None
@@ -897,6 +902,8 @@ class OperationTreeItem(CAMTreeItem):
             self.cam = None
             self.renderer = None
             self.error = str(e)
+            if not isinstance(e, ValueError):
+                raise
     def reorderItem(self, direction):
         index = self.reorderItemImpl(direction, self.parent())
         if index is not None:

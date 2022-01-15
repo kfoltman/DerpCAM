@@ -21,7 +21,7 @@ class DocumentRenderer(object):
         self.document.drawing.renderTo(owner, modeData)
         if owner.mode == DrawingUIMode.MODE_NORMAL:
             self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
-            self.lastpt = (0, 0)
+            self.lastpt = PathPoint(0, 0)
             self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
@@ -127,11 +127,11 @@ class DrawingViewer(view.PathViewer):
                     self.renderDrawing()
                     self.repaint()
                 elif self.mode == DrawingUIMode.MODE_TABS:
-                    pt = (pos.x(), pos.y())
+                    pt = PathPoint(pos.x(), pos.y())
                     ptToDelete = None
                     for x, y in self.mode_item.user_tabs:
-                        if dist(pt, (x, y)) < 5:
-                            ptToDelete = (x, y)
+                        if dist(pt, PathPoint(x, y)) < 5:
+                            ptToDelete = PathPoint(x, y)
                     if ptToDelete is not None:
                         self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs - set([ptToDelete]))])
                     else:
