@@ -107,11 +107,6 @@ def is_arc(seg):
 def is_point(seg):
     return seg.is_point()
 
-def seg_start(seg):
-    return seg.seg_start()
-def seg_end(seg):
-    return seg.seg_end()
-
 def dist(a, b):
     a = a.seg_end()
     b = b.seg_start()
@@ -180,7 +175,7 @@ def max_bounds(b1, *b2etc):
 
 def path_length(path, closed=False):
     if closed:
-        return path_length(path, False) + dist(seg_end(path[-1]), path[0])
+        return path_length(path, False) + dist(path[-1].seg_end(), path[0])
     return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc.length() for arc in path if arc.is_arc()])
 
 def path_lengths(path):
@@ -682,7 +677,7 @@ def closest_point(path, closed, pt):
     lengths = path_lengths(path)
     tlen = 0
     for i in range(len(path) - 1):
-        pt1 = seg_end(path[i])
+        pt1 = path[i].seg_end()
         pt2 = path[i + 1]
         dist1 = dist(pt, pt1)
         if is_arc(pt2):
@@ -707,7 +702,7 @@ def closest_point(path, closed, pt):
             if mindist is None or dist1 < mindist:
                 mindist = dist1
                 closest = lengths[i]
-            pt2 = seg_start(path[(i + 1) % len(path)])
+            pt2 = path[(i + 1) % len(path)].seg_start()
             dx, dy = dist_vec(pt1, pt2)
             d = sqrt(dx * dx + dy * dy)
             lx, ly = dist_vec(pt, pt1)
