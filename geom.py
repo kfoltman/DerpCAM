@@ -650,14 +650,14 @@ def dxf_polyline_to_points(entity):
         if lastbulge:
             theta = 4 * atan(lastbulge)
             dx, dy = x - lastx, y - lasty
-            mx, my = weighted((lastx, lasty), (x, y), 0.5)
+            mid = weighted(PathPoint(lastx, lasty), PathPoint(x, y), 0.5)
             angle = atan2(dy, dx)
             dist = sqrt(dx * dx + dy * dy)
             d = dist / 2
             r = abs(d / sin(theta / 2))
             c = d / tan(theta / 2)
-            cx = mx - c * sin(angle)
-            cy = my + c * cos(angle)
+            cx = mid.x - c * sin(angle)
+            cy = mid.y + c * cos(angle)
             sa = atan2(lasty - cy, lastx - cx)
             ea = sa + theta
             points += circle(cx, cy, r, 1000, sa, ea)
