@@ -611,6 +611,7 @@ class PresetDerivedAttributes(object):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
+        self.rpm = preset and preset.rpm
         self.vfeed = overrides(operation.vfeed, preset and preset.vfeed)
         self.doc = overrides(operation.doc, preset and preset.maxdoc)
         if isinstance(operation.cutter, inventory.EndMillCutter):
@@ -639,6 +640,18 @@ class PresetDerivedAttributes(object):
                 else:
                     # Fake value that is never used
                     self.stepover = 0.5
+    def toPreset(self, name):
+        if isinstance(self.operation.cutter, inventory.EndMillCutter):
+            return inventory.EndMillPreset.new(None, name, self.operation.cutter, self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover / 100.0 if self.stepover else None, self.direction)
+        if isinstance(self.operation.cutter, inventory.DrillBitCutter):
+            return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
+    def resetPresetDerivedValues(self, target):
+        target.hfeed = None
+        target.vfeed = None
+        target.stepover = None
+        target.doc = None
+        target.direction = None
+        target.emitDataChanged()
 
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
@@ -727,19 +740,8 @@ class OperationTreeItem(CAMTreeItem):
         if isinstance(self.cutter, inventory.DrillBitCutter):
             if name == 'hfeed' or name == 'stepover' or name == 'direction':
                 return None
-        if self.tool_preset:
-            if name == 'hfeed' or name == 'vfeed':
-                return getattr(self.tool_preset, name)
-            if name == 'stepover':
-                return self.tool_preset.stepover * 100 if self.tool_preset.stepover else None
-            if name == 'doc':
-                return self.tool_preset.maxdoc
-            if name == 'direction':
-                return self.tool_preset.direction
-        else:
-            if name == 'direction':
-                return inventory.MillDirection.toString(inventory.MillDirection.CONVENTIONAL)
-        return None
+        pda = PresetDerivedAttributes(self)
+        return getattr(pda, name, None)
     def store(self):
         dump = CAMTreeItem.store(self)
         dump['shape_id'] = self.shape_id
@@ -761,21 +763,15 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_islands,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
             self.prop_trc_rate, self.prop_direction]
-    def resetPresetDerivedValues(self):
-        self.hfeed = None
-        self.vfeed = None
-        self.stepover = None
-        self.doc = None
-        self.emitDataChanged()
     def setPropertyValue(self, name, value):
         if name == 'tool_preset' and value is Ellipsis:
             from . import cutter_mgr
             dlg = cutter_mgr.AddPresetDialog()
             if dlg.exec_():
                 pda = PresetDerivedAttributes(self)
-                self.tool_preset = inventory.EndMillPreset.new(None, dlg.presetName, self.cutter, None, pda.hfeed, pda.vfeed, pda.doc, pda.stepover / 100.0 if pda.stepover else None, pda.direction)
+                self.tool_preset = pda.toPreset(dlg.presetName)
                 self.cutter.presets.append(self.tool_preset)
-                self.resetPresetDerivedValues()
+                pda.resetPresetDerivedValues(self)
                 self.document.refreshToolList()
                 self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
             return
