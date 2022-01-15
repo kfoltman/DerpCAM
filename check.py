@@ -46,9 +46,9 @@ assert check_near(path_length(path), pi * 50 + 100)
 assert check_near(path_length(reverse_path(path)), pi * 50 + 100)
 
 arc = PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi)
-assert check_near(path_length(cut_arc(arc, 0, 0.5)), pi * 25)
-assert check_near(path_length(cut_arc(arc, 0.5, 1)), pi * 25)
-assert check_near(path_length(cut_arc(arc, 0.25, 0.75)), pi * 25)
+assert check_near(path_length(arc.cut(0, 0.5)), pi * 25)
+assert check_near(path_length(arc.cut(0.5, 1)), pi * 25)
+assert check_near(path_length(arc.cut(0.25, 0.75)), pi * 25)
 
 # ---------------------------------------------------------------------
 

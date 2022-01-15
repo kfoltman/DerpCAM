@@ -100,6 +100,16 @@ class PathArc(PathNode):
         return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan)
     def translated(self, dx, dy):
         return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan)
+    def cut(self, alpha, beta):
+        alpha = max(0, alpha)
+        beta = min(1, beta)
+        if alpha == 0 and beta == 1:
+            return [self.p1, self]
+        start = self.sstart + self.sspan * alpha
+        span = self.sspan * (beta - alpha)
+        arc_start = self.c.at_angle(start)
+        arc_end = self.c.at_angle(start + span)
+        return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span)]
 
 def is_arc(seg):
     return seg.is_arc()
@@ -211,17 +221,6 @@ def reverse_path(path):
         i -= 1
     return res
 
-def cut_arc(arc, alpha, beta):
-    alpha = max(0, alpha)
-    beta = min(1, beta)
-    if alpha == 0 and beta == 1:
-        return [arc.p1, arc]
-    start = arc.sstart + arc.sspan * alpha
-    span = arc.sspan * (beta - alpha)
-    arc_start = arc.c.at_angle(start)
-    arc_end = arc.c.at_angle(start + span)
-    return [arc_start, PathArc(arc_start, arc_end, arc.c, arc.steps, start, span)]
-
 # Return the point at 'pos' position along the path.
 def path_point(path, pos, closed=False):
     tlen = 0
@@ -273,7 +272,7 @@ def calc_subpath(path, start, end, closed=False):
             if tlen_after >= start and tlen <= end:
                 alpha = (start - tlen) / d
                 beta = (end - tlen) / d
-                res += cut_arc(p, alpha, beta)
+                res += p.cut(alpha, beta)
             last = p.p2
         else:
             d = dist(last, p)
