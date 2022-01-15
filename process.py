@@ -275,14 +275,14 @@ class Shape(object):
 
         stepover = tool.diameter * tool.stepover
         tps = []
-        maxlen = dist((sx, sy), (ex, ey))
+        maxlen = dist(PathPoint(sx, sy), PathPoint(ex, ey))
         #p = (ex + tool.diameter / 2 * cos(angle + pi / 2), sy + tool.diameter / 2 * sin(angle + pi / 2))
         p = (ex, sy + 1 / GeometrySettings.RESOLUTION)
         fsteps = maxlen / stepover
         nsteps = int(ceil(fsteps))
         for i in range(nsteps):
-            p1 = (p[0] - maxlen * cos(angle), p[1] - maxlen * sin(angle))
-            p2 = (p[0] + maxlen * cos(angle), p[1] + maxlen * sin(angle))
+            p1 = PathPoint(p[0] - maxlen * cos(angle), p[1] - maxlen * sin(angle))
+            p2 = PathPoint(p[0] + maxlen * cos(angle), p[1] + maxlen * sin(angle))
             if zigzag and (i & 1):
                 p2, p1 = p1, p2
             path = IntPath([p1, p2])
@@ -412,12 +412,12 @@ def trochoidal_transform(contour, nrad, nspeed):
     lastpt = path[0]
     t = 0
     for pt in path:
-        x, y = pt
-        d = dist(lastpt, pt)
+        x, y = pt.x, pt.y
+        d = lastpt.dist(pt)
         t += d
         x += nrad*cos(t * nspeed * 2 * pi)
         y += nrad*sin(t * nspeed * 2 * pi)
-        res.append((x, y))
+        res.append(PathPoint(x, y))
         lastpt = pt
     res.append(path[-1])
     if res and contour.closed:

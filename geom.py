@@ -58,6 +58,13 @@ class PathPoint(PathNode):
         return True
     def as_tuple(self):
         return (self.x, self.y)
+    def dist(self, other):
+        # Note this is not a true 'distance to object', it's to be used for
+        # things like path lengths
+        other = other.seg_start()
+        dx = other.x - self.x
+        dy = other.y - self.y
+        return sqrt(dx * dx + dy * dy)
     @staticmethod
     def from_tuple(t):
         assert len(t) == 2
@@ -70,6 +77,8 @@ class PathPoint(PathNode):
         return self.x != other.x or self.y != other.y
     def __hash__(self):
         return (self.x, self.y).__hash__()
+    def scaled(self, cx, cy, scale):
+        return PathPoint((self.x - cx) * scale + cx, (self.y - cy) * scale + cy)
 
 class PathArc(PathNode):
     def __init__(self, p1, p2, c, steps, sstart, sspan):
@@ -86,11 +95,9 @@ class PathArc(PathNode):
     def seg_end(self):
         return self.p2
     def as_tuple(self):
-        assert False
-        return ("ARC_CW" if self.sspan < 0 else "ARC_CCW", self.x.as_tuple(), self.y.as_tuple(), self.c.as_tuple(), self.steps, self.sstart, self.sspan)
+        return ("ARC_CW" if self.sspan < 0 else "ARC_CCW", self.p1.as_tuple(), self.p2.as_tuple(), self.c.as_tuple(), self.steps, self.sstart, self.sspan)
     @staticmethod
     def from_tuple(t):
-        assert False
         return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6])
     def at_fraction(self, alpha):
         return self.c.at_angle(self.sstart + self.sspan * alpha)
@@ -100,6 +107,8 @@ class PathArc(PathNode):
         return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan)
     def translated(self, dx, dy):
         return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan)
+    def scaled(self, cx, cy, scale):
+        return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan)
     def cut(self, alpha, beta):
         alpha = max(0, alpha)
         beta = min(1, beta)
@@ -110,12 +119,6 @@ class PathArc(PathNode):
         arc_start = self.c.at_angle(start)
         arc_end = self.c.at_angle(start + span)
         return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span)]
-
-def is_arc(seg):
-    return seg.is_arc()
-
-def is_point(seg):
-    return seg.is_point()
 
 def dist(a, b):
     a = a.seg_end()
@@ -163,7 +166,7 @@ def dist_line_to_point(p1, p2, p):
         pcross = PathPoint(p1.x + t * xlen, p1.y + t * ylen)
     else:
         pcross = p1
-    return dist(pcross, p)
+    return pcross.dist(p)
 
 def expand_bounds(b1, amount):
     sx, sy, ex, ey = b1
@@ -185,7 +188,7 @@ def max_bounds(b1, *b2etc):
 
 def path_length(path, closed=False):
     if closed:
-        return path_length(path, False) + dist(path[-1].seg_end(), path[0])
+        return path_length(path, False) + path[-1].seg_end().dist(path[0])
     return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc.length() for arc in path if arc.is_arc()])
 
 def path_lengths(path):
@@ -193,7 +196,7 @@ def path_lengths(path):
     lval = 0
     for i in range(len(path) - 1):
         if path[i + 1].is_point():
-            lval += dist(path[i], path[i + 1])
+            lval += path[i].seg_end().dist(path[i + 1])
         else:
             assert path[i + 1].is_arc()
             lval += path[i + 1].length()
@@ -208,7 +211,6 @@ def reverse_path(path):
         if not pi.is_arc():
             res.append(pi)
         else: # arc
-            # tag, p1, p2, c, steps, sstart, sspan = p
             res.append(pi.p2) # end point
             res.append(pi.reversed())
             # Skip start point, as it is already inside the arc
@@ -234,20 +236,18 @@ def path_point(path, pos, closed=False):
         if pos <= tlen:
             return last
         p = path[i]
-        if is_arc(p):
+        if p.is_arc():
             tseg = p.length()
-            p2 = p.p2
         else:
-            p2 = p
-            tseg = dist(last, p)
+            tseg = last.dist(p)
         if pos < tlen + tseg:
             alpha = (pos - tlen) / tseg
-            if is_arc(p):
+            if p.is_arc():
                 return p.at_fraction(alpha)
             else:
                 return weighted(last, p, alpha)
         tlen += tseg
-        last = p2
+        last = p.seg_end()
         i += 1
     if closed and pos > tlen:
         return path_point(path, pos % tlen, False)
@@ -260,11 +260,10 @@ def calc_subpath(path, start, end, closed=False):
         # That's a bit wasteful, but we'll live with this for now.
         path = path + path[0:1]
     last = path[0]
-    assert is_point(last)
+    assert last.is_point()
     for p in path[1:]:
-        if is_arc(p):
-            #tag, p1, p2, c, points, sstart, sspan = p
-            assert dist(last, p.p1) < 1 / GeometrySettings.RESOLUTION
+        if p.is_arc():
+            assert last.dist(p.p1) < 1 / GeometrySettings.RESOLUTION
             d = p.length()
             if d == 0:
                 continue
@@ -273,7 +272,6 @@ def calc_subpath(path, start, end, closed=False):
                 alpha = (start - tlen) / d
                 beta = (end - tlen) / d
                 res += p.cut(alpha, beta)
-            last = p.p2
         else:
             d = dist(last, p)
             if d == 0:
@@ -286,7 +284,7 @@ def calc_subpath(path, start, end, closed=False):
                 beta = min(1, beta)
                 res.append(weighted(last, p, alpha) if alpha > 0 else last)
                 res.append(weighted(last, p, beta) if beta < 1 else p)
-            last = p
+        last = p.seg_end()
         tlen = tlen_after
     # Eliminate duplicates
     res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
@@ -299,16 +297,23 @@ class CandidateCircle(object):
         self.cx = cx
         self.cy = cy
         self.r = r
+    def as_tuple(self):
+        return (self.cx, self.cy, self.r)
+    @staticmethod
+    def from_tuple(t):
+        return CandidateCircle(*t)
     def dist(self, p):
         return sqrt((p.x - self.cx) ** 2 + (p.y - self.cy) ** 2)
     def angle(self, p):
         return atan2(p.y - self.cy, p.x - self.cx)
+    def centre(self):
+        return PathPoint(self.cx, self.cy)
     def at_angle(self, angle):
         return PathPoint(self.cx + self.r * cos(angle), self.cy + self.r * sin(angle))
     def translated(self, dx, dy):
         return CandidateCircle(self.cx + dx, self.cy + dy, self.r)
     def scaled(self, cx, cy, scale):
-        return CandidateCircle(*scale_point((self.cx, self.cy), cx, cy, scale), self.r * scale)
+        return CandidateCircle(*self.centre().scaled(cx, cy, scale).as_tuple(), self.r * scale)
     def calc_error(self, points):
         minerr = 0
         maxerr = 0
@@ -381,7 +386,7 @@ class CandidateCircle(object):
         s3 = x3 ** 2 + y3 ** 2
         x = (s1 * (y2 - y3) + s2 * (y3 - y1) + s3 * (y1 - y2)) / (2 * A)
         y = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / (2 * A)
-        r = dist(PathPoint(x, y), p1)
+        r = PathPoint(x, y).dist(p1)
         return CandidateCircle(x, y, r)
 
 # Incredibly dodgy (but perhaps still useful) lines-to-arc fitter
@@ -463,7 +468,7 @@ class CircleFitter(object):
         run_start = pos
         res = []
         while pos < end - 1:
-            d = dist(pts[pos], pts[pos + 1])
+            d = pts[pos].dist(pts[pos + 1])
             if d > CircleFitter.line_segment_threshold:
                 #print ("Jump at ", pos, d)
                 if pos - run_start > 3:
@@ -520,7 +525,7 @@ class LineOptimizer(object):
     @staticmethod
     def simplify(points):
         last = points[0]
-        assert is_point(last)
+        assert last.is_point()
         # XXXKF make it settable
         # Detection threshold (the shortest line that will initiate coalescing)
         threshold = 1.0
@@ -530,14 +535,15 @@ class LineOptimizer(object):
         output = points[0:1]
         for i in range(1, len(points)):
             pt = points[i]
-            if is_arc(pt):
+            if pt.is_arc():
                 # Copy arcs verbatim
                 if run_start is not None:
                     output.append(last)
                     run_start = None
                 output.append(pt)
+                last = pt.seg_end()
                 continue
-            d = dist(last, pt)
+            d = last.dist(pt)
             if d < threshold:
                 if run_start is None:
                     run_start = i
@@ -559,7 +565,7 @@ class LineOptimizer(object):
                         d3 = dist(pt, points[j])
                         if d1 <= d2 and d3 <= d2:
                             papprox = weighted(ptrs, pt, d1/d2)
-                            error = dist(papprox, points[j])
+                            error = papprox.dist(points[j])
                             maxerr = max(maxerr, error)
                         else:
                             error = threshold2
@@ -623,18 +629,6 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
     tree = pc.Execute2(operation, GeometrySettings.fillMode, GeometrySettings.fillMode)
     return tree
 
-def translate_point(point, dx, dy):
-    return point.translated(dx, dy)
-
-def scale_point(point, cx, cy, scale):
-    return (point.x - cx) * scale + cx, (point.y - cy) * scale + cy
-def scale_gen_point(point, cx, cy, scale):
-    if is_point(point):
-        return scale_point(point, cx, cy, scale)
-    else:
-        arc = point
-        return (tag, scale_point(arc.p1, cx, cy, scale), scale_point(arc.p2, dx, dy), arc.c.scaled(cx, cy, scale), arc.points, arc.sstart, arc.sspan)
-
 def dxf_polyline_to_points(entity):
     points = []
     lastx, lasty = entity[-1][0:2]
@@ -678,15 +672,14 @@ def closest_point(path, closed, pt):
     for i in range(len(path) - 1):
         pt1 = path[i].seg_end()
         pt2 = path[i + 1]
-        dist1 = dist(pt, pt1)
-        if is_arc(pt2):
+        dist1 = pt.dist(pt1)
+        if pt2.is_arc():
             arc = pt2
-            #tag, pt1, pt2, c, points, sstart, sspan = pt2
             if mindist is None or dist1 < mindist:
                 mindist = dist1
                 closest = lengths[i - 1]
-            dx = pt[0] - arc.c.cx
-            dy = pt[1] - arc.c.cy
+            dx = pt.x - arc.c.cx
+            dy = pt.y - arc.c.cy
             angle = atan2(dy, dx) - arc.sstart
             if arc.sspan < 0:
                 angle = -angle
@@ -725,7 +718,6 @@ def offset_point_on_path(path, pos, dist):
         dist = -dist
     s = subpath[0].seg_start()
     e = subpath[-1].seg_end()
-    x1, y1 = s.x, s.y
     dx, dy = dist_vec(s, e)
     angle = atan2(dy, dx) + pi / 2
-    return PathPoint(x1 + dist * cos(angle), y1 + dist * sin(angle))
+    return PathPoint(s.x + dist * cos(angle), s.y + dist * sin(angle))

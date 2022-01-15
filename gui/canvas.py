@@ -92,7 +92,7 @@ class DrawingViewer(view.PathViewer):
             if self.mode == DrawingUIMode.MODE_TABS:
                 qp.setPen(QPen(QColor(255, 0, 0), 0))
                 for tab in self.mode_item.user_tabs:
-                    pos = self.project(QPointF(tab[0], tab[1]))
+                    pos = self.project(QPointF(tab.x, tab.y))
                     qp.drawEllipse(pos, 10, 10)
             qp.setPen(pen)
         if self.rubberband_rect:
@@ -129,9 +129,9 @@ class DrawingViewer(view.PathViewer):
                 elif self.mode == DrawingUIMode.MODE_TABS:
                     pt = PathPoint(pos.x(), pos.y())
                     ptToDelete = None
-                    for x, y in self.mode_item.user_tabs:
-                        if dist(pt, PathPoint(x, y)) < 5:
-                            ptToDelete = PathPoint(x, y)
+                    for pp in self.mode_item.user_tabs:
+                        if dist(pt, pp) < 5:
+                            ptToDelete = pp
                     if ptToDelete is not None:
                         self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs - set([ptToDelete]))])
                     else:

@@ -195,7 +195,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         cti.shape_id = self.shape_id
         return cti
     def scaled(self, cx, cy, scale):
-        return DrawingCircleTreeItem(self.document, scale_point(self.centre, cx, cy, scale), self.r * scale, self.untransformed)
+        return DrawingCircleTreeItem(self.document, self.centre.scaled(cx, cy, scale), self.r * scale, self.untransformed)
     def store(self):
         res = DrawingItemTreeItem.store(self)
         res['cx'] = self.centre.x
@@ -227,7 +227,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         for i in range(len(self.points)):
             dist = None
             if self.closed or i > 0:
-                if is_point(self.points[i - 1]) and is_point(self.points[i]):
+                if self.points[i - 1].is_point() and self.points[i].is_point():
                     dist = dist_line_to_point(self.points[i - 1], self.points[i], pt)
                 # XXXKF arcs - use closest_point?
             if dist is not None:
@@ -241,7 +241,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         pti.shape_id = self.shape_id
         return pti
     def scaled(self, cx, cy, scale):
-        return DrawingPolylineTreeItem(self.document, [scale_gen_point(p, cx, cy, scale) for p in self.points], self.closed, self.untransformed)
+        return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path, modeData), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def label(self):
