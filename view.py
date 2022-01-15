@@ -48,7 +48,7 @@ class OperationsRenderer(object):
                         self.addToolpaths(owner, pen, toolpath, stage, op)
     def isHighlighted(self, operation):
         return False
-    def renderRapids(self, owner, lastpt = (0, 0)):
+    def renderRapids(self, owner, lastpt = PathPoint(0, 0)):
         # Red rapid moves
         pen = QPen(QColor(255, 0, 0), 0)
         for op in self.operations.operations:
@@ -73,7 +73,7 @@ class OperationsRenderer(object):
                 lastpt = self.addRapids(owner, pen, tp, lastpt)
             return lastpt
         if path.helical_entry:
-            owner.addLines(pen, circle(*path.helical_entry) + path.points[0:1], False, darken=False)
+            owner.addLines(pen, circle(path.helical_entry.point.x, path.helical_entry.point.y, path.helical_entry.r) + path.points[0:1], False, darken=False)
         owner.addLines(pen, [lastpt, path.points[0]], False, darken=False)
         return path.points[0 if path.closed else -1]
     def addToolpaths(self, owner, pen, path, stage, operation):
@@ -137,11 +137,11 @@ class PathViewer(QWidget):
         for polyline in polylines:
             path = QPainterPath()
             if len(polyline) == 1:
-                x, y = polyline[0]
+                x, y = polyline[0].x, polyline[0].y
                 self.drawingOps.append((pen, QPointF(x, y), QRectF(x, y, 1, 1), darken))
-            path.moveTo(*polyline[0])
+            path.moveTo(polyline[0].x, polyline[0].y)
             for point in polyline[1:]:
-                path.lineTo(*point)
+                path.lineTo(point.x, point.y)
             if polyline[0] == polyline[-1]:
                 self.drawingOps.append((pen, path, path.boundingRect(), darken))
             else:

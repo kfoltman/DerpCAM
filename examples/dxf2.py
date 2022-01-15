@@ -15,6 +15,7 @@ import ezdxf
 import json
 from typing import Optional
 
+OperationType = model.OperationType
 document = model.DocumentModel()
 OperationType = model.OperationType
 

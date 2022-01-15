@@ -82,8 +82,8 @@ class Toolpath(object):
         return self.transformed_cache
 
     def calc_bounds(self):
-        xcoords = [p[0] for p in self.points]
-        ycoords = [p[1] for p in self.points]
+        xcoords = [p.x for p in self.points]
+        ycoords = [p.y for p in self.points]
         tr = 0.5 * self.tool.diameter
         return (min(xcoords) - tr, min(ycoords) - tr, max(xcoords) + tr, max(ycoords) + tr)
 
