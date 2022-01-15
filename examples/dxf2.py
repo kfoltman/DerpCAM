@@ -9,13 +9,14 @@ from PyQt5.QtWidgets import *
 import process
 import gcodegen
 import view
-from gui import propsheet, settings, canvas, model
+from gui import propsheet, settings, canvas, model, inventory
 from gui.cutter_mgr import SelectCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
 import ezdxf
 import json
 from typing import Optional
 
 document = model.DocumentModel()
+OperationType = model.OperationType
 
 class TreeViewWithAltArrows(QTreeView):
     def keyPressEvent(self, event):
