@@ -172,6 +172,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if inv_preset is None:
             preset_copy = item.inventory_preset.newInstance()
             preset_copy.toolbit = inv_toolbit
+            item.inventory_preset.base_object = preset_copy
             inv_toolbit.presets.append(preset_copy)
         else:
             inv_preset.resetTo(item.inventory_preset)
