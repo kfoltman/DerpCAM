@@ -705,6 +705,7 @@ class PeckDrill(UntabbedOperation):
         self.retract = retract or RetractToSemiSafe()
         self.slow_retract = slow_retract
     def to_gcode(self, gcode, machine_params):
+        gcode.rapid(x=self.x, y=self.y)
         gcode.rapid(z=machine_params.semi_safe_z)
         gcode.feed(self.tool.vfeed)
         curz = self.props.start_depth
