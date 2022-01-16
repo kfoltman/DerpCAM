@@ -1,3 +1,4 @@
+import argparse
 import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -618,29 +619,45 @@ class CAMMainWindow(QMainWindow):
     def fileExit(self):
         self.close()
 
+parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
+parser.add_argument('input', type=str, help="File to load on startup")
+parser.add_argument('--export-gcode', nargs=1, metavar='OUTPUT_FILENAME', help="Convert a project file to G-Code and exit")
+
 QCoreApplication.setOrganizationName("kfoltman")
 QCoreApplication.setApplicationName("DerpCAM")
 
 app = QApplication(sys.argv)
 app.setApplicationDisplayName("My CAM experiment")
 
+args = parser.parse_args()
+
 loadInventory()
 
 w = CAMMainWindow(document)
 w.initUI()
-if len(sys.argv) > 1:
-    fn = sys.argv[1]
+if args.input:
+    fn = args.input
     fnl = fn.lower()
     if fnl.endswith(".dxf"):
         w.importDrawing(fn)
     elif fnl.endswith(".dcp"):
         w.loadProject(fn)
+if args.export_gcode:
+    if not args.input or not args.input.endswith(".dcp"):
+        sys.stderr.write("Error: Input file not specified")
+        retcode = 1
+    elif args.export_gcode[0].endswith(".dcp") or args.export_gcode[0].endswith(".dxf"):
+        sys.stderr.write("Error: Output filename has an extension that would suggest it is an input file")
+        retcode = 1
+    else:
+        w.exportGcode(args.export_gcode[0])
+        retcode = 0
+else:
+    w.showMaximized()
+    retcode = app.exec_()
+    del w
+    del app
 
-w.showMaximized()
-retcode = app.exec_()
-del w
-del app
-
-saveInventory()
+    saveInventory()
 
 sys.exit(retcode)

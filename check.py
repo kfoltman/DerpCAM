@@ -73,6 +73,11 @@ r4 = r.cut(0.25, 0.75)[1]
 assert abs(r4.sstart - 5 * pi / 8) < 0.001
 assert abs(r4.sspan - pi / 4) < 0.001
 
+# path_point
+
+p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
+print (path_point(p, True, 100).as_tuple())
+
 # Tabs / cut
 
 tabs = Tabs([Tab(16, 32)])
