@@ -650,8 +650,13 @@ if args.export_gcode:
         sys.stderr.write("Error: Output filename has an extension that would suggest it is an input file\n")
         retcode = 1
     else:
-        w.exportGcode(args.export_gcode[0])
-        retcode = 0
+        try:
+            w.document.validateForOutput()
+            w.exportGcode(args.export_gcode[0])
+            retcode = 0
+        except ValueError as e:
+            sys.stderr.write(str(e) + "\n")
+            retcode = 2
 else:
     w.showMaximized()
     retcode = app.exec_()

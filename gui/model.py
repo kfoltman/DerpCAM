@@ -1180,6 +1180,8 @@ class DocumentModel(QObject):
             if item.depth is None:
                 if self.material.thickness is None or self.material.thickness == 0:
                     raise ValueError("Default material thickness not set")
+            if item.error is not None:
+                raise ValueError(item.error)
         self.forEachOperation(validateOperation)
         if self.material.material is None:
             raise ValueError("Material type not set")
