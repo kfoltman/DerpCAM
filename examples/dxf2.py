@@ -644,10 +644,10 @@ if args.input:
         w.loadProject(fn)
 if args.export_gcode:
     if not args.input or not args.input.endswith(".dcp"):
-        sys.stderr.write("Error: Input file not specified")
+        sys.stderr.write("Error: Input file not specified\n")
         retcode = 1
     elif args.export_gcode[0].endswith(".dcp") or args.export_gcode[0].endswith(".dxf"):
-        sys.stderr.write("Error: Output filename has an extension that would suggest it is an input file")
+        sys.stderr.write("Error: Output filename has an extension that would suggest it is an input file\n")
         retcode = 1
     else:
         w.exportGcode(args.export_gcode[0])
