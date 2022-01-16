@@ -8,6 +8,11 @@ def prepare(ranges):
         res.append((int(s * 64), int(e * 64)))
     return res
 
+def close_enough(a, b, eps=0.001):
+    return abs(a - b) < eps
+def close_enough_tuple(a, b, eps=0.001):
+    return all([close_enough(a[i], b[i], eps) for i in range(max(len(a), len(b)))])
+
 # PathPoint
 
 a = PathPoint(10, 0)
@@ -76,7 +81,40 @@ assert abs(r4.sspan - pi / 4) < 0.001
 # path_point
 
 p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
-print (path_point(p, True, 100).as_tuple())
+assert path_point(p, 50, closed = True) == PathPoint(50, 0)
+assert path_point(p, 150, closed = True) == PathPoint(100, 50)
+assert path_point(p, 250, closed = True) == PathPoint(50, 100)
+assert path_point(p, 350, closed = True) == PathPoint(0, 50)
+
+# path_length, path_lengths
+
+lenquad10 = 2 * pi * 10 / 4 # length of a quadrant of a circle of radius 10
+
+p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
+assert close_enough(path_length(p, True), 400)
+assert path_lengths(p + p[0:1]) == [0, 100.0, 200.0, 300.0, 400.0]
+assert path_lengths(reverse_path(p + p[0:1])) == [0, 100.0, 200.0, 300.0, 400.0]
+
+p = [ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ]
+assert close_enough(path_length(p, True), 20 + lenquad10)
+assert close_enough_tuple(path_lengths(p + p[0:1]), [0, lenquad10, lenquad10 + 10, lenquad10 + 20])
+assert close_enough_tuple(path_lengths(reverse_path(p + p[0:1])), [0, 10.0, 20.0, 20.0 + lenquad10])
+
+# closest_point
+
+p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
+assert close_enough_tuple(closest_point(p, True, PathPoint(50, -10)), (50, 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(50, 10)), (50, 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(-10, 50)), (350, 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(10, 50)), (350, 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(-10, -10)), (0, 10 * sqrt(2)))
+assert close_enough_tuple(closest_point(p, True, PathPoint(110, -10)), (100, 10 * sqrt(2)))
+
+p = [ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ]
+assert close_enough_tuple(closest_point(p, True, PathPoint(20, 0)), (0, 10)) or close_enough_tuple(closest_point(p, True, PathPoint(20, 0)), (path_length(p, True), 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(0, 20)), (2 * pi * 10 / 4, 10))
+assert close_enough_tuple(closest_point(p, True, PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2)), (2 * pi * 10 / 8, 0))
+assert close_enough_tuple(closest_point(p, True, PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
 
 # Tabs / cut
 
