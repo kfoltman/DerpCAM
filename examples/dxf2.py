@@ -620,7 +620,7 @@ class CAMMainWindow(QMainWindow):
         self.close()
 
 parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
-parser.add_argument('input', type=str, help="File to load on startup")
+parser.add_argument('input', type=str, help="File to load on startup", nargs='?')
 parser.add_argument('--export-gcode', nargs=1, metavar='OUTPUT_FILENAME', help="Convert a project file to G-Code and exit")
 
 QCoreApplication.setOrganizationName("kfoltman")
