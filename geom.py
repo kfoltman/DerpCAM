@@ -50,6 +50,8 @@ class PathPoint(PathNode):
     def __init__(self, x, y):
         self.x = x
         self.y = y
+    def __repr__(self):
+        return f"PathPoint({self.x},{self.y})"
     def seg_start(self):
         return self
     def seg_end(self):
@@ -88,6 +90,8 @@ class PathArc(PathNode):
         self.steps = steps
         self.sstart = sstart
         self.sspan = sspan
+    def __repr__(self):
+        return f"PathArc({self.p1}, {self.p2}, {self.c!r}, {self.steps}, {self.sstart}, {self.sspan})"
     def is_arc(self):
         return True
     def seg_start(self):
@@ -119,6 +123,196 @@ class PathArc(PathNode):
         arc_start = self.c.at_angle(start)
         arc_end = self.c.at_angle(start + span)
         return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span)]
+
+class Path(object):
+    def __init__(self, nodes, closed):
+        self.nodes = nodes
+        self.closed = closed
+    def __eq__(self, other):
+        return self.nodes == other.nodes and self.closed == other.closed
+    def length(self):
+        return sum([(dist(start, end) if end.is_point() else end.length()) for start, end in PathSegmentIterator(self)])
+    def lengths(self):
+        res = [0]
+        lval = 0
+        for start, end in PathSegmentIterator(self):
+            if end.is_point():
+                lval += start.dist(end)
+            else:
+                assert end.is_arc()
+                lval += end.length()
+            res.append(lval)
+        return res
+    def subpath(self, start, end):
+        res = []
+        tlen = 0
+        it = PathSegmentIterator(self)
+        for last, p in it:
+            if p.is_arc():
+                assert last.dist(p.p1) < 1 / GeometrySettings.RESOLUTION
+                d = p.length()
+                if d == 0:
+                    continue
+                tlen_after = tlen + d
+                if tlen_after >= start and tlen <= end:
+                    alpha = (start - tlen) / d
+                    beta = (end - tlen) / d
+                    res += p.cut(alpha, beta)
+            else:
+                d = dist(last, p)
+                if d == 0:
+                    continue
+                tlen_after = tlen + d
+                if tlen_after >= start and tlen <= end:
+                    alpha = (start - tlen) / d
+                    beta = (end - tlen) / d
+                    alpha = max(0, alpha)
+                    beta = min(1, beta)
+                    res.append(weighted(last, p, alpha) if alpha > 0 else last)
+                    res.append(weighted(last, p, beta) if beta < 1 else p)
+            tlen = tlen_after
+        # Eliminate duplicates
+        res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
+        return Path(res, False)
+    def reverse(self):
+        res = []
+        i = len(self.nodes) - 1
+        end = 0
+        if self.closed:
+            res.append(self.nodes[0])
+            end = 1
+        while i >= end:
+            pi = self.nodes[i]
+            if not pi.is_arc():
+                res.append(pi)
+            else: # arc
+                res.append(pi.p2) # end point
+                res.append(pi.reversed())
+                # Skip start point, as it is already inside the arc
+                i -= 1
+                # Verify that it actually was
+                if self.nodes[i] != pi.p1:
+                    for n, p in enumerate(self.nodes):
+                        print ("Item", n, p)
+                assert self.nodes[i] == pi.p1
+            i -= 1
+        # XXXKF not the ideal result for closed paths!
+        return Path(res, self.closed)
+    # For a path and a given point, find the nearest point on a path.
+    # Returns the curve-length to a matching point *on* the path and the distance
+    # from that point to the given point.
+    def closest_point(self, pt):
+        def rotate(x, y, angle):
+            cosv, sinv = -cos(angle), sin(angle)
+            return x * cosv - y * sinv, x * sinv + y * cosv
+        mindist = None
+        closest = None
+        lengths = self.lengths()
+        tlen = 0
+        i = 0
+        for pt1, pt2 in PathSegmentIterator(self):
+            dist1 = pt.dist(pt1)
+            if pt2.is_arc():
+                arc = pt2
+                if mindist is None or dist1 < mindist:
+                    mindist = dist1
+                    closest = lengths[i - 1]
+                dx = pt.x - arc.c.cx
+                dy = pt.y - arc.c.cy
+                angle = atan2(dy, dx) - arc.sstart
+                if arc.sspan < 0:
+                    angle = -angle
+                angle = (angle) % (2 * pi)
+                if angle < abs(arc.sspan):
+                    r = sqrt(dx * dx + dy * dy)
+                    dist1 = abs(r - arc.c.r)
+                    if mindist is None or dist1 < mindist:
+                        mindist = dist1
+                        closest = lengths[i] + angle * arc.c.r
+            else:
+                if mindist is None or dist1 < mindist:
+                    mindist = dist1
+                    closest = lengths[i]
+                dx, dy = dist_vec(pt1, pt2)
+                d = sqrt(dx * dx + dy * dy)
+                lx, ly = dist_vec(pt, pt1)
+                mx, my = rotate(lx, ly, atan2(dy, dx))
+                if mx >= 0 and mx <= d:
+                    if abs(my) < mindist:
+                        mindist = abs(my)
+                        closest = lengths[i] + (lengths[i + 1] - lengths[i]) * mx / d
+            i += 1
+        assert closest <= lengths[-1]
+        return closest, mindist
+    # Calculate a point on a path, then offset it by 'dist' (positive = outwards from the shape)
+    # Only works for closed paths!
+    def offset_point(self, pos, dist):
+        assert self.closed
+        plength = self.length()
+        delta = 0.1
+        subpath = self.subpath(pos, min(plength, pos + delta))
+        orientation = self.orientation()
+        if orientation:
+            dist = -dist
+        s = subpath.nodes[0].seg_start()
+        e = subpath.nodes[-1].seg_end()
+        dx, dy = dist_vec(s, e)
+        angle = atan2(dy, dx) + pi / 2
+        return PathPoint(s.x + dist * cos(angle), s.y + dist * sin(angle))
+    def orientation(self):
+        assert self.closed
+        return IntPath(self.nodes).orientation()
+    # Return the point at 'pos' position along the path.
+    def point_at(self, pos):
+        tlen = 0
+        it = PathSegmentIterator(self)
+        for last, p in it:
+            if pos <= tlen:
+                return last
+            if p.is_arc():
+                tseg = p.length()
+            else:
+                tseg = last.dist(p)
+            if pos < tlen + tseg:
+                alpha = (pos - tlen) / tseg
+                if p.is_arc():
+                    return p.at_fraction(alpha)
+                else:
+                    return weighted(last, p, alpha)
+            tlen += tseg
+        if self.closed and pos > tlen:
+            return self.point_at(pos % tlen)
+        return last
+    def seg_start(self):
+        return self.nodes[0]
+    def seg_end(self):
+        return self.nodes[0] if self.closed else self.nodes[-1].seg_end()
+    def to_nodes(self):
+        # XXXKF questionable
+        return self.nodes + self.nodes[0:1] if self.closed else self.nodes
+
+class PathSegmentIterator(object):
+    def __init__(self, path):
+        self.path = path
+        self.index = 0
+        assert not self.path or self.path.nodes[0].is_point()
+    def __iter__(self):
+        return self
+    def __next__(self):
+        if self.index + 1 < len(self.path.nodes):
+            start, end = self.path.nodes[self.index : self.index + 2]
+            self.index += 1
+            return (start.seg_end(), end)
+        if self.path.closed:
+            if self.index < len(self.path.nodes):
+                start = self.path.nodes[-1].seg_end()
+                end = self.path.nodes[0]
+                self.index += 1
+                return start, end
+            else:
+                raise StopIteration
+        else:
+            raise StopIteration
 
 def dist(a, b):
     a = a.seg_end()
@@ -185,110 +379,6 @@ def max_bounds(b1, *b2etc):
         ex = max(ex, ex2)
         ey = max(ey, ey2)
     return sx, sy, ex, ey
-
-def path_length(path, closed=False):
-    if closed:
-        return path_length(path, False) + path[-1].seg_end().dist(path[0])
-    return sum([dist(path[i], path[i + 1]) for i in range(len(path) - 1)]) + sum([arc.length() for arc in path if arc.is_arc()])
-
-def path_lengths(path):
-    res = [0]
-    lval = 0
-    for i in range(len(path) - 1):
-        if path[i + 1].is_point():
-            lval += path[i].seg_end().dist(path[i + 1])
-        else:
-            assert path[i + 1].is_arc()
-            lval += path[i + 1].length()
-        res.append(lval)
-    return res   
-
-def reverse_path(path):
-    res = []
-    i = len(path) - 1
-    while i >= 0:
-        pi = path[i]
-        if not pi.is_arc():
-            res.append(pi)
-        else: # arc
-            res.append(pi.p2) # end point
-            res.append(pi.reversed())
-            # Skip start point, as it is already inside the arc
-            i -= 1
-            # Verify that it actually was
-            if path[i] != pi.p1:
-                for n, p in enumerate(path):
-                    print ("Item", n, p)
-            assert path[i] == pi.p1
-        i -= 1
-    return res
-
-# Return the point at 'pos' position along the path.
-def path_point(path, pos, closed=False):
-    tlen = 0
-    i = 1
-    last = path[0]
-    assert last.is_point()
-    if closed:
-        # That's a bit wasteful, but we'll live with this for now.
-        path = path + path[0:1]
-    while i < len(path):
-        if pos <= tlen:
-            return last
-        p = path[i]
-        if p.is_arc():
-            tseg = p.length()
-        else:
-            tseg = last.dist(p)
-        if pos < tlen + tseg:
-            alpha = (pos - tlen) / tseg
-            if p.is_arc():
-                return p.at_fraction(alpha)
-            else:
-                return weighted(last, p, alpha)
-        tlen += tseg
-        last = p.seg_end()
-        i += 1
-    if closed and pos > tlen:
-        return path_point(path, pos % tlen, False)
-    return last
-
-def calc_subpath(path, start, end, closed=False):
-    res = []
-    tlen = 0
-    if closed:
-        # That's a bit wasteful, but we'll live with this for now.
-        path = path + path[0:1]
-    last = path[0]
-    assert last.is_point()
-    for p in path[1:]:
-        if p.is_arc():
-            assert last.dist(p.p1) < 1 / GeometrySettings.RESOLUTION
-            d = p.length()
-            if d == 0:
-                continue
-            tlen_after = tlen + d
-            if tlen_after >= start and tlen <= end:
-                alpha = (start - tlen) / d
-                beta = (end - tlen) / d
-                res += p.cut(alpha, beta)
-        else:
-            d = dist(last, p)
-            if d == 0:
-                continue
-            tlen_after = tlen + d
-            if tlen_after >= start and tlen <= end:
-                alpha = (start - tlen) / d
-                beta = (end - tlen) / d
-                alpha = max(0, alpha)
-                beta = min(1, beta)
-                res.append(weighted(last, p, alpha) if alpha > 0 else last)
-                res.append(weighted(last, p, beta) if beta < 1 else p)
-        last = p.seg_end()
-        tlen = tlen_after
-    # Eliminate duplicates
-    res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
-    return res
 
 eps = 1e-6
 
@@ -372,6 +462,8 @@ class CandidateCircle(object):
         return self.at_angle(self.angle(pt))
     def __str__(self):
         return "X=%0.3f Y=%0.3f R=%0.3f" % (self.cx, self.cy, self.r)
+    def __repr__(self):
+        return f"CandidateCircle({self.cx}, {self.cy}, {self.r})"
     @staticmethod
     def from_3(p1, p2, p3):
         # http://www.ambrsoft.com/TrigoCalc/Circle3D.htm
@@ -655,69 +747,3 @@ def dxf_polyline_to_points(entity):
         lastbulge = point[4]
         lastx, lasty = x, y
     return points, entity.closed
-
-# For a path and a given point, find the nearest point on a path.
-# Returns the curve-length to a matching point *on* the path and the distance
-# from that point to the given point.
-def closest_point(path, closed, pt):
-    def rotate(x, y, angle):
-        cosv, sinv = -cos(angle), sin(angle)
-        return x * cosv - y * sinv, x * sinv + y * cosv
-    mindist = None
-    closest = None
-    if closed:
-        path = path + path[0:1]
-    lengths = path_lengths(path)
-    tlen = 0
-    for i in range(len(path) - 1):
-        pt1 = path[i].seg_end()
-        pt2 = path[i + 1]
-        dist1 = pt.dist(pt1)
-        if pt2.is_arc():
-            arc = pt2
-            if mindist is None or dist1 < mindist:
-                mindist = dist1
-                closest = lengths[i - 1]
-            dx = pt.x - arc.c.cx
-            dy = pt.y - arc.c.cy
-            angle = atan2(dy, dx) - arc.sstart
-            if arc.sspan < 0:
-                angle = -angle
-            angle = (angle) % (2 * pi)
-            if angle < abs(arc.sspan):
-                r = sqrt(dx * dx + dy * dy)
-                dist1 = abs(r - arc.c.r)
-                if mindist is None or dist1 < mindist:
-                    mindist = dist1
-                    closest = lengths[i] + angle * arc.c.r
-        else:
-            if mindist is None or dist1 < mindist:
-                mindist = dist1
-                closest = lengths[i]
-            pt2 = path[(i + 1) % len(path)].seg_start()
-            dx, dy = dist_vec(pt1, pt2)
-            d = sqrt(dx * dx + dy * dy)
-            lx, ly = dist_vec(pt, pt1)
-            mx, my = rotate(lx, ly, atan2(dy, dx))
-            if mx >= 0 and mx <= d:
-                if abs(my) < mindist:
-                    mindist = abs(my)
-                    closest = lengths[i] + (lengths[i + 1] - lengths[i]) * mx / d
-    assert closest <= lengths[-1]
-    return closest, mindist
-
-# Calculate a point on a path, then offset it by 'dist' (positive = outwards from the shape)
-# Only works for closed paths!
-def offset_point_on_path(path, pos, dist):
-    plength = path_length(path, closed=True)
-    #path = path + path[0:1]
-    #assert pos <= plength
-    subpath = calc_subpath(path, pos, min(plength, pos + 0.1), closed=True)
-    orientation = IntPath(path).orientation()
-    if orientation:
-        dist = -dist
-    s = subpath[0].seg_start()
-    e = subpath[-1].seg_end()
-    dx, dy = dist_vec(s, e)
-    angle = atan2(dy, dx) + pi / 2
-    return PathPoint(s.x + dist * cos(angle), s.y + dist * sin(angle))

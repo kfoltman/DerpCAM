@@ -80,41 +80,42 @@ assert abs(r4.sspan - pi / 4) < 0.001
 
 # path_point
 
-p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
-assert path_point(p, 50, closed = True) == PathPoint(50, 0)
-assert path_point(p, 150, closed = True) == PathPoint(100, 50)
-assert path_point(p, 250, closed = True) == PathPoint(50, 100)
-assert path_point(p, 350, closed = True) == PathPoint(0, 50)
+p = Path([ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ], True)
+assert p.point_at(50) == PathPoint(50, 0)
+assert p.point_at(150) == PathPoint(100, 50)
+assert p.point_at(250) == PathPoint(50, 100)
+assert p.point_at(350) == PathPoint(0, 50)
 
 # path_length, path_lengths
 
 lenquad10 = 2 * pi * 10 / 4 # length of a quadrant of a circle of radius 10
 
-p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
-assert close_enough(path_length(p, True), 400)
-assert path_lengths(p + p[0:1]) == [0, 100.0, 200.0, 300.0, 400.0]
-assert path_lengths(reverse_path(p + p[0:1])) == [0, 100.0, 200.0, 300.0, 400.0]
+p = Path([ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ], True)
+assert close_enough(p.length(), 400)
+assert p.lengths() == [0, 100.0, 200.0, 300.0, 400.0]
+assert p.reverse().lengths() == [0, 100.0, 200.0, 300.0, 400.0]
 
-p = [ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ]
-assert close_enough(path_length(p, True), 20 + lenquad10)
-assert close_enough_tuple(path_lengths(p + p[0:1]), [0, lenquad10, lenquad10 + 10, lenquad10 + 20])
-assert close_enough_tuple(path_lengths(reverse_path(p + p[0:1])), [0, 10.0, 20.0, 20.0 + lenquad10])
+p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ], True)
+assert close_enough(p.length(), 20 + lenquad10)
+assert close_enough_tuple(p.lengths(), [0, lenquad10, lenquad10 + 10, lenquad10 + 20])
+# A bit of a quirk causing different number of items for forward vs reverse
+assert close_enough_tuple(p.reverse().lengths(), [0, 10.0, 20.0, 20.0 + lenquad10, 20 + lenquad10])
 
 # closest_point
 
-p = [ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ]
-assert close_enough_tuple(closest_point(p, True, PathPoint(50, -10)), (50, 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(50, 10)), (50, 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(-10, 50)), (350, 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(10, 50)), (350, 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(-10, -10)), (0, 10 * sqrt(2)))
-assert close_enough_tuple(closest_point(p, True, PathPoint(110, -10)), (100, 10 * sqrt(2)))
+p = Path([ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ], True)
+assert close_enough_tuple(p.closest_point(PathPoint(50, -10)), (50, 10))
+assert close_enough_tuple(p.closest_point(PathPoint(50, 10)), (50, 10))
+assert close_enough_tuple(p.closest_point(PathPoint(-10, 50)), (350, 10))
+assert close_enough_tuple(p.closest_point(PathPoint(10, 50)), (350, 10))
+assert close_enough_tuple(p.closest_point(PathPoint(-10, -10)), (0, 10 * sqrt(2)))
+assert close_enough_tuple(p.closest_point(PathPoint(110, -10)), (100, 10 * sqrt(2)))
 
-p = [ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ]
-assert close_enough_tuple(closest_point(p, True, PathPoint(20, 0)), (0, 10)) or close_enough_tuple(closest_point(p, True, PathPoint(20, 0)), (path_length(p, True), 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(0, 20)), (2 * pi * 10 / 4, 10))
-assert close_enough_tuple(closest_point(p, True, PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2)), (2 * pi * 10 / 8, 0))
-assert close_enough_tuple(closest_point(p, True, PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
+p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ], True)
+assert close_enough_tuple(p.closest_point(PathPoint(20, 0)), (0, 10)) or close_enough_tuple(p.closest_point(PathPoint(20, 0)), (p.length(), 10))
+assert close_enough_tuple(p.closest_point(PathPoint(0, 20)), (2 * pi * 10 / 4, 10))
+assert close_enough_tuple(p.closest_point(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2)), (2 * pi * 10 / 8, 0))
+assert close_enough_tuple(p.closest_point(PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
 
 # Tabs / cut
 
@@ -125,40 +126,40 @@ assert prepare(tabs.cut(0, 64, 64)) == [(0, 16), (32, 64)]
 tabs = Tabs([Tab(8, 16), Tab(32, 40)])
 assert prepare(tabs.cut(0, 64, 64)) == [(0, 8), (16, 32), (40, 64)]
 
-path = [PathPoint(0, 0), PathPoint(10, 0), PathPoint(20, 0), PathPoint(20, 0), PathPoint(30, 0)]
-assert path_length(path) == 30
-assert calc_subpath(path, -5, 11) == [PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)]
-assert calc_subpath(path, 0, 11) == [PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)]
-assert calc_subpath(path, 11, 25) == [PathPoint(11, 0), PathPoint(20, 0), PathPoint(25, 0)]
-assert calc_subpath(path, 25, 40) == [PathPoint(25, 0), PathPoint(30, 0)]
+path = Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(20, 0), PathPoint(20, 0), PathPoint(30, 0)], False)
+assert path.length() == 30
+assert path.subpath(-5, 11) == Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)], False)
+assert path.subpath(0, 11) == Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)], False)
+assert path.subpath(11, 25) == Path([PathPoint(11, 0), PathPoint(20, 0), PathPoint(25, 0)], False)
+assert path.subpath(25, 40) == Path([PathPoint(25, 0), PathPoint(30, 0)], False)
 
 def check_near(v1, v2):
     return abs(v1 - v2) < 0.001
 
 path = [PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi)]
 
-assert check_near(path_length(path + [PathPoint(-50, 0)]), pi * 50)
-assert check_near(path_length(path + [PathPoint(-50, -50)]), pi * 50 + 50)
+assert check_near(Path(path + [PathPoint(-50, 0)], False).length(), pi * 50)
+assert check_near(Path(path + [PathPoint(-50, -50)], False).length(), pi * 50 + 50)
 
 path = [PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(0, 50), CandidateCircle(0, 0, 50), 50, 0, pi / 2)]
 
-assert check_near(path_length(path + [PathPoint(0, 50)]), pi * 25)
-assert check_near(path_length([PathPoint(0, 0)] + path), pi * 25 + 50)
-assert check_near(path_length([PathPoint(100, 0)] + path), pi * 25 + 50)
-assert check_near(path_length([PathPoint(50, -50)] + path), pi * 25 + 50)
+assert check_near(Path(path + [PathPoint(0, 50)], False).length(), pi * 25)
+assert check_near(Path([PathPoint(0, 0)] + path, False).length(), pi * 25 + 50)
+assert check_near(Path([PathPoint(100, 0)] + path, False).length(), pi * 25 + 50)
+assert check_near(Path([PathPoint(50, -50)] + path, False).length(), pi * 25 + 50)
 
 path = [PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi), PathPoint(-50, 0)]
-assert check_near(path_length(path), pi * 50)
-assert check_near(path_length(reverse_path(path)), pi * 50)
+assert check_near(Path(path, False).length(), pi * 50)
+assert check_near(Path(path, False).reverse().length(), pi * 50)
 
 path = [PathPoint(0, 0), PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi), PathPoint(0, 0)]
-assert check_near(path_length(path), pi * 50 + 100)
-assert check_near(path_length(reverse_path(path)), pi * 50 + 100)
+assert check_near(Path(path, False).length(), pi * 50 + 100)
+assert check_near(Path(path, False).reverse().length(), pi * 50 + 100)
 
 arc = PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi)
-assert check_near(path_length(arc.cut(0, 0.5)), pi * 25)
-assert check_near(path_length(arc.cut(0.5, 1)), pi * 25)
-assert check_near(path_length(arc.cut(0.25, 0.75)), pi * 25)
+assert check_near(Path(arc.cut(0, 0.5), False).length(), pi * 25)
+assert check_near(Path(arc.cut(0.5, 1), False).length(), pi * 25)
+assert check_near(Path(arc.cut(0.25, 0.75), False).length(), pi * 25)
 
 # ---------------------------------------------------------------------
 

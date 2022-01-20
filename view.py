@@ -73,9 +73,9 @@ class OperationsRenderer(object):
                 lastpt = self.addRapids(owner, pen, tp, lastpt)
             return lastpt
         if path.helical_entry:
-            owner.addLines(pen, circle(path.helical_entry.point.x, path.helical_entry.point.y, path.helical_entry.r) + path.points[0:1], False, darken=False)
-        owner.addLines(pen, [lastpt, path.points[0]], False, darken=False)
-        return path.points[0 if path.closed else -1]
+            owner.addLines(pen, circle(path.helical_entry.point.x, path.helical_entry.point.y, path.helical_entry.r) + path.path.nodes[0:1], False, darken=False)
+        owner.addLines(pen, [lastpt, path.path.nodes[0]], False, darken=False)
+        return path.path.nodes[0 if path.path.closed else -1]
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
@@ -92,7 +92,7 @@ class OperationsRenderer(object):
             path = path.lines_to_arcs()
         if GeometrySettings.simplify_lines:
             path = path.optimize_lines()
-        owner.addLines(pen, path.points, path.closed, GeometrySettings.simplify_arcs)
+        owner.addLines(pen, path.path.nodes, path.path.closed, GeometrySettings.simplify_arcs)
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])

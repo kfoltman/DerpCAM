@@ -109,10 +109,10 @@ class Gcode(object):
             self.rapid(z=new_z)
 
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
-        assert isinstance(lastpt, PathNode)
-        assert dist(lastpt, subpath[0]) < 1 / GeometrySettings.RESOLUTION
+        assert isinstance(lastpt, PathPoint)
+        assert dist(lastpt, subpath.seg_start()) < 1 / GeometrySettings.RESOLUTION, f"lastpt={lastpt} != firstpt={subpath.seg_start()}"
         tdist = 0
-        for pt in subpath[1:]:
+        for lastpt, pt in PathSegmentIterator(subpath):
             if pt.is_arc():
                 arc = pt
                 cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
@@ -122,14 +122,13 @@ class Gcode(object):
                     self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
                     self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y)
-                lastpt = arc.p2
             else:
                 if new_z is not None:
                     tdist += dist(lastpt, pt)
                     self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
                     self.linear(x=pt.x, y=pt.y)
-                lastpt = pt
+        lastpt = pt.seg_end()
         return lastpt
 
     def prepare_move_z(self, new_z, old_z, semi_safe_z, already_cut_z):
@@ -167,17 +166,17 @@ class Gcode(object):
         # Always positive
         z_diff = old_z - new_z
         xy_diff = z_diff * tool.slope()
-        tlengths = path_lengths(subpath)
+        tlengths = subpath.lengths()
         max_ramp_length = max(20, 10 * tool.diameter)
         if tlengths[-1] > max_ramp_length:
-            subpath = calc_subpath(subpath, 0, max_ramp_length)
-            tlengths = path_lengths(subpath)
+            subpath = subpath.subpath(0, max_ramp_length)
+            tlengths = subpath.lengths()
         npasses = xy_diff / tlengths[-1]
         if debug_ramp:
             self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
-        subpath_reverse = reverse_path(subpath)
-        self.linear(x=subpath[0].x, y=subpath[0].y)
-        lastpt = subpath[0]
+        subpath_reverse = subpath.reverse()
+        lastpt = subpath.seg_start()
+        self.linear(x=lastpt.x, y=lastpt.y)
         per_level = tlengths[-1] / tool.slope()
         cur_z = old_z
         for i in range(ceil(npasses)):
@@ -190,11 +189,11 @@ class Gcode(object):
                     break
                 if debug_ramp:
                     self.add("(Last pass, shortening to %d)" % newlength)
-                subpath = calc_subpath(subpath, 0, newlength)
-                real_length = path_length(subpath)
+                subpath = subpath.subpath(0, newlength)
+                real_length = subpath.length()
                 assert abs(newlength - real_length) < 1 / GeometrySettings.RESOLUTION
-                subpath_reverse = reverse_path(subpath)
-                tlengths = path_lengths(subpath)
+                subpath_reverse = subpath.reverse()
+                tlengths = subpath.lengths()
             pass_z = max(new_z, old_z - i * per_level)
             next_z = max(new_z, pass_z - per_level)
             if debug_ramp:
@@ -301,8 +300,9 @@ class BaseCut2D(Cut):
         self.prev_depth = layer.prev_depth
         self.depth = layer.depth
         subpaths = layer.subpaths
+        assert subpaths
         # Not a continuous path, need to jump to a new place
-        firstpt = subpaths[0].points[0]
+        firstpt = subpaths[0].path.seg_start()
         if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
@@ -329,10 +329,9 @@ class BaseCut2D(Cut):
         newz = self.z_to_be_cut(subpath)
         self.start_subpath(subpath)
         self.enter_or_leave_cut(gcode, subpath, newz)
-        points = subpath.points + subpath.points[0:1] if subpath.closed else subpath.points
         assert self.lastpt is not None
-        assert isinstance(self.lastpt, PathNode)
-        self.lastpt = gcode.apply_subpath(points, self.lastpt)
+        assert isinstance(self.lastpt, PathPoint)
+        self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt)
         assert isinstance(self.lastpt, PathNode)
         self.end_subpath(subpath)
 
@@ -372,14 +371,14 @@ class BaseCut2D(Cut):
         if subpath.helical_entry is not None:
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-            if subpath.helical_entry.point != subpath.points[0]:
+            if subpath.helical_entry.point != subpath.path.seg_start():
                 # The helical entry ends somewhere else in the pocket, so feed to the right spot
-                self.lastpt = subpath.points[0]
+                self.lastpt = subpath.path.seg_start()
                 gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
             assert self.lastpt is not None
         else:
             if newz < self.curz:
-                self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.points, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
+                self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
             assert self.lastpt is not None
         self.curz = newz
 
@@ -578,7 +577,7 @@ class TabbedOperation(Operation):
                 # Filter by distance
                 thistabs = []
                 for t in tabs:
-                    pos, dist = closest_point(i.points, True, t)
+                    pos, dist = i.path.closest_point(t)
                     if dist < maxd:
                         thistabs.append(t)
                 tabs_dict[i] = thistabs
@@ -593,11 +592,12 @@ class Contour(TabbedOperation):
             for contour in contours:
                 newtabs += contour.autotabs(tool, tabs, width=self.tabs_width())
         else:
+            path = Path(shape.boundary, shape.closed)
             # Offset the tabs
             newtabs = []
             for pt in tabs:
-                pos, dist = closest_point(shape.boundary, True, pt)
-                pt2 = offset_point_on_path(shape.boundary, pos, tool.diameter / 2 * (1 if outside else -1))
+                pos, dist = path.closest_point(pt)
+                pt2 = path.offset_point(pos, tool.diameter / 2 * (1 if outside else -1))
                 newtabs.append(pt2)
         tabs = newtabs
         tabs_dict = {}
@@ -605,13 +605,13 @@ class Contour(TabbedOperation):
             widen_func = lambda contour: self.widen(contour, tool, extra_width)
             res = []
             for contour in contours:
-                widened = toolpath.Toolpath(contour.points, contour.closed, tool, transform=widen_func).transformed()
+                widened = toolpath.Toolpath(contour.path, tool, transform=widen_func).transformed()
                 if isinstance(widened, toolpath.Toolpath):
                     moretabs = []
                     for pt in tabs:
-                        pos, dist = closest_point(contour.points, contour.closed, pt)
+                        pos, dist = contour.path.closest_point(pt)
                         if dist < tool.diameter * sqrt(2):
-                            pt2 = offset_point_on_path(contour.points, pos, extra_width)
+                            pt2 = contour.path.offset_point(pos, extra_width)
                             moretabs.append(pt)
                             moretabs.append(pt2)
                     tabs_dict[widened] = moretabs
@@ -625,22 +625,23 @@ class Contour(TabbedOperation):
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
     def widen(self, contour, tool, extension):
-        if not contour.closed:
+        path = contour.path
+        if not path.closed:
             return contour
-        points = contour.points
+        points = path.nodes
         points_int = PtsToInts(points)
         offset = process.Shape._offset(points_int, True, GeometrySettings.RESOLUTION * extension)
         if len(offset) == 1:
-            extension = toolpath.Toolpath(PtsFromInts(offset[0]), True, tool)
+            extension = toolpath.Toolpath(Path(PtsFromInts(offset[0]), True), tool)
             if process.startWithClosestPoint(extension, points[0], tool.diameter):
-                if SameOrientation(points_int, extension.points):
-                    extension.points = reverse_path(extension.points)
-                points = extension.points + points + points[0:1] + extension.points[0:1]
-                return toolpath.Toolpath(points, contour.closed, tool)
+                if Orientation(points_int) == extension.path.orientation():
+                    extension.path = extension.path.reverse()
+                points = extension.path.nodes + points + points[0:1] + [extension.path.seg_start()]
+                return toolpath.Toolpath(Path(points, True), tool)
         widened = []
-        for path in offset:
-            widened.append(toolpath.Toolpath(PtsFromInts(path), True, tool))
-        widened.append(toolpath.Toolpath(points, contour.closed, tool))
+        for ofs in offset:
+            widened.append(toolpath.Toolpath(Path(PtsFromInts(ofs), True), tool))
+        widened.append(toolpath.Toolpath(Path(points, True), tool))
         return toolpath.Toolpaths(widened)
 
 class TrochoidalContour(TabbedOperation):
@@ -659,11 +660,12 @@ class TrochoidalContour(TabbedOperation):
         else:
             # Offset the tabs
             newtabs = []
+            path = Path(shape.boundary, True)
             for pt in tabs:
-                pos, dist = closest_point(shape.boundary, True, pt)
-                pt2 = offset_point_on_path(shape.boundary, pos, tool.diameter / 2 * (1 if outside else -1))
+                pos, dist = path.closest_point(pt)
+                pt2 = path.offset_point(pos, tool.diameter / 2 * (1 if outside else -1))
                 newtabs.append(pt2)
-        contours = toolpath.Toolpaths([toolpath.Toolpath(tp.points, tp.closed, tool, transform=trochoidal_func) for tp in contours.toolpaths])
+        contours = toolpath.Toolpaths([toolpath.Toolpath(tp.path, tool, transform=trochoidal_func) for tp in contours.toolpaths])
         tabs_dict = {}
         self.add_tabs_if_close(contours, tabs_dict, newtabs, tool.diameter * sqrt(2) + self.nrad)
         TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
@@ -700,7 +702,7 @@ class RetractBy(RetractSchedule):
 class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
-        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath([PathPoint(x, y)], True, tool))
+        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath(Path([PathPoint(x, y)], True), tool))
         self.x = x
         self.y = y
         self.dwell_bottom = dwell_bottom

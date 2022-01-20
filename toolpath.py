@@ -53,9 +53,9 @@ class Tabs(object):
         return [tab.coords(path) for tab in self.tabs]
 
 class Toolpath(object):
-    def __init__(self, points, closed, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
-        self.points = points
-        self.closed = closed
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
+        assert isinstance(path, Path)
+        self.path = path
         self.tool = tool
         self.transform = transform if not is_tab else None
         self.is_tab = is_tab
@@ -65,14 +65,8 @@ class Toolpath(object):
         self.helical_entry = helical_entry
         # Allow borrowing bounds from the non-simplified shape to avoid calculating arc bounds
         self.bounds = self.calc_bounds() if bounds is None else bounds
-        self.tlength = 0
-        self.lengths = [0]
-        for i in range(1, len(self.points)):
-            self.tlength += dist(self.points[i - 1], self.points[i])
-            self.lengths.append(self.tlength)
-        if self.closed:
-            self.tlength += dist(self.points[- 1], self.points[0])
-            self.lengths.append(self.tlength)
+        self.lengths = path.lengths()
+        self.tlength = self.lengths[-1]
 
     def transformed(self):
         if self.transform is None:
@@ -82,36 +76,34 @@ class Toolpath(object):
         return self.transformed_cache
 
     def calc_bounds(self):
-        xcoords = [p.x for p in self.points]
-        ycoords = [p.y for p in self.points]
+        assert len(self.path.nodes)
+        xcoords = [p.x for p in self.path.nodes]
+        ycoords = [p.y for p in self.path.nodes]
         tr = 0.5 * self.tool.diameter
         return (min(xcoords) - tr, min(ycoords) - tr, max(xcoords) + tr, max(ycoords) + tr)
 
     def lines_to_arcs(self):
         if self.lines_to_arcs_cache is None:
-            self.lines_to_arcs_cache = Toolpath(CircleFitter.simplify(self.points), self.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.lines_to_arcs_cache
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(LineOptimizer.simplify(self.points), self.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+            self.optimize_lines_cache = Toolpath(LineOptimizer.simplify(self.path.nodes), self.path.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.optimize_lines_cache
 
     def subpath(self, start, end, is_tab=False):
-        points = calc_subpath(self.points, start, end, self.closed)
-        if points[0] == points[-1]:
-            tp = Toolpath(points[:-1], True, self.tool, transform=self.transform, is_tab=is_tab)
-        else:
-            tp = Toolpath(points, False, self.tool, transform=self.transform, is_tab=is_tab)
+        path = self.path.subpath(start, end)
+        tp = Toolpath(path, self.tool, transform=self.transform, is_tab=is_tab)
         tp.helical_entry = None
         return tp
 
     def cut_by_tabs(self, tabs):
-        ptsc = self.points if not self.closed else self.points + [self.points[0]]
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
         pos = 0
         res = []
         for tab in tabs:
+            assert tab.start <= tab.end
             if pos < tab.start:
                 res.append(self.subpath(pos, tab.start, is_tab=False))
             res.append(self.subpath(tab.start, tab.end, is_tab=True))
@@ -128,8 +120,8 @@ class Toolpath(object):
     def autotabs(self, tool, ntabs, width=1):
         if not ntabs:
             return []
-        orient = Orientation(PtsToInts(self.points))
-        tlength = path_length(self.points, self.closed)
+        orient = self.path.orientation()
+        tlength = self.path.length()
         offset = tlength / (2 * ntabs)
         tablist = []
         tabw = tool.diameter * (1 + width)
@@ -137,14 +129,14 @@ class Toolpath(object):
             pos = offset + i * tlength / ntabs
             if orient:
                 pos = tlength - pos
-            tablist.append(path_point(self.points, pos + tabw / 2, closed=self.closed))
+            tablist.append(self.path.point_at(pos + tabw / 2))
         return tablist
 
     def usertabs(self, tab_locations, width=1):
         tablist = []
         tabw = self.tool.diameter * (1 + width)
         for tab in tab_locations:
-            pos, dist = closest_point(self.points, self.closed, tab)
+            pos, dist = self.path.closest_point(tab)
             pos = pos - tabw / 2
             if pos >= 0:
                 if pos + tabw <= self.tlength:

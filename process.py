@@ -49,31 +49,31 @@ def joinClosePaths(tps):
             last = None
             continue
         if last is not None and last.tool is tp.tool:
-            points = tp.points
+            points = tp.path.nodes
             found = False
-            if tp.closed:
+            if tp.path.closed:
                 points, mindist = findClosest(points, lastpt, tp.tool.diameter)
                 if mindist > tp.tool.diameter:
                     # Desperate second-chance joining by retracing the already milled path
                     # XXXKF this is rather bad, O(N^2), needs rethinking
-                    for j in range(len(last.points) - 1, 0, -1):
-                        points, mindist = findClosest(points, last.points[j], tp.tool.diameter)
+                    for j in range(len(last.path.nodes) - 1, 0, -1):
+                        points, mindist = findClosest(points, last.path.nodes[j], tp.tool.diameter)
                         if mindist <= tp.tool.diameter:
                             print ("Found a backtrack")
-                            res[-1] = Toolpath(last.points + list(reversed(last.points[j:])) + points + points[0:1], False, tp.tool)
+                            res[-1] = Toolpath(Path(last.path.nodes + list(reversed(last.path.nodes[j:])) + points + points[0:1], False), tp.tool)
                             last = res[-1]
-                            lastpt = last.points[-1]
+                            lastpt = last.path.nodes[-1]
                             found = True
                             break
             if found:
                 continue
             if dist(lastpt, points[0]) <= tp.tool.diameter:
-                res[-1] = Toolpath(last.points + (last.points[0:1] if last.closed else []) + points + (points[0:1] if tp.closed else []), False, tp.tool)
+                res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
                 last = res[-1]
-                lastpt = last.points[-1]
+                lastpt = last.path.nodes[-1]
                 continue
         res.append(tp)
-        lastpt = tp.points[0 if tp.closed else -1]
+        lastpt = tp.path.nodes[0 if tp.path.closed else -1]
         last = tp
     return res
 
@@ -90,10 +90,10 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
         if type(toolpath) is Toolpaths:
             findHelicalEntryPoints(toolpath.toolpaths, tool, boundary, islands, margin)
             continue
-        candidates = [toolpath.points[0]]
-        if len(toolpath.points) > 1 and False:
-            p1 = toolpath.points[0]
-            p2 = toolpath.points[1]
+        candidates = [toolpath.path.nodes[0]]
+        if len(toolpath.path.nodes) > 1 and False:
+            p1 = toolpath.path.nodes[0]
+            p2 = toolpath.path.nodes[1]
             mid = p1
             angle = atan2(p2[1] - p1[1], p2[0] - p1[0]) + pi / 2
             d = tool.diameter * 0.5
@@ -117,13 +117,13 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
 def startWithClosestPoint(path, pt, dia):
     mindist = None
     mdpos = None
-    for j, pt2 in enumerate(path.points):
+    for j, pt2 in enumerate(path.path.nodes):
         d = dist(pt, pt2)
         if mindist is None or d < mindist:
             mindist = d
             mdpos = j
     if mindist <= dia:
-        path.points = path.points[mdpos:] + path.points[:mdpos + 1]
+        path.path.nodes = path.path.nodes[mdpos:] + path.path.nodes[:mdpos + 1]
         return True
     return False
 
@@ -138,8 +138,8 @@ def mergeToolpaths(tps, new, dia):
     last = tps[-1]
     new2 = []
     for i in new:
-        assert i.closed
-        pt = i.points[0]
+        assert i.path.closed
+        pt = i.path.nodes[0]
         found = False
         new_toolpaths = []
         for l in last.toolpaths:
@@ -171,11 +171,11 @@ class Shape(object):
         ycoords = [p.seg_end().y for p in self.boundary]
         return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
     def default_tab_count(self, min_tabs, max_tabs, distance):
-        plen = path_length(self.boundary + (self.boundary[0:1] if self.closed else []))
+        plen = Path(self.boundary, self.closed).length()
         return int(max(min_tabs, min(max_tabs, plen // distance)))
     def engrave(self, tool):
-        tps = [Toolpath(self.boundary, self.closed, tool)] + [
-            Toolpath(island, True, tool) for island in self.islands ]
+        tps = [Toolpath(Path(self.boundary, self.closed), tool)] + [
+            Toolpath(Path(island, True), tool) for island in self.islands ]
         return Toolpaths(tps)
     @staticmethod
     def _offset(points, closed, dist):
@@ -209,10 +209,10 @@ class Shape(object):
             if not res2:
                 return None
             res2 = [SameOrientation(i.int_points, outside ^ tool.climb) for i in res2]
-            tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res2]
+            tps = [Toolpath(Path(PtsFromInts(path), self.closed), tool) for path in res2]
         else:
             res = [SameOrientation(i, outside ^ tool.climb) for i in res]
-            tps = [Toolpath(PtsFromInts(path), self.closed, tool) for path in res]
+            tps = [Toolpath(Path(PtsFromInts(path), self.closed), tool) for path in res]
         return Toolpaths(tps)
     def pocket_contour(self, tool, displace=0):
         if not self.closed:
@@ -241,7 +241,7 @@ class Shape(object):
         for path in islands_transformed_nonoverlap:
             for ints in Shape._intersection(path, *boundary_transformed):
                 # diff with other islands
-                tps_islands += [Toolpath(ints, True, tool)]
+                tps_islands += [Toolpath(Path(ints, True), tool)]
         displace_now = displace
         stepover = tool.stepover * tool.diameter
         # No idea why this was here given the joinClosePaths call later on is
@@ -288,7 +288,7 @@ class Shape(object):
             path = IntPath([p1, p2])
             tree = run_clipper_advanced(CT_INTERSECTION, [], boundary_paths, [path])
             for path2 in OpenPathsFromPolyTree(tree):
-                tps.append(Toolpath(PtsFromInts(path2), False, tool))
+                tps.append(Toolpath(Path(PtsFromInts(path2), False), tool))
             if i == nsteps - 1:
                 frac = fsteps - nsteps
                 p = (p[0] + frac * stepover * cos(angle + pi / 2), p[1] + frac * stepover * sin(angle + pi / 2))
@@ -404,8 +404,8 @@ def interpolate_path(path):
     return res
 
 def trochoidal_transform(contour, nrad, nspeed):
-    path = contour.points
-    if contour.closed:
+    path = contour.path.nodes
+    if contour.path.closed:
         path = path + [path[0]]
     path = interpolate_path(path)
     res = [path[0]]
@@ -420,9 +420,9 @@ def trochoidal_transform(contour, nrad, nspeed):
         res.append(PathPoint(x, y))
         lastpt = pt
     res.append(path[-1])
-    if res and contour.closed:
+    if res and contour.path.closed:
         assert res[-1] == res[0]
-        return Toolpath(points=res[:-1], closed=True, tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
+        return Toolpath(path=Path(res[:-1], True), tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
     else:
-        return Toolpath(points=res, closed=False, tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
+        return Toolpath(path=Path(res, False), tool=contour.tool, helical_entry=HelicalEntry(path[0], nrad), is_tab=contour.is_tab)
 
