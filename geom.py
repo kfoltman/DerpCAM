@@ -173,6 +173,8 @@ class Path(object):
             tlen = tlen_after
         # Eliminate duplicates
         res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
+        if res[0].seg_start() == res[-1].seg_end():
+            return Path(res, True) if res[-1].is_arc() else Path(res[:-1], True)
         return Path(res, False)
     def reverse(self):
         res = []
