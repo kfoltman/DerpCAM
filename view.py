@@ -74,8 +74,8 @@ class OperationsRenderer(object):
             return lastpt
         if path.helical_entry:
             owner.addLines(pen, circle(path.helical_entry.point.x, path.helical_entry.point.y, path.helical_entry.r) + path.path.nodes[0:1], False, darken=False)
-        owner.addLines(pen, [lastpt, path.path.nodes[0]], False, darken=False)
-        return path.path.nodes[0 if path.path.closed else -1]
+        owner.addLines(pen, [lastpt, path.path.seg_start()], False, darken=False)
+        return path.path.seg_end()
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:

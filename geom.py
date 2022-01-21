@@ -289,9 +289,6 @@ class Path(object):
         return self.nodes[0]
     def seg_end(self):
         return self.nodes[0] if self.closed else self.nodes[-1].seg_end()
-    def to_nodes(self):
-        # XXXKF questionable
-        return self.nodes + self.nodes[0:1] if self.closed else self.nodes
 
 class PathSegmentIterator(object):
     def __init__(self, path):

@@ -73,7 +73,7 @@ def joinClosePaths(tps):
                 lastpt = last.path.nodes[-1]
                 continue
         res.append(tp)
-        lastpt = tp.path.nodes[0 if tp.path.closed else -1]
+        lastpt = tp.path.seg_end()
         last = tp
     return res
 
@@ -139,7 +139,7 @@ def mergeToolpaths(tps, new, dia):
     new2 = []
     for i in new:
         assert i.path.closed
-        pt = i.path.nodes[0]
+        pt = i.path.seg_start()
         found = False
         new_toolpaths = []
         for l in last.toolpaths:
