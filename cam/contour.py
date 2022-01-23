@@ -52,9 +52,6 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size):
         lasti = i
         i = nexti
     print ("Contour end")
-    
-    res = geom.CircleFitter.interpolate_arcs(res, False, 1)
-    print ("Interp end")
     return geom.Path(res, True)
 
 # Original curve + a 1/4 diameter circle every stepover * diameter.

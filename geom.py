@@ -263,7 +263,7 @@ class Path(object):
         return PathPoint(s.x + dist * cos(angle), s.y + dist * sin(angle))
     def orientation(self):
         assert self.closed
-        return IntPath(self.nodes).orientation()
+        return IntPath([i.seg_end() for i in self.nodes]).orientation()
     # Return the point at 'pos' position along the path.
     def point_at(self, pos):
         tlen = 0
@@ -575,6 +575,9 @@ class CircleFitter(object):
     @staticmethod
     def simplify(pts):
         pts_out = []
+        for i, p in enumerate(pts):
+            if p.is_arc():
+                return CircleFitter.simplify(pts[:i - 1]) + [p.p1, p] + CircleFitter.simplify(pts[i + 1:])
         arcs = CircleFitter.fit_arcs2(pts, 0, len(pts))
         last = 0
         for start, end, c, error, adir in arcs:
