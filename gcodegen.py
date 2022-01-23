@@ -634,19 +634,16 @@ class Contour(TabbedOperation):
         if not path.closed:
             return contour
         points = path.nodes
-        points_int = PtsToInts(points)
-        offset = process.Shape._offset(points_int, True, GeometrySettings.RESOLUTION * extension)
+        offset = cam.contour.plain(process.Shape(points, True), 0, True, extension, not path.orientation())
         if len(offset) == 1:
-            extension = toolpath.Toolpath(Path(PtsFromInts(offset[0]), True), tool)
+            extension = toolpath.Toolpath(offset[0], tool)
             if process.startWithClosestPoint(extension, points[0], tool.diameter):
-                if Orientation(points_int) == extension.path.orientation():
-                    extension.path = extension.path.reverse()
-                points = extension.path.nodes + points + points[0:1] + [extension.path.seg_start()]
+                points = offset[0].nodes + points + points[0:1] + [offset[0].seg_start()]
                 return toolpath.Toolpath(Path(points, True), tool)
         widened = []
         for ofs in offset:
-            widened.append(toolpath.Toolpath(Path(PtsFromInts(ofs), True), tool))
-        widened.append(toolpath.Toolpath(Path(points, True), tool))
+            widened.append(toolpath.Toolpath(ofs, tool))
+        widened.append(toolpath.Toolpath(contour.path, tool))
         return toolpath.Toolpaths(widened)
 
 class TrochoidalContour(TabbedOperation):
