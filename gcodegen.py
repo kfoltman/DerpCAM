@@ -1,6 +1,7 @@
 from geom import *
 import process
 import toolpath
+import cam.contour
 
 # VERY experimental feature
 debug_simplify_arcs = False
@@ -586,7 +587,11 @@ class Contour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, tabs, extra_width=0):
         assert shape.closed
         extra_width *= tool.diameter / 2 
-        contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
+        #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
+        contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
+        #contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, 0.4, 0.5)
+        #contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, 0.3, 0.25)
+        contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened()
         if isinstance(tabs, int):
             newtabs = []
             for contour in contours:
