@@ -605,12 +605,13 @@ class CAMMainWindow(QMainWindow):
                 document.forEachOperation(self.add_cutter)
                 document.forEachOperation(self.process_operation)
             def add_cutter(self, item):
-                self.all_cutters.add(item.cutter)
-            def process_operation(self, item):
-                if item.cutter != self.cutter and len(self.all_cutters) > 1:
-                    self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
-                    self.cutter = item.cutter
                 if item.cam:
+                    self.all_cutters.add(item.cutter)
+            def process_operation(self, item):
+                if item.cam:
+                    if item.cutter != self.cutter and len(self.all_cutters) > 1:
+                        self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
+                        self.cutter = item.cutter
                     self.operations.add_all(item.cam.operations)
             def write(self, fn):
                 self.operations.to_gcode_file(fn)

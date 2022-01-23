@@ -675,6 +675,7 @@ class OperationTreeItem(CAMTreeItem):
 
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
+        self.setCheckable(True)
         self.shape_id = None
         self.orig_shape = None
         self.shape = None
@@ -684,6 +685,7 @@ class OperationTreeItem(CAMTreeItem):
         self.warning = None
         self.updateCAM()
     def resetProperties(self):
+        self.setCheckState(True)
         self.cutter = None
         self.tool_preset = None
         self.operation = OperationType.OUTSIDE_CONTOUR
@@ -744,6 +746,7 @@ class OperationTreeItem(CAMTreeItem):
         return getattr(pda, name, None)
     def store(self):
         dump = CAMTreeItem.store(self)
+        dump['active'] = self.checkState() != 0
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
@@ -754,6 +757,7 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set(PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
+        self.setCheckState(2 if dump.get('active', True) else 0)
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
@@ -828,6 +832,7 @@ class OperationTreeItem(CAMTreeItem):
             self.warning += "\n"
         self.warning += warning
     def updateCAM(self):
+        self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
         self.error = None
         self.warning = None
         self.cam = None
@@ -835,9 +840,11 @@ class OperationTreeItem(CAMTreeItem):
         if not self.cutter:
             self.error = "Cutter not set"
             return
+        if self.checkState() == 0:
+            # Operation not enabled
+            return
         try:
             errors = []
-            self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
             if self.orig_shape:
                 translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
                 self.shape = self.orig_shape.translated(*translation).toShape()
@@ -1030,6 +1037,7 @@ class DocumentModel(QObject):
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
+        self.operModel.itemChanged.connect(self.operItemChanged)
 
     def reinitDocument(self):
         self.undoStack.clear()
@@ -1168,6 +1176,10 @@ class DocumentModel(QObject):
                 operation : OperationTreeItem = cycle.child(j)
                 res.append(func(operation))
         return res
+    def operItemChanged(self, item):
+        if isinstance(item, OperationTreeItem):
+            if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
+                item.updateCAM()
     def updateCAM(self):
         self.make_machine_params()
         self.forEachOperation(lambda item: item.updateCAM())
