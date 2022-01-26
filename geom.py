@@ -90,6 +90,19 @@ class PathArc(PathNode):
         self.steps = steps
         self.sstart = sstart
         self.sspan = sspan
+        cp = c.centre()
+        r1 = dist(cp, p1)
+        r2 = dist(cp, p2)
+        if abs(r1 - r2) > 0.01:
+            print ("Warning: r1/r2 don't match")
+        if abs(r1 - c.r) > 0.01:
+            print ("Warning: r1/r don't match", r1, c.r)
+        if abs(r2 - c.r) > 0.01:
+            print ("Warning: r2/r don't match", r2, c.r)
+        if dist(c.at_angle(sstart), p1) > 0.01:
+            print ("Warning: start angle doesn't match")
+        if dist(c.at_angle(sstart + sspan), p2) > 0.01:
+            print ("Warning: start angle doesn't match")
     def __repr__(self):
         return f"PathArc({self.p1}, {self.p2}, {self.c!r}, {self.steps}, {self.sstart}, {self.sspan})"
     def is_arc(self):

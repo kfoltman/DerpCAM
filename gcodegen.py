@@ -529,7 +529,56 @@ class FaceMill(UntabbedOperation):
 
 class Pocket(UntabbedOperation):
     def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+        from shapely.geometry import LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
+        from shapely.ops import linemerge, nearest_points
+        import cam.geometry
+        dist = (0.5 * tool.diameter + props.margin) * GeometrySettings.RESOLUTION
+        res = process.Shape._offset(PtsToInts(shape.boundary), True, -dist)
+        if len(res) != 1:
+            raise ValueError("Empty or multiple subpockets not supported yet")
+        boundary_offset = PtsFromInts(res[0])
+        boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
+        polygon = Polygon(boundary)
+        for island in shape.islands:
+            for island_offset in process.Shape._offset(PtsToInts(island), True, dist):
+                island_offset_pts = PtsFromInts(island_offset)
+                ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
+                polygon = polygon.difference(Polygon(ii))
+        inputs = []
+        if isinstance(polygon, Polygon):
+            inputs.append(polygon)
+        elif isinstance(polygon, MultiPolygon):
+            inputs += polygon.geoms
+        elif isinstance(polygon, GeometryCollection):
+            for i in polygon.geoms:
+                if isinstance(i, Polygon):
+                    inputs.append(i)
+                elif isinstance(i, MultiPolygon):
+                    inputs += i.geoms
+        tps = []
+        for polygon in inputs:
+            tp = cam.geometry.ToolPath(polygon, tool.diameter * tool.stepover, cam.geometry.ArcDir.CW)
+            gen_path = []
+            x, y = tp.start_point.x, tp.start_point.y
+            r = 0
+            rt = tp.start_radius
+            while r < rt:
+                r = min(rt, r + 0.5 * tool.diameter * tool.stepover)
+                gen_path += [PathPoint(x + r, y), PathArc(PathPoint(x + r, y), PathPoint(x + r, y), CandidateCircle(x, y, r), int(2 * pi * r), 0, 2 * pi)]
+            for item in tp.joined_path_data:
+                if isinstance(item, cam.geometry.LineData):
+                    if not item.safe:
+                        if Path(gen_path, False).length():
+                            tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
+                        gen_path = []
+                    else:
+                        gen_path += [PathPoint(x, y) for x, y in item.path.coords]
+                elif isinstance(item, cam.geometry.ArcData):
+                    steps = max(1, ceil(item.radius * abs(item.span_angle)))
+                    gen_path += [PathPoint(item.start.x, item.start.y), PathArc(PathPoint(item.start.x, item.start.y), PathPoint(item.end.x, item.end.y), CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, pi / 2 - item.start_angle, -item.span_angle)]
+            if Path(gen_path, False).length():
+                tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
+        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths(tps))
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
