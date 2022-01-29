@@ -23,7 +23,6 @@ def plain_shapely(shape, diameter, outside, displace, climb):
 def pseudotrochoidise(inside, outside, diameter, stepover, circle_size):
     import shapely.geometry
     import shapely.ops
-    print ("Contour start")
     ilen = inside.length
     lasti = 0
     i = 0
@@ -51,7 +50,6 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size):
             break
         lasti = i
         i = nexti
-    print ("Contour end")
     return geom.Path(res, True)
 
 # Original curve + a 1/4 diameter circle every stepover * diameter.

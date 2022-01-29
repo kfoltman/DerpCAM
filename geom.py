@@ -587,10 +587,20 @@ class CircleFitter(object):
 
     @staticmethod
     def simplify(pts):
+        if len(pts) < 3:
+            return pts
         pts_out = []
+        last = 0
         for i, p in enumerate(pts):
             if p.is_arc():
-                return CircleFitter.simplify(pts[:i - 1]) + [p.p1, p] + CircleFitter.simplify(pts[i + 1:])
+                pts_out += CircleFitter.simplify_noarcs(pts[last:i - 1]) + [p.p1, p]
+                last = i + 1
+        if pts_out:
+            return pts_out + CircleFitter.simplify_noarcs(pts[last:])
+        return CircleFitter.simplify_noarcs(pts)
+    @staticmethod
+    def simplify_noarcs(pts):
+        pts_out = []
         arcs = CircleFitter.fit_arcs2(pts, 0, len(pts))
         last = 0
         for start, end, c, error, adir in arcs:
