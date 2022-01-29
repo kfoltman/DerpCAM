@@ -24,12 +24,12 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     import shapely.geometry
     import shapely.ops
     helical_entry = None
-    ilen = inside.length
     lasti = 0
     i = 0
     res = []
     step = stepover * diameter
-    inside = shapely.geometry.LinearRing(inside)
+    inside = shapely.geometry.LinearRing([(pt.x, pt.y) for pt in inside.nodes])
+    ilen = inside.length
     if inside.is_ccw != dest_orientation:
         inside = shapely.geometry.LinearRing(inside.coords[::-1])
     while i <= ilen:
@@ -63,16 +63,18 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     import shapely.ops
     dist = 0.5 * diameter + displace
     dist2 = (0.5 + 2 * circle_size) * diameter + displace
-    boundary = shapely.geometry.LinearRing([(p.x, p.y) for p in shape.boundary])
-    
-    orient = 'right' if not (is_outside ^ boundary.is_ccw) else 'left'
-    inside = boundary.parallel_offset(dist, orient)
-    outside = boundary.parallel_offset(dist2, orient)
 
-    if isinstance(inside, shapely.geometry.MultiLineString):
-        paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size, is_outside ^ climb) for geom in inside.geoms]
-    else:
-        paths = [pseudotrochoidise(inside, outside, diameter, stepover, circle_size, is_outside ^ climb)]
+    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * geom.GeometrySettings.RESOLUTION)
+    if not res:
+        return None
+    outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in geom.PtsFromInts(path + path[0:1])] for path in res])
+
+    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, (dist if is_outside else -dist) * geom.GeometrySettings.RESOLUTION)
+    if not res:
+        return None
+    inside = [geom.Path(geom.PtsFromInts(path), shape.closed) for path in res]
+
+    paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size, is_outside ^ climb) for geom in inside]
     return paths
     
 plain = plain_clipper

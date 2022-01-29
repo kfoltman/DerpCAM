@@ -407,6 +407,8 @@ class CAMMainWindow(QMainWindow):
             self.materialChanged()
         elif type(item) == model.ToolTreeItem:
             self.toolChanged()
+        elif type(item) == model.ToolPresetTreeItem:
+            self.toolPresetChanged()
         elif type(item) == model.DrawingTreeItem:
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
@@ -417,6 +419,9 @@ class CAMMainWindow(QMainWindow):
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.updateCAM()
+        self.viewer.majorUpdate()
+    def toolPresetChanged(self):
+        self.propsDW.updateProperties()
         self.viewer.majorUpdate()
     def drawingChanged(self):
         self.document.updateCAM()
