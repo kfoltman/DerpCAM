@@ -615,8 +615,9 @@ class CAMMainWindow(QMainWindow):
                     self.operations.add_all(item.cam.operations)
             def write(self, fn):
                 self.operations.to_gcode_file(fn)
-        exporter = OpExporter(self.document)
-        exporter.write(fn)
+        with view.Spinner():
+            exporter = OpExporter(self.document)
+            exporter.write(fn)
     def fileExit(self):
         self.close()
 
@@ -637,6 +638,8 @@ loadInventory()
 w = CAMMainWindow(document)
 w.initUI()
 if args.input:
+    if not args.export_gcode:
+        w.showMaximized()
     fn = args.input
     fnl = fn.lower()
     if fnl.endswith(".dxf"):

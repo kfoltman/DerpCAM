@@ -832,6 +832,9 @@ class OperationTreeItem(CAMTreeItem):
             self.warning += "\n"
         self.warning += warning
     def updateCAM(self):
+        with view.Spinner():
+            self.updateCAMWork()
+    def updateCAMWork(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
         self.error = None
         self.warning = None
@@ -1181,8 +1184,9 @@ class DocumentModel(QObject):
             if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
                 item.updateCAM()
     def updateCAM(self):
-        self.make_machine_params()
-        self.forEachOperation(lambda item: item.updateCAM())
+        with view.Spinner():
+            self.make_machine_params()
+            self.forEachOperation(lambda item: item.updateCAM())
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
