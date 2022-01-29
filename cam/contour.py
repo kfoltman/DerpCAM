@@ -30,8 +30,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     res = []
     step = stepover * diameter
     inside = shapely.geometry.LinearRing(inside)
-    orientation = inside.is_ccw
-    if orientation != dest_orientation:
+    if inside.is_ccw != dest_orientation:
         inside = shapely.geometry.LinearRing(inside.coords[::-1])
     while i <= ilen:
         pt = inside.interpolate(i)
