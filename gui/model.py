@@ -670,7 +670,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: rate", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=False) # TBD
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=False) # TBD
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
 
     def __init__(self, document):
