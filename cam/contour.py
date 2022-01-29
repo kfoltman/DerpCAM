@@ -20,14 +20,19 @@ def plain_shapely(shape, diameter, outside, displace, climb):
         paths = [geom.Path([geom.PathPoint(x, y) for x, y in item.coords], True) for item in res.geoms]
     return [ path if path.orientation() == climb else path.reverse() for path in paths]
     
-def pseudotrochoidise(inside, outside, diameter, stepover, circle_size):
+def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_orientation):
     import shapely.geometry
     import shapely.ops
+    helical_entry = None
     ilen = inside.length
     lasti = 0
     i = 0
     res = []
     step = stepover * diameter
+    inside = shapely.geometry.LinearRing(inside)
+    orientation = inside.is_ccw
+    if orientation != dest_orientation:
+        inside = shapely.geometry.LinearRing(inside.coords[::-1])
     while i <= ilen:
         pt = inside.interpolate(i)
         nps = shapely.ops.nearest_points(outside, pt)
@@ -39,35 +44,36 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size):
         margin = pt.distance(pt2)
         addcircle = margin < 3 * diameter * circle_size
         if addcircle:
+            if i == 0:
+                helical_entry = process.HelicalEntry(geom.PathPoint(mx, my), mr)
             ma = geom.CandidateCircle(mx, my, mr).angle(geom.PathPoint(pt.x, pt.y))
             zpt = geom.PathPoint(pt.x, pt.y)
             res.append(zpt)
             res.append(geom.PathArc(zpt, zpt, geom.CandidateCircle(mx, my, mr), int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi))
-        # XXXKF substring
         nexti = min(i + step, ilen)
         res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, i, nexti).coords]
         if i == ilen:
             break
         lasti = i
         i = nexti
-    return geom.Path(res, True)
+    return geom.Path(res, True), helical_entry
 
 # Original curve + a 1/4 diameter circle every stepover * diameter.
-def pseudotrochoidal(shape, diameter, outside, displace, climb, stepover, circle_size):
+def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, circle_size):
     import shapely.geometry
     import shapely.ops
     dist = 0.5 * diameter + displace
     dist2 = (0.5 + 2 * circle_size) * diameter + displace
     boundary = shapely.geometry.LinearRing([(p.x, p.y) for p in shape.boundary])
     
-    orient = 'right' if not (outside ^ boundary.is_ccw) else 'left'
+    orient = 'right' if not (is_outside ^ boundary.is_ccw) else 'left'
     inside = boundary.parallel_offset(dist, orient)
     outside = boundary.parallel_offset(dist2, orient)
 
     if isinstance(inside, shapely.geometry.MultiLineString):
-        paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size) for geom in inside.geoms]
+        paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size, is_outside ^ climb) for geom in inside.geoms]
     else:
-        paths = [pseudotrochoidise(inside, outside, diameter, stepover, circle_size)]
-    return [ path if path.orientation() == climb else path.reverse() for path in paths ]
+        paths = [pseudotrochoidise(inside, outside, diameter, stepover, circle_size, is_outside ^ climb)]
+    return paths
     
 plain = plain_clipper
