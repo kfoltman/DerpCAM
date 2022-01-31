@@ -557,7 +557,7 @@ class Pocket(UntabbedOperation):
                     inputs += i.geoms
         tps = []
         for polygon in inputs:
-            tp = cam.geometry.ToolPath(polygon, tool.diameter * tool.stepover, cam.geometry.ArcDir.CW)
+            tp = cam.geometry.ToolPath(polygon, 0.5 * tool.diameter * tool.stepover, cam.geometry.ArcDir.CW)
             gen_path = []
             x, y = tp.start_point.x, tp.start_point.y
             r = 0
@@ -575,7 +575,13 @@ class Pocket(UntabbedOperation):
                         gen_path += [PathPoint(x, y) for x, y in item.path.coords]
                 elif isinstance(item, cam.geometry.ArcData):
                     steps = max(1, ceil(item.radius * abs(item.span_angle)))
-                    gen_path += [PathPoint(item.start.x, item.start.y), PathArc(PathPoint(item.start.x, item.start.y), PathPoint(item.end.x, item.end.y), CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, pi / 2 - item.start_angle, -item.span_angle)]
+                    cc = CandidateCircle(item.origin.x, item.origin.y, item.radius)
+                    sa = pi / 2 - item.start_angle
+                    span = -item.span_angle
+                    sp = cc.at_angle(sa)
+                    ep = cc.at_angle(sa + span)
+                    # Fix slight inaccuracies with line segments
+                    gen_path += [PathPoint(item.start.x, item.start.y), sp, PathArc(sp, ep, CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span), PathPoint(item.end.x, item.end.y)]
             if Path(gen_path, False).length():
                 tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
         UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths(tps))

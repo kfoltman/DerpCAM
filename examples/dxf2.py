@@ -630,11 +630,15 @@ parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
 parser.add_argument('input', type=str, help="File to load on startup", nargs='?')
 parser.add_argument('--export-gcode', nargs=1, metavar='OUTPUT_FILENAME', help="Convert a project file to G-Code and exit")
 
+# Workaround hack for ICE errors
+# del os.environ['SESSION_MANAGER']
+
 QCoreApplication.setOrganizationName("kfoltman")
 QCoreApplication.setApplicationName("DerpCAM")
 
 app = QApplication(sys.argv)
 app.setApplicationDisplayName("My CAM experiment")
+app.processEvents()
 
 args = parser.parse_args()
 
