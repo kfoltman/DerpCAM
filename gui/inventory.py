@@ -161,9 +161,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -172,9 +172,13 @@ class EndMillPreset(PresetBase):
         res.maxdoc = maxdoc
         res.stepover = stepover
         res.direction = direction
+        res.extra_width = extra_width
+        res.trc_rate = trc_rate
         return res
     def description_only(self):
         res = []
+        if self.trc_rate:
+            res.append(f"\u21f4")
         if self.hfeed:
             res.append(f"f\u2194{self.hfeed:0.0f}")
         if self.vfeed:
@@ -198,8 +202,8 @@ class EndMillCutter(CutterBase):
         res = klass.new_impl(id, name, material, diameter, length)
         res.flutes = int(flutes)
         return res
-    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction):
-        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction))
+    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate):
+        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate))
         return self
     def description_only(self):
         if self.length is not None:
@@ -275,13 +279,13 @@ class Inventory(object):
     def createStdCutters(self):
         self.toolbits = [
             EndMillCutter.new(1, "cheapo 2F 3.2/15", CutterMaterial.carbide, 3.2, 15, 2)
-                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL)
-                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB),
+                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0)
+                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0),
             EndMillCutter.new(2, "cheapo 2F 2.5/12", CutterMaterial.carbide, 2.5, 12, 2)
-                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL)
-                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB),
+                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0)
+                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0),
             EndMillCutter.new(3, "cheapo 1F 3.2/15", CutterMaterial.carbide, 3.2, 15, 1)
-                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL),
+                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL, 0, 0),
             EndMillCutter.new(4, "cheapo 1F 2/8", CutterMaterial.carbide, 2, 8, 1),
             DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25)
                 .addPreset(200, "Wood-untested", 10000, 100, 6),

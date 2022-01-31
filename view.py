@@ -7,6 +7,12 @@ import toolpath
 import sys
 import time
 
+class Spinner(object):
+    def __enter__(self):
+        QGuiApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        QGuiApplication.restoreOverrideCursor()
+
 class OperationsRenderer(object):
     def __init__(self, operations):
         self.operations = operations
@@ -106,9 +112,10 @@ class PathViewer(QWidget):
         self.majorUpdate()
         self.startTimer(50)
     def majorUpdate(self):
-        self.resetZoom()
-        self.renderDrawing()
-        self.repaint()
+        with Spinner():
+            self.resetZoom()
+            self.renderDrawing()
+            self.repaint()
     def resetZoom(self):
         sx, sy, ex, ey = self.bounds()
         self.zero = QPointF(0, 0)
@@ -250,7 +257,8 @@ class PathViewer(QWidget):
         if self.click_data:
             self.processMove(e)
             self.click_data = None
-            self.repaint()
+            with Spinner():
+                self.repaint()
         self.updateCursor()
 
     def mouseMoveEvent(self, e):
@@ -291,14 +299,14 @@ class PathViewer(QWidget):
         self.cx = self.size().width() / 2
         self.cy = self.size().height() / 2
         self.scale = min(self.size().width() / (ex - sx), self.size().height() / (ey - sy))
-        self.repaint()
+        with Spinner():
+            self.repaint()
 
     def timerEvent(self, e):
         if self.draft_time is not None and time.time() > self.draft_time:
             self.draft_time = None
-            self.setCursor(Qt.WaitCursor)
-            self.repaint()
-            self.updateCursor()
+            with Spinner():
+                self.repaint()
 
     def updateCursor(self):
         if self.click_data:

@@ -407,6 +407,8 @@ class CAMMainWindow(QMainWindow):
             self.materialChanged()
         elif type(item) == model.ToolTreeItem:
             self.toolChanged()
+        elif type(item) == model.ToolPresetTreeItem:
+            self.toolPresetChanged()
         elif type(item) == model.DrawingTreeItem:
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
@@ -417,6 +419,9 @@ class CAMMainWindow(QMainWindow):
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.updateCAM()
+        self.viewer.majorUpdate()
+    def toolPresetChanged(self):
+        self.propsDW.updateProperties()
         self.viewer.majorUpdate()
     def drawingChanged(self):
         self.document.updateCAM()
@@ -615,8 +620,9 @@ class CAMMainWindow(QMainWindow):
                     self.operations.add_all(item.cam.operations)
             def write(self, fn):
                 self.operations.to_gcode_file(fn)
-        exporter = OpExporter(self.document)
-        exporter.write(fn)
+        with view.Spinner():
+            exporter = OpExporter(self.document)
+            exporter.write(fn)
     def fileExit(self):
         self.close()
 
@@ -637,6 +643,8 @@ loadInventory()
 w = CAMMainWindow(document)
 w.initUI()
 if args.input:
+    if not args.export_gcode:
+        w.showMaximized()
     fn = args.input
     fnl = fn.lower()
     if fnl.endswith(".dxf"):

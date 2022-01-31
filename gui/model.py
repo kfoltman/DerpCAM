@@ -427,6 +427,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.1f %%", min=0, max=100, allow_none=True)
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.1f %%", min=0, max=100, allow_none=True)
     def __init__(self, document, preset):
         self.inventory_preset = preset
         CAMTreeItem.__init__(self, document, "Tool preset")
@@ -446,7 +448,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return self.parent().inventory_tool.base_object is not None and self.inventory_preset.base_object is not None and not (self.inventory_preset.equals(self.inventory_preset.base_object))
     def properties(self):
         if isinstance(self.inventory_preset, inventory.EndMillPreset):
-            return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm]
+            return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm, self.prop_extra_width, self.prop_trc_rate]
         elif isinstance(self.inventory_preset, inventory.DrillBitPreset):
             return [self.prop_name, self.prop_doc, self.prop_vfeed, self.prop_rpm]
         return []
@@ -455,6 +457,10 @@ class ToolPresetTreeItem(CAMTreeItem):
             return self.inventory_preset.maxdoc
         elif name == 'stepover':
             return 100 * self.inventory_preset.stepover if self.inventory_preset.stepover else None
+        elif name == 'extra_width':
+            return 100 * self.inventory_preset.extra_width if self.inventory_preset.extra_width is not None else None
+        elif name == 'trc_rate':
+            return 100 * self.inventory_preset.trc_rate if self.inventory_preset.trc_rate is not None else None
         else:
             return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
@@ -462,6 +468,10 @@ class ToolPresetTreeItem(CAMTreeItem):
             self.inventory_preset.maxdoc = value
         elif name == 'stepover':
             self.inventory_preset.stepover = value / 100.0
+        elif name == 'extra_width':
+            self.inventory_preset.extra_width = value / 100.0
+        elif name == 'trc_rate':
+            self.inventory_preset.trc_rate = value / 100.0
         elif name == 'name':
             self.inventory_preset.name = value
             # Update link to inventory object
@@ -474,6 +484,8 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
+        if name == 'extra_width' or name == 'trc_rate' or name == 'stepover':
+            self.document.updateCAM(preset=self)
         self.emitDataChanged()
     def returnKeyPressed(self):
         self.document.selectPresetAsDefault(self.inventory_preset.toolbit, self.inventory_preset)
@@ -606,6 +618,12 @@ class CycleTreeItem(CAMTreeItem):
                 else:
                     child.tool_preset = None
 
+def not_none(*args):
+    for i in args:
+        if i is not None:
+            return True
+    return False
+
 class PresetDerivedAttributes(object):
     def __init__(self, operation, preset=None):
         if preset is None:
@@ -617,8 +635,10 @@ class PresetDerivedAttributes(object):
         if isinstance(operation.cutter, inventory.EndMillCutter):
             self.hfeed = overrides(operation.hfeed, preset and preset.hfeed)
             self.stepover = overrides(operation.stepover, preset and 100.0 * preset.stepover)
+            self.extra_width = overrides(operation.extra_width, preset and (100.0 * preset.extra_width if preset.extra_width is not None else 0))
+            self.trc_rate = overrides(operation.trc_rate, preset and (100.0 * preset.trc_rate if preset.trc_rate is not None else 0))
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
-            self.dirty = operation.hfeed or operation.vfeed or operation.doc or operation.stepover
+            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
             self.dirty = operation.vfeed or operation.doc
     def validate(self, errors):
@@ -641,8 +661,12 @@ class PresetDerivedAttributes(object):
                     # Fake value that is never used
                     self.stepover = 0.5
     def toPreset(self, name):
+        def percent(value):
+            return value / 100.0 if value is not None else None
         if isinstance(self.operation.cutter, inventory.EndMillCutter):
-            return inventory.EndMillPreset.new(None, name, self.operation.cutter, self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover / 100.0 if self.stepover else None, self.direction)
+            return inventory.EndMillPreset.new(None, name, self.operation.cutter, 
+                self.rpm, self.hfeed, self.vfeed, self.doc,
+                percent(self.stepover), self.direction, percent(self.extra_width), percent(self.trc_rate))
         if isinstance(self.operation.cutter, inventory.DrillBitCutter):
             return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
     def resetPresetDerivedValues(self, target):
@@ -651,6 +675,8 @@ class PresetDerivedAttributes(object):
         target.stepover = None
         target.doc = None
         target.direction = None
+        target.extra_width = None
+        target.trc_rate = None
         target.emitDataChanged()
 
 class OperationTreeItem(CAMTreeItem):
@@ -663,14 +689,14 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
-    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100, allow_none=True)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=False) # TBD
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
 
     def __init__(self, document):
@@ -700,8 +726,8 @@ class OperationTreeItem(CAMTreeItem):
         self.vfeed = None
         self.doc = None
         self.stepover = None
-        self.trc_rate = 0.0
-        self.extra_width = 0
+        self.trc_rate = None
+        self.extra_width = None
         self.direction = None
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
@@ -832,6 +858,9 @@ class OperationTreeItem(CAMTreeItem):
             self.warning += "\n"
         self.warning += warning
     def updateCAM(self):
+        with view.Spinner():
+            self.updateCAMWork()
+    def updateCAMWork(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
         self.error = None
         self.warning = None
@@ -879,15 +908,15 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
-                    if self.trc_rate:
-                        self.cam.outside_contour_trochoidal(self.shape, self.extra_width / 100.0, self.trc_rate / 100.0, tabs=tabs)
+                    if pda.trc_rate:
+                        self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
                     else:
-                        self.cam.outside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
+                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
                 elif self.operation == OperationType.INSIDE_CONTOUR:
-                    if self.trc_rate:
-                        self.cam.inside_contour_trochoidal(self.shape, self.extra_width / 100.0, self.trc_rate / 100.0, tabs=tabs)
+                    if pda.trc_rate:
+                        self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
                     else:
-                        self.cam.inside_contour(self.shape, tabs=tabs, widen=self.extra_width / 50.0)
+                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
                 elif self.operation == OperationType.POCKET:
                     for island in self.islands:
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
@@ -1081,7 +1110,7 @@ class DocumentModel(QObject):
                 tool['hfeed'], tool['vfeed'], tool['rpm'], tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
-                tool.get('direction', 0))
+                tool.get('direction', 0), 0, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.refreshToolList()
@@ -1180,9 +1209,13 @@ class DocumentModel(QObject):
         if isinstance(item, OperationTreeItem):
             if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
                 item.updateCAM()
-    def updateCAM(self):
-        self.make_machine_params()
-        self.forEachOperation(lambda item: item.updateCAM())
+    def updateCAM(self, preset=None):
+        with view.Spinner():
+            self.make_machine_params()
+            if preset is None:
+                self.forEachOperation(lambda item: item.updateCAM())
+            else:
+                self.forEachOperation(lambda item: item.updateCAM() if item.tool_preset is preset.inventory_preset else None)
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]

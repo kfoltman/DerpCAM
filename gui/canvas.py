@@ -17,12 +17,13 @@ class DocumentRenderer(object):
         return max_bounds((0, 0, 1, 1), self.document.drawing.bounds())
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
-        modeData = (owner.mode, owner.mode_item)
-        self.document.drawing.renderTo(owner, modeData)
-        if owner.mode == DrawingUIMode.MODE_NORMAL:
-            self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
-            self.lastpt = PathPoint(0, 0)
-            self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
+        with view.Spinner():
+            modeData = (owner.mode, owner.mode_item)
+            self.document.drawing.renderTo(owner, modeData)
+            if owner.mode == DrawingUIMode.MODE_NORMAL:
+                self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
+                self.lastpt = PathPoint(0, 0)
+                self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
