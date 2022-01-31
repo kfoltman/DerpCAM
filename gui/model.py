@@ -857,11 +857,13 @@ class OperationTreeItem(CAMTreeItem):
         else:
             self.warning += "\n"
         self.warning += warning
+    def updateOrigShape(self):
+        self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
     def updateCAM(self):
         with view.Spinner():
             self.updateCAMWork()
     def updateCAMWork(self):
-        self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
+        self.updateOrigShape()
         self.error = None
         self.warning = None
         self.cam = None
@@ -1170,7 +1172,7 @@ class DocumentModel(QObject):
                     cycle = cycleForCutter[operation.cutter]
                     operation.cutter = cutter_map[operation.cutter]
                     operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
-                operation.updateCAM()
+                operation.updateOrigShape()
                 if operation.orig_shape is None:
                     print ("Warning: dangling reference to shape %d, ignoring the referencing operation" % (operation.shape_id, ))
                 else:
