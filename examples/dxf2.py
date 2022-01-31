@@ -542,7 +542,7 @@ class CAMMainWindow(QMainWindow):
         self.document.filename = fn
         self.document.drawingFilename = None
         self.document.load(data)
-        self.drawingChanged()
+        self.viewer.majorUpdate()
         self.projectDW.shapeTree.expandAll()
         self.projectDW.operTree.expandAll()
         self.setWindowFilePath(fn)
