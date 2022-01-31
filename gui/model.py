@@ -689,14 +689,14 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
-    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100, allow_none=True)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
     prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=False) # TBD
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
 
     def __init__(self, document):
@@ -726,8 +726,8 @@ class OperationTreeItem(CAMTreeItem):
         self.vfeed = None
         self.doc = None
         self.stepover = None
-        self.trc_rate = 0.0
-        self.extra_width = 0
+        self.trc_rate = None
+        self.extra_width = None
         self.direction = None
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
@@ -1110,7 +1110,7 @@ class DocumentModel(QObject):
                 tool['hfeed'], tool['vfeed'], tool['rpm'], tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
-                tool.get('direction', 0))
+                tool.get('direction', 0), 0, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.refreshToolList()

@@ -37,19 +37,17 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         nps = shapely.ops.nearest_points(outside, pt)
         pt2 = nps[0]
         mr = circle_size * diameter
-        weight = 0.5
+        weight = 1.0
         mx = pt.x + (pt2.x - pt.x) * weight
         my = pt.y + (pt2.y - pt.y) * weight
         margin = pt.distance(pt2)
-        addcircle = margin < 3 * diameter * circle_size
-        if addcircle:
-            if i == 0:
-                helical_entry = process.HelicalEntry(geom.PathPoint(mx, my), mr)
-            ma = geom.CandidateCircle(mx, my, mr).angle(geom.PathPoint(pt.x, pt.y))
-            zpt = geom.PathPoint(pt.x, pt.y)
-            res.append(zpt)
-            res.append(geom.PathArc(zpt, zpt, geom.CandidateCircle(mx, my, mr), int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi))
         nexti = min(i + step, ilen)
+        if i == 0:
+            helical_entry = process.HelicalEntry(geom.PathPoint(mx, my), mr)
+        ma = geom.CandidateCircle(mx, my, mr).angle(geom.PathPoint(pt.x, pt.y))
+        zpt = geom.PathPoint(pt.x, pt.y)
+        res.append(zpt)
+        res.append(geom.PathArc(zpt, zpt, geom.CandidateCircle(mx, my, mr), int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi))
         res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, i, nexti).coords]
         if i == ilen:
             break
@@ -61,15 +59,19 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
 def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, circle_size):
     import shapely.geometry
     import shapely.ops
-    dist = 0.5 * diameter + displace
-    dist2 = (0.5 + 2 * circle_size) * diameter + displace
+    dist2 = (0.5 + circle_size) * diameter + displace
+    ddist2 = -circle_size * diameter
 
-    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * geom.GeometrySettings.RESOLUTION)
-    if not res:
+    res_out = process.Shape._offset(geom.PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * geom.GeometrySettings.RESOLUTION)
+    if not res_out:
         return None
-    outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in geom.PtsFromInts(path + path[0:1])] for path in res])
+    outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in geom.PtsFromInts(path + path[0:1])] for path in res_out])
 
-    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, (dist if is_outside else -dist) * geom.GeometrySettings.RESOLUTION)
+    res = []
+    for i in res_out:
+        res_item = process.Shape._offset(i, True, (ddist2 if is_outside else -ddist2) * geom.GeometrySettings.RESOLUTION)
+        if res_item:
+            res += res_item
     if not res:
         return None
     inside = [geom.Path(geom.PtsFromInts(path), shape.closed) for path in res]
