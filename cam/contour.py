@@ -46,6 +46,8 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
             if lastc is not None and lastc.dist(pt3) > 1.01 * step:
                 i = lasti + 0.9 * (i - lasti)
                 continue
+            if lasti is not None:
+                res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, lasti, i).coords]
             break
         lastc = pt3
         nexti = min(i + step, ilen)
@@ -56,7 +58,6 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         zpt = geom.PathPoint(pt.x, pt.y)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi * (1 if climb else -1)))
-        res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, i, nexti).coords]
         if i == ilen:
             break
         lasti = i
