@@ -32,25 +32,39 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     ilen = inside.length
     if inside.is_ccw != dest_orientation:
         inside = shapely.geometry.LinearRing(inside.coords[::-1])
+    lastpt2 = None
     lastc = None
     lasti = None
     while i <= ilen:
+        step2 = 1
         while True:
             pt = inside.interpolate(i)
             nps = shapely.ops.nearest_points(outside, pt)
-            pt2 = geom.PathPoint(nps[0].x, nps[0].y)
+            if step2 == 1:
+                pt2 = geom.PathPoint(nps[0].x, nps[0].y)
+            else:
+                # Find a point somewhere in between, then find a closest match on the original outline
+                pt2 = geom.weighted(lastpt2, geom.PathPoint(nps[0].x, nps[0].y), step2)
+                nps = shapely.ops.nearest_points(outside, shapely.geometry.Point(pt2.x, pt2.y))
+                pt2 = geom.PathPoint(nps[0].x, nps[0].y)
             pt3 = geom.weighted(pt, pt2, 2) # far end of the circle, opposite pt
             mr = circle_size * diameter
             # Shorten the step if the opposite side of the circle is too far
             # away from the corresponding one for the previous step
             if lastc is not None and lastc.dist(pt3) > 1.01 * step:
-                i = lasti + 0.9 * (i - lasti)
-                continue
+                newstep = 0.9 * (i - lasti)
+                if newstep < 0.1:
+                    step2 = 0.9 * step2
+                    continue
+                else:
+                    i = lasti + newstep
+                    continue
             if lasti is not None:
                 res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, lasti, i).coords]
             break
+        lastpt2 = pt2
         lastc = pt3
-        nexti = min(i + step, ilen)
+        nexti = min(i + 2 * step, ilen)
         if i == 0:
             helical_entry = process.HelicalEntry(pt2, mr)
         c = geom.CandidateCircle(pt2.x, pt2.y, mr)
