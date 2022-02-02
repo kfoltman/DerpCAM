@@ -304,6 +304,9 @@ class BaseCut2D(Cut):
         assert subpaths
         # Not a continuous path, need to jump to a new place
         firstpt = subpaths[0].path.seg_start()
+        if subpaths[0].helical_entry:
+            he = subpaths[0].helical_entry
+            firstpt = PathPoint(he.point.x + he.r, he.point.y)
         if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
@@ -364,12 +367,13 @@ class BaseCut2D(Cut):
         z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
         if z_already_cut_here < self.curz:
             if subpath.helical_entry:
+                z_already_cut_here = z_above_cut
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             else:
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z)
             self.curz = z_already_cut_here
-        gcode.feed(subpath.tool.hfeed)
         if subpath.helical_entry is not None:
+            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             if subpath.helical_entry.point != subpath.path.seg_start():
@@ -378,9 +382,11 @@ class BaseCut2D(Cut):
                 gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
             assert self.lastpt is not None
         else:
+            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
             if newz < self.curz:
                 self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
             assert self.lastpt is not None
+        gcode.feed(subpath.tool.hfeed)
         self.curz = newz
 
     def start_cutpath(self, gcode, cutpath):
