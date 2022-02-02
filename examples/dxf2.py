@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
 import ezdxf
 import json
 from typing import Optional
@@ -326,8 +326,8 @@ class CAMMainWindow(QMainWindow):
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            #("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
-            #None,
+            ("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
@@ -342,8 +342,10 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
-    def millSelectTool(self, cutter_type=None):
-        dlg = SelectCutterDialog(self, document=self.document, cutter_type=cutter_type)
+    def millAddTool(self):
+        self.millSelectTool(dlg_type=AddCutterDialog)
+    def millSelectTool(self, cutter_type=None, dlg_type=SelectCutterDialog):
+        dlg = dlg_type(self, document=self.document, cutter_type=cutter_type)
         preset = None
         if dlg.exec_():
             if dlg.choice is Ellipsis:

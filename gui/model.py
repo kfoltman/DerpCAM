@@ -559,6 +559,13 @@ class CutterAdapter(object):
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
+class AltComboOption(object):
+    MAKE_PRESET = 1
+    def __init__(self, value):
+        self.value = value
+    def __eq__(self, other):
+        return isinstance(other, AltComboOption) and other.value == self.value
+
 class ToolPresetAdapter(object):
     def getLookupData(self, item):
         item = item[0]
@@ -568,11 +575,11 @@ class ToolPresetAdapter(object):
                 res.append((preset.id, preset.description()))
             pda = PresetDerivedAttributes(item)
             if pda.dirty:
-                res.append((Ellipsis, "<Make a preset>"))
+                res.append((AltComboOption(AltComboOption.MAKE_PRESET), "<Make a preset>"))
         return res
     def lookupById(self, id):
-        if id == Ellipsis:
-            return Ellipsis
+        if id == AltComboOption(AltComboOption.MAKE_PRESET):
+            return AltComboOption(AltComboOption.MAKE_PRESET)
         return inventory.IdSequence.lookup(id)    
 
 class CycleTreeItem(CAMTreeItem):
@@ -794,7 +801,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
             self.prop_trc_rate, self.prop_direction]
     def setPropertyValue(self, name, value):
-        if name == 'tool_preset' and value is Ellipsis:
+        if name == 'tool_preset' and value == AltComboOption(AltComboOption.MAKE_PRESET):
             from . import cutter_mgr
             dlg = cutter_mgr.AddPresetDialog()
             if dlg.exec_():

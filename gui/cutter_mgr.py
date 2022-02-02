@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import *
 from . import inventory
 
 class CutterListWidget(QTreeWidget):
-    def __init__(self, parent, toolbits, document, cutter_type):
+    def __init__(self, parent, toolbits, document, cutter_type, inventory_only=False):
         QTreeWidget.__init__(self, parent)
         self.document = document
         self.cutter_type = cutter_type
@@ -31,21 +31,27 @@ class CutterListWidget(QTreeWidget):
         self.italic_font = QFont()
         self.italic_font.setItalic(True)
 
-        self.project_toolbits = QTreeWidgetItem(["Project toolbits", "", ""])
-        self.project_toolbits.content = None
-        self.project_toolbits.setFirstColumnSpanned(True)
-        self.project_toolbits.setFont(0, self.larger_font)
-        self.insertTopLevelItem(0, self.project_toolbits)
+        item_idx = 0
+        if not inventory_only:
+            self.project_toolbits = QTreeWidgetItem(["Project toolbits", "", ""])
+            self.project_toolbits.content = None
+            self.project_toolbits.setFirstColumnSpanned(True)
+            self.project_toolbits.setFont(0, self.larger_font)
+            self.insertTopLevelItem(item_idx, self.project_toolbits)
+            item_idx += 1
+        else:
+            self.project_toolbits = None
 
         self.inventory_toolbits = QTreeWidgetItem(["Inventory toolbits", "", ""])
         self.inventory_toolbits.content = None
         self.inventory_toolbits.setFirstColumnSpanned(True)
         self.inventory_toolbits.setFont(0, self.larger_font)
-        self.insertTopLevelItem(1, self.inventory_toolbits)
+        self.insertTopLevelItem(item_idx, self.inventory_toolbits)
 
         self.setCurrentItem(self.topLevelItem(0))
-        for cycle in self.document.allCycles():
-            self.addToolbit(self.project_toolbits, cycle.cutter, cycle)
+        if not inventory_only:
+            for cycle in self.document.allCycles():
+                self.addToolbit(self.project_toolbits, cycle.cutter, cycle)
         for tb in toolbits:
             self.addToolbit(self.inventory_toolbits, tb, tb)
 
@@ -95,8 +101,13 @@ class SelectCutterDialog(QDialog):
         self.document = document
         self.cutter_type = cutter_type
         self.initUI()
-    def initUI(self):
+    def setTitle(self):
         self.setWindowTitle("Select a tool and a preset for the operation")
+    def cutterList(self):
+        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
+        return CutterListWidget(self, toolbits, self.document, self.cutter_type)
+    def initUI(self):
+        self.setTitle()
         self.cutter = None
         self.form = QFormLayout(self)
         self.selectRadio = QRadioButton("&Select a cutter and a preset", self)
@@ -104,8 +115,7 @@ class SelectCutterDialog(QDialog):
         self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
         #label.setBuddy(self.tools)
         self.form.addRow(self.selectRadio)
-        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
-        self.tools = CutterListWidget(self, toolbits, self.document, self.cutter_type)
+        self.tools = self.cutterList()
         self.tools.doubleClicked.connect(self.accept)
         self.tools.itemSelectionChanged.connect(self.toolOrPresetSelected)
         self.form.addRow(self.tools)
@@ -127,6 +137,13 @@ class SelectCutterDialog(QDialog):
         else:
             self.choice = self.tools.selectedItem()
         QDialog.accept(self)
+
+class AddCutterDialog(SelectCutterDialog):
+    def setTitle(self):
+        self.setWindowTitle("Add a tool and/or a preset to the project")
+    def cutterList(self):
+        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
+        return CutterListWidget(self, toolbits, self.document, self.cutter_type, inventory_only=True)
 
 class CreateCutterDialog(QDialog):
     def __init__(self, parent):
