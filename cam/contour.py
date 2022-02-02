@@ -65,9 +65,9 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         lastpt2 = pt2
         lastc = pt3
         nexti = min(i + 2 * step, ilen)
-        if i == 0:
-            helical_entry = process.HelicalEntry(pt2, mr)
         c = geom.CandidateCircle(pt2.x, pt2.y, mr)
+        if i == 0:
+            helical_entry = process.HelicalEntry(pt2, mr, c.angle(pt))
         ma = c.angle(geom.PathPoint(pt.x, pt.y))
         zpt = geom.PathPoint(pt.x, pt.y)
         res.append(zpt)

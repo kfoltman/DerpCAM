@@ -73,8 +73,8 @@ class Gcode(object):
     def dwell(self, millis):
         self.add("G4 P%0.0f" % millis)
 
-    def helix_turn(self, x, y, r, start_z, end_z):
-        self.linear(x = x + r, y = y)
+    def helix_turn(self, x, y, r, start_z, end_z, angle=0):
+        self.linear(x = x + r * cos(angle), y = y + r * sin(angle))
         cur_z = start_z
         delta_z = end_z - start_z
         if False: # generate 4 quadrants for a circle - seems unnecessary
@@ -85,9 +85,9 @@ class Gcode(object):
         else:
             ccw = True
             if ccw:
-                self.arc_ccw(i = -r, z = cur_z + delta_z)
+                self.arc_ccw(i = -r * cos(angle), j = r * sin(angle), z = cur_z + delta_z)
             else:
-                self.arc_cw(i = -r, z = cur_z + delta_z)
+                self.arc_cw(i = -r * cos(angle), j = r * sin(angle), z = cur_z + delta_z)
 
     def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
         if new_z == old_z:
@@ -150,11 +150,11 @@ class Gcode(object):
         cur_z = old_z
         while cur_z > new_z:
             next_z = max(new_z, cur_z - 2 * pi * r / tool.slope())
-            self.helix_turn(c.x, c.y, r, cur_z, next_z)
+            self.helix_turn(c.x, c.y, r, cur_z, next_z, helical_entry.angle)
             cur_z = next_z
-        self.helix_turn(c.x, c.y, r, next_z, next_z)
-        self.linear(x=c.x, y=c.y, z=new_z)
-        return c
+        self.helix_turn(c.x, c.y, r, cur_z, cur_z, helical_entry.angle)
+        self.linear(z=new_z)
+        return helical_entry.start
 
     def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
         if False:
@@ -306,7 +306,7 @@ class BaseCut2D(Cut):
         firstpt = subpaths[0].path.seg_start()
         if subpaths[0].helical_entry:
             he = subpaths[0].helical_entry
-            firstpt = PathPoint(he.point.x + he.r, he.point.y)
+            firstpt = he.start
         if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
@@ -376,7 +376,7 @@ class BaseCut2D(Cut):
             gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-            if subpath.helical_entry.point != subpath.path.seg_start():
+            if self.lastpt != subpath.path.seg_start():
                 # The helical entry ends somewhere else in the pocket, so feed to the right spot
                 self.lastpt = subpath.path.seg_start()
                 gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
@@ -783,7 +783,9 @@ class HelicalDrill(UntabbedOperation):
         for d in self.diameters():
             self.to_gcode_ring(gcode, d, rate_factor, machine_params)
             rate_factor = 1
-        gcode.rapid(z=machine_params.safe_z)
+        gcode.feed(self.tool.hfeed)
+        # Do not rub against the walls
+        gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
 
     def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
         r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
