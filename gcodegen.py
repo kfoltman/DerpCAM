@@ -27,8 +27,12 @@ class Gcode(object):
     def __init__(self):
         self.gcode = []
         self.last_feed = 0
+        self.last_feed_index = None
     def add(self, line):
         self.gcode.append(line)
+    def comment(self, comment):
+        comment = comment.replace("(", "<").replace(")",">")
+        self.add(f"({comment})")
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
@@ -40,8 +44,12 @@ class Gcode(object):
         self.add("M2")
     def feed(self, feed):
         if feed != self.last_feed:
-            self.add("F%0.2f" % feed)
+            if self.last_feed_index == len(self.gcode) - 1:
+                self.gcode[-1] = f"F{feed:0.2f}"
+            else:
+                self.add(f"F{feed:0.2f}")
             self.last_feed = feed
+            self.last_feed_index = len(self.gcode) - 1
     def rapid(self, x=None, y=None, z=None):
         self.add("G0" + self.enc_coords(x, y, z))
     def linear(self, x=None, y=None, z=None):
@@ -97,10 +105,12 @@ class Gcode(object):
                 old_z = semi_safe_z
             if already_cut_z is not None:
                 # Plunge at hfeed mm/min right above the cut to avoid taking ages
-                if new_z < already_cut_z and old_z > already_cut_z:
+                if new_z <= already_cut_z and old_z >= already_cut_z:
                     self.feed(tool.hfeed)
                     self.linear(z=already_cut_z)
                     old_z = already_cut_z
+                    if old_z == new_z:
+                        return
             # Use plunge rate for the last part
             self.feed(tool.vfeed)
             self.linear(z=new_z)
@@ -219,7 +229,7 @@ class MachineParams(object):
     def __init__(self, safe_z, semi_safe_z):
         self.safe_z = safe_z
         self.semi_safe_z = semi_safe_z
-        self.over_tab_safety = 0.1
+        self.over_tab_safety = 0.2
 
 class Cut(object):
     def __init__(self, machine_params, props, tool):
