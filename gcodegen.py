@@ -601,7 +601,7 @@ class Contour(TabbedOperation):
         #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, helical_entry=helical_entry) for tp, helical_entry in contour_paths]).flattened()
+            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened()
         else:
             contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened()

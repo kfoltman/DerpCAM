@@ -4,9 +4,11 @@ from geom import *
 from milling_tool import *
 
 class Tab(object):
-    def __init__(self, start, end):
+    def __init__(self, start, end, helical_entry=None):
         self.start = start
         self.end = end
+        # Entry into the part after the tab
+        self.helical_entry = helical_entry
     def cut(self, slen, elen, tlen):
         if slen >= self.end or elen <= self.start:
             return True
@@ -53,7 +55,7 @@ class Tabs(object):
         return [tab.coords(path) for tab in self.tabs]
 
 class Toolpath(object):
-    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False):
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None):
         assert isinstance(path, Path)
         self.path = path
         self.tool = tool
@@ -62,6 +64,9 @@ class Toolpath(object):
         self.transformed_cache = None
         self.lines_to_arcs_cache = None
         self.optimize_lines_cache = None
+        self.segmentation = segmentation
+        if segmentation and not helical_entry and segmentation[0][0] == 0:
+            helical_entry = segmentation[0][2]
         self.helical_entry = helical_entry
         # Allow borrowing bounds from the non-simplified shape to avoid calculating arc bounds
         self.bounds = self.calc_bounds() if bounds is None else bounds
@@ -92,26 +97,27 @@ class Toolpath(object):
             self.optimize_lines_cache = Toolpath(LineOptimizer.simplify(self.path.nodes), self.path.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.optimize_lines_cache
 
-    def subpath(self, start, end, is_tab=False):
+    def subpath(self, start, end, is_tab=False, helical_entry=None):
         path = self.path.subpath(start, end)
-        tp = Toolpath(path, self.tool, transform=self.transform, is_tab=is_tab)
-        tp.helical_entry = None
+        tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab)
         return tp
 
     def cut_by_tabs(self, tabs):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
         pos = 0
         res = []
+        helical_entry = self.helical_entry
         for tab in tabs:
             assert tab.start <= tab.end
             if pos < tab.start:
-                res.append(self.subpath(pos, tab.start, is_tab=False))
+                res.append(self.subpath(pos, tab.start, is_tab=False, helical_entry=helical_entry))
             res.append(self.subpath(tab.start, tab.end, is_tab=True))
+            helical_entry = tab.helical_entry
             # No transform on tabs, so that no time is wasted doing trochoidal
             # milling of empty space above the tab
             pos = tab.end
         if pos < self.tlength:
-            res.append(self.subpath(pos, self.tlength, is_tab=False))
+            res.append(self.subpath(pos, self.tlength, is_tab=False, helical_entry=helical_entry))
         return res
 
     def flattened(self):
@@ -140,7 +146,7 @@ class Toolpath(object):
             pos = pos - tabw / 2
             if pos >= 0:
                 if pos + tabw <= self.tlength:
-                    tablist.append(Tab(pos, pos + tabw))
+                    tablist.append(self.align_tab_to_segments(pos, pos + tabw))
                 else:
                     tablist.append(Tab(pos, self.tlength))
                     tablist.append(Tab(0, pos + tabw - self.tlength))
@@ -148,6 +154,22 @@ class Toolpath(object):
                 tablist.append(Tab(0, pos + tabw))
                 tablist.append(Tab(self.tlength + pos, self.tlength))
         return Tabs(tablist)
+    def align_tab_to_segments(self, spos, epos):
+        helical_entry = None
+        if self.segmentation:
+            cspos = 0
+            cepos = None
+            for pos1, pos2, he in self.segmentation:
+                if pos2 < spos:
+                    cspos = pos2
+                if cepos is None and pos1 >= epos:
+                    cepos = pos1
+                    helical_entry = he
+            if cepos is None:
+                cepos = epos
+            #print (spos, epos, '->', cspos, cepos)
+            spos, epos = cspos, cepos
+        return Tab(spos, epos, helical_entry)
 
 class Toolpaths(object):
     def __init__(self, toolpaths):

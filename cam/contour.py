@@ -23,7 +23,6 @@ def plain_shapely(shape, diameter, outside, displace, climb):
 def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_orientation, climb):
     import shapely.geometry
     import shapely.ops
-    helical_entry = None
     lasti = 0
     i = 0
     res = []
@@ -35,6 +34,8 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     lastpt2 = None
     lastc = None
     lasti = None
+    segmentation = []
+    outlen = 0
     while i <= ilen:
         step2 = 1
         while True:
@@ -60,23 +61,25 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
                     i = lasti + newstep
                     continue
             if lasti is not None:
+                outlen += i - lasti
                 res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, lasti, i).coords]
             break
         lastpt2 = pt2
         lastc = pt3
         nexti = min(i + 2 * step, ilen)
         c = geom.CandidateCircle(pt2.x, pt2.y, mr)
-        if i == 0:
-            helical_entry = process.HelicalEntry(pt2, mr, c.angle(pt))
-        ma = c.angle(geom.PathPoint(pt.x, pt.y))
+        arclen = 2 * geom.pi * mr
         zpt = geom.PathPoint(pt.x, pt.y)
+        ma = c.angle(zpt)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi * (1 if climb else -1)))
+        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr, ma)))
+        outlen += arclen
         if i == ilen:
             break
         lasti = i
         i = nexti
-    return geom.Path(res, True), helical_entry
+    return geom.Path(res, True), segmentation
 
 # Original curve + a 1/4 diameter circle every stepover * diameter.
 def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, circle_size):
