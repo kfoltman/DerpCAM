@@ -73,7 +73,7 @@ class Gcode(object):
     def dwell(self, millis):
         self.add("G4 P%0.0f" % millis)
 
-    def helix_turn(self, x, y, r, start_z, end_z, angle=0):
+    def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
         self.linear(x = x + r * cos(angle), y = y + r * sin(angle))
         cur_z = start_z
         delta_z = end_z - start_z
@@ -83,8 +83,7 @@ class Gcode(object):
             self.arc_ccw(x = x, y = y - r, i = r, z = cur_z + 0.75 * delta_z)
             self.arc_ccw(x = x + r, y = y, j = r, z = cur_z + delta_z)
         else:
-            ccw = True
-            if ccw:
+            if climb:
                 self.arc_ccw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
             else:
                 self.arc_cw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
@@ -150,9 +149,9 @@ class Gcode(object):
         cur_z = old_z
         while cur_z > new_z:
             next_z = max(new_z, cur_z - 2 * pi * r / tool.slope())
-            self.helix_turn(c.x, c.y, r, cur_z, next_z, helical_entry.angle)
+            self.helix_turn(c.x, c.y, r, cur_z, next_z, helical_entry.angle, helical_entry.climb)
             cur_z = next_z
-        self.helix_turn(c.x, c.y, r, cur_z, cur_z, helical_entry.angle)
+        self.helix_turn(c.x, c.y, r, cur_z, cur_z, helical_entry.angle, helical_entry.climb)
         self.linear(z=new_z)
         return helical_entry.start
 

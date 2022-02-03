@@ -73,7 +73,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         ma = c.angle(zpt)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * geom.pi * (1 if climb else -1)))
-        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr, ma)))
+        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr, ma, climb)))
         outlen += arclen
         if i == ilen:
             break
