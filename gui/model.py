@@ -641,9 +641,9 @@ class PresetDerivedAttributes(object):
         self.doc = overrides(operation.doc, preset and preset.maxdoc)
         if isinstance(operation.cutter, inventory.EndMillCutter):
             self.hfeed = overrides(operation.hfeed, preset and preset.hfeed)
-            self.stepover = overrides(operation.stepover, preset and 100.0 * preset.stepover)
-            self.extra_width = overrides(operation.extra_width, preset and (100.0 * preset.extra_width if preset.extra_width is not None else 0))
-            self.trc_rate = overrides(operation.trc_rate, preset and (100.0 * preset.trc_rate if preset.trc_rate is not None else 0))
+            self.stepover = overrides(operation.stepover, preset and preset.stepover and 100.0 * preset.stepover)
+            self.extra_width = overrides(operation.extra_width, (100.0 * preset.extra_width if preset and preset.extra_width is not None else 0))
+            self.trc_rate = overrides(operation.trc_rate, (100.0 * preset.trc_rate if preset and preset.trc_rate is not None else 0))
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
             self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
