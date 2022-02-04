@@ -316,7 +316,11 @@ class BaseCut2D(Cut):
         if subpaths[0].helical_entry:
             he = subpaths[0].helical_entry
             firstpt = he.start
-        if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
+        # Assuming <1% of tool diameter of a gap is harmless enough. The tolerance
+        # needs to be low enough to avoid exceeding cutter engagement specified,
+        # but high enough not to be tripped by rasterization errors from
+        # pyclipper etc.
+        if self.lastpt is None or dist(self.lastpt, firstpt) >= self.tool.diameter / 100.0:
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
             else:
@@ -325,6 +329,12 @@ class BaseCut2D(Cut):
                 # good enough.
                 gcode.rapid(x=firstpt.x, y=firstpt.y)
             self.lastpt = firstpt
+        else:
+            # Minor discrepancies might lead to problems with arcs etc. so fix them
+            # by adding a simple line segment.
+            if dist(self.lastpt, firstpt) >= 0.001:
+                gcode.linear(x=firstpt.x, y=firstpt.y)
+                self.lastpt = firstpt
         # print ("Layer at %f, %d subpaths" % (self.depth, len(subpaths)))
         for subpath in subpaths:
             # print ("Start", self.lastpt, subpath.points[0])
