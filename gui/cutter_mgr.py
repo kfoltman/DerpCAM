@@ -6,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from . import inventory
+from . import inventory, model
 
 class CutterListWidget(QTreeWidget):
     def __init__(self, parent, toolbits, document, cutter_type, inventory_only=False):
@@ -130,7 +130,7 @@ class SelectCutterDialog(QDialog):
         self.addRadio.pressed.connect(lambda: self.tools.setEnabled(False))
         self.toolOrPresetSelected()
     def toolOrPresetSelected(self):
-        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(self.tools.selectedItem() is not None)
+        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled((self.tools.selectedItem() is not None) or (self.addRadio.isChecked()))
     def accept(self):
         if self.addRadio.isChecked():
             self.choice = Ellipsis
@@ -221,9 +221,9 @@ class CreateCutterDialog(QDialog):
             self.nameEdit.setFocus()
             return
         if self.emRadio.isChecked():
-            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.carbide, diameter, length, flutes)
+            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.carbide, diameter, self.length, flutes)
         if self.drillRadio.isChecked():
-            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, length)
+            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, self.length)
         QDialog.accept(self)
 
 class AddPresetDialog(QDialog):
@@ -257,3 +257,49 @@ def loadInventory():
 def saveInventory():
     inventory.inventory.writeTo(QStandardPaths.writableLocation(QStandardPaths.DataLocation), "tools.json")
 
+def selectCutter(parent, dlg_type, document, cutter_type):
+    dlg = dlg_type(parent, document=document, cutter_type=cutter_type)
+    preset = None
+    if dlg.exec_():
+        if dlg.choice is Ellipsis:
+            dlg = CreateCutterDialog(parent)
+            if dlg.exec_():
+                cutter = dlg.cutter
+                # inventory.inventory.toolbits.append(cutter)
+                # saveInventory()
+            else:
+                return False
+        else:
+            if isinstance(dlg.choice, model.CycleTreeItem):
+                # project's tool/cycle
+                document.selectCutterCycle(dlg.choice)
+                document.selectPresetAsDefault(dlg.choice.cutter, None)
+                return True
+            elif isinstance(dlg.choice, inventory.CutterBase):
+                # inventory tool
+                cutter = dlg.choice.newInstance()
+            else:
+                assert isinstance(dlg.choice, tuple)
+                parent, parent_preset = dlg.choice
+                if isinstance(parent, model.CycleTreeItem):
+                    # project's preset
+                    document.selectCutterCycle(parent)
+                    document.selectPresetAsDefault(parent.cutter, parent_preset)
+                    return True
+                else:
+                    cutter, preset, add = document.opAddLibraryPreset(parent_preset)
+                    if not add:
+                        if document.current_cutter_cycle.cutter is not cutter:
+                            for i in document.allCycles():
+                                if i.cutter is cutter:
+                                    document.selectCutterCycle(i)
+                                    break
+                        document.selectPresetAsDefault(cutter, preset)
+                        #self.projectDW.shapeTree.expand(document.itemForCutter(cutter).index())
+                        return True
+    else:
+        return False
+    cycle = document.opAddCutter(cutter)
+    if preset:
+        document.selectPresetAsDefault(cycle.cutter, preset)
+    return True

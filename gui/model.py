@@ -560,26 +560,29 @@ class CutterAdapter(object):
         return inventory.IdSequence.lookup(id)    
 
 class AltComboOption(object):
-    MAKE_PRESET = 1
-    def __init__(self, value):
-        self.value = value
-    def __eq__(self, other):
-        return isinstance(other, AltComboOption) and other.value == self.value
+    pass
+
+class SavePresetOption(AltComboOption):
+    pass
+
+class LoadPresetOption(AltComboOption):
+    pass
 
 class ToolPresetAdapter(object):
     def getLookupData(self, item):
         item = item[0]
         res = []
         if item.cutter:
-            for preset in item.cutter.presets:
-                res.append((preset.id, preset.description()))
             pda = PresetDerivedAttributes(item)
             if pda.dirty:
-                res.append((AltComboOption(AltComboOption.MAKE_PRESET), "<Make a preset>"))
+                res.append((SavePresetOption(), "<Convert to a preset>"))
+            for preset in item.cutter.presets:
+                res.append((preset.id, preset.description()))
+            res.append((LoadPresetOption(), "<Load a preset>"))
         return res
     def lookupById(self, id):
-        if id == AltComboOption(AltComboOption.MAKE_PRESET):
-            return AltComboOption(AltComboOption.MAKE_PRESET)
+        if isinstance(id, AltComboOption):
+            return id
         return inventory.IdSequence.lookup(id)    
 
 class CycleTreeItem(CAMTreeItem):
@@ -660,7 +663,7 @@ class PresetDerivedAttributes(object):
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
                 if self.operation.operation == OperationType.POCKET:
-                    if stepover is None:
+                    if self.stepover is None:
                         errors.append("Horizontal stepover is not set")
                     else:
                         errors.append("Horizontal stepover is out of range")
@@ -801,17 +804,29 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
             self.prop_trc_rate, self.prop_direction]
     def setPropertyValue(self, name, value):
-        if name == 'tool_preset' and value == AltComboOption(AltComboOption.MAKE_PRESET):
-            from . import cutter_mgr
-            dlg = cutter_mgr.AddPresetDialog()
-            if dlg.exec_():
-                pda = PresetDerivedAttributes(self)
-                self.tool_preset = pda.toPreset(dlg.presetName)
-                self.cutter.presets.append(self.tool_preset)
-                pda.resetPresetDerivedValues(self)
-                self.document.refreshToolList()
-                self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
-            return
+        if name == 'tool_preset':
+            if isinstance(value, SavePresetOption):
+                from . import cutter_mgr
+                dlg = cutter_mgr.AddPresetDialog()
+                if dlg.exec_():
+                    pda = PresetDerivedAttributes(self)
+                    self.tool_preset = pda.toPreset(dlg.presetName)
+                    self.cutter.presets.append(self.tool_preset)
+                    pda.resetPresetDerivedValues(self)
+                    self.document.refreshToolList()
+                    self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
+                return
+            if isinstance(value, LoadPresetOption):
+                from . import cutter_mgr
+                cutter_type = inventory.DrillBitCutter if self.operation == OperationType.DRILLED_HOLE else inventory.EndMillCutter
+                if cutter_mgr.selectCutter(None, cutter_mgr.SelectCutterDialog, self.document, cutter_type):
+                    if self.cutter is not self.document.current_cutter_cycle.cutter:
+                        self.document.opMoveItem(self.parent(), self, self.document.current_cutter_cycle, 0)
+                        self.cutter = self.document.current_cutter_cycle.cutter
+                    self.tool_preset = self.document.default_preset_by_tool.get(self.cutter, None)
+                    self.updateCAM()
+                    self.document.refreshToolList()
+                return
         setattr(self, name, value)
         self.onPropertyValueSet(name)
     def onPropertyValueSet(self, name):
