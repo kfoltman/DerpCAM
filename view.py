@@ -321,6 +321,7 @@ def init_app():
     global app
     if app is None:
         app = QApplication(sys.argv)
+        app.processEvents()
 
 def viewer_modal(operations):
     global app
