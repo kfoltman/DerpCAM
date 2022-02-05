@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory, selectCutter
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, loadInventory, saveInventory, selectCutter
 import ezdxf
 import json
 from typing import Optional
@@ -330,7 +330,7 @@ class CAMMainWindow(QMainWindow):
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            ("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
             None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),

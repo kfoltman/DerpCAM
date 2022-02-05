@@ -9,10 +9,12 @@ from PyQt5.QtWidgets import *
 from . import inventory, model
 
 class CutterListWidget(QTreeWidget):
-    def __init__(self, parent, toolbits, document, cutter_type, inventory_only=False):
+    def __init__(self, parent, toolbits_func, document, cutter_type, inventory_only=False):
         QTreeWidget.__init__(self, parent)
         self.document = document
+        self.toolbits_func = toolbits_func
         self.cutter_type = cutter_type
+        self.inventory_only = inventory_only
         self.selected_cycle = self.document.current_cutter_cycle
         if self.selected_cycle is not None:
             self.selected_preset = self.document.default_preset_by_tool.get(self.selected_cycle.cutter, None)
@@ -32,50 +34,68 @@ class CutterListWidget(QTreeWidget):
         self.italic_font.setItalic(True)
 
         item_idx = 0
-        if not inventory_only:
-            self.project_toolbits = QTreeWidgetItem(["Project toolbits", "", ""])
+        if not self.inventory_only:
+            self.project_toolbits = QTreeWidgetItem(["Cutters in the project"])
             self.project_toolbits.content = None
-            self.project_toolbits.setFirstColumnSpanned(True)
             self.project_toolbits.setFont(0, self.larger_font)
             self.insertTopLevelItem(item_idx, self.project_toolbits)
+            self.project_toolbits.setFirstColumnSpanned(True)
             item_idx += 1
         else:
             self.project_toolbits = None
 
-        self.inventory_toolbits = QTreeWidgetItem(["Inventory toolbits", "", ""])
+        self.inventory_toolbits = QTreeWidgetItem(["Cutters in the global inventory"])
         self.inventory_toolbits.content = None
-        self.inventory_toolbits.setFirstColumnSpanned(True)
         self.inventory_toolbits.setFont(0, self.larger_font)
         self.insertTopLevelItem(item_idx, self.inventory_toolbits)
+        self.inventory_toolbits.setFirstColumnSpanned(True)
 
         self.setCurrentItem(self.topLevelItem(0))
-        if not inventory_only:
-            for cycle in self.document.allCycles():
-                self.addToolbit(self.project_toolbits, cycle.cutter, cycle)
-        for tb in toolbits:
-            self.addToolbit(self.inventory_toolbits, tb, tb)
+        self.refreshCutters(self.selected_cycle if self.selected_preset is None else self.selected_preset)
 
         #self.setRootIsDecorated(False)
-        self.expandAll()
         self.resizeColumnToContents(0)
+        self.setColumnWidth(0, self.columnWidth(0) + 30)
         self.resizeColumnToContents(1)
         self.resizeColumnToContents(2)
-    def addToolbit(self, output_list, tb, tb_obj):
+    def refreshCutters(self, current_item):
+        if self.project_toolbits is not None:
+            self.project_toolbits.takeChildren()
+        self.inventory_toolbits.takeChildren()
+        if not self.inventory_only:
+            for cycle in self.document.allCycles():
+                self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item)
+            #self.addVirtualToolbit(self.project_toolbits, "Create a new cutter for this project only")
+        for tb in self.toolbits_func():
+            self.addToolbit(self.inventory_toolbits, tb, tb, current_item)
+        #self.addVirtualToolbit(self.inventory_toolbits, "Create a new cutter in the inventory")
+        self.expandAll()
+    def addVirtualToolbit(self, parent, command):
+        cutter = QTreeWidgetItem([command])
+        cutter.setFirstColumnSpanned(True)
+        cutter.content = None
+        cutter.setForeground(0, QColor(64, 64, 64))
+        cutter.setFont(0, self.italic_font)
+        parent.addChild(cutter)
+    def addToolbit(self, output_list, tb, tb_obj, current_item):
         if self.cutter_type is not None and not isinstance(tb, self.cutter_type):
             return
+        is_global = output_list is self.project_toolbits
         self.lookup.append(tb)
         cutter = QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()])
+        cutter.is_global = is_global
         cutter.content = tb_obj
         self.setItemFont(cutter, self.larger_font)
         currentItem = None
-        if tb_obj is self.selected_cycle:
+        if tb_obj is current_item:
             currentItem = cutter
         for j in tb.presets:
             preset = QTreeWidgetItem(["Preset", j.name, j.description_only()])
+            preset.is_global = is_global
             self.setItemFont(preset, self.italic_font)
             preset.content = (tb_obj, j)
             cutter.addChild(preset)
-            if j is self.selected_preset:
+            if j is current_item:
                 currentItem = preset
         if False:
             addnew = QTreeWidgetItem(["Preset", "<add new>", "Add new preset for this cutter"])
@@ -103,61 +123,155 @@ class SelectCutterDialog(QDialog):
         self.initUI()
     def setTitle(self):
         self.setWindowTitle("Select a tool and a preset for the operation")
+        self.prompt = "&Select or create a cutter and an optional preset to use for the cutting operation"
+    def getCutters(self):
+        return sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
     def cutterList(self):
-        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
-        return CutterListWidget(self, toolbits, self.document, self.cutter_type)
+        return CutterListWidget(self, self.getCutters, self.document, self.cutter_type)
     def initUI(self):
         self.setTitle()
         self.cutter = None
         self.form = QFormLayout(self)
-        self.selectRadio = QRadioButton("&Select a cutter and a preset", self)
-        self.selectRadio.setChecked(True)
-        self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
-        #label.setBuddy(self.tools)
-        self.form.addRow(self.selectRadio)
+        label = QLabel(self.prompt)
+        self.form.addRow(label)
+        #self.selectRadio = QRadioButton(self.prompt, self)
+        #self.selectRadio.setChecked(True)
+        #self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
+        #self.form.addRow(self.selectRadio)
         self.tools = self.cutterList()
+        label.setBuddy(self.tools)
         self.tools.doubleClicked.connect(self.accept)
         self.tools.itemSelectionChanged.connect(self.toolOrPresetSelected)
         self.form.addRow(self.tools)
-        self.addRadio = QRadioButton("&Create a new cutter", self)
-        self.form.addRow(self.addRadio)
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.actionLayout = QHBoxLayout()
+        self.newButton = QPushButton()
+        self.editButton = QPushButton()
+        self.deleteButton = QPushButton()
+        self.newButton.clicked.connect(self.newAction)
+        self.editButton.clicked.connect(self.editAction)
+        self.deleteButton.clicked.connect(self.deleteAction)
+        self.actionLayout.addWidget(self.newButton)
+        self.actionLayout.addWidget(self.editButton)
+        self.actionLayout.addWidget(self.deleteButton)
+        self.form.addRow(self.actionLayout)
+        self.buttonBox = QDialogButtonBox()
+        self.buttonBox.addButton(QDialogButtonBox.Ok)
+        self.buttonBox.addButton(QDialogButtonBox.Cancel)
         self.form.addRow(self.buttonBox)
         self.tools.setFocus(Qt.PopupFocusReason)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
-        self.selectRadio.pressed.connect(lambda: self.tools.setEnabled(True))
-        self.addRadio.pressed.connect(lambda: self.tools.setEnabled(False))
         self.toolOrPresetSelected()
     def toolOrPresetSelected(self):
-        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled((self.tools.selectedItem() is not None) or (self.addRadio.isChecked()))
-    def accept(self):
-        if self.addRadio.isChecked():
-            self.choice = Ellipsis
+        def setButtons(newText, editText, deleteText):
+            self.newButton.setText(newText or "New...")
+            self.editButton.setText(editText or "Modify...")
+            self.deleteButton.setText(deleteText or "Delete")
+            self.newButton.setEnabled(newText is not None)
+            self.editButton.setEnabled(editText is not None)
+            self.deleteButton.setEnabled(deleteText is not None)
+        item = self.tools.currentItem()
+        if item is None:
+            setButtons(None, None, None)
+        elif item is self.tools.project_toolbits:
+            setButtons("&New cutter (project)...", None, None)
+        elif item is self.tools.inventory_toolbits:
+            setButtons("&New cutter (inventory)...", None, None)
+        elif isinstance(item.content, inventory.CutterBase):
+            setButtons("&Create preset...", "&Modify cutter...", "&Delete cutter")
+        elif isinstance(item.content, tuple):
+            setButtons("&Create preset...", "&Modify preset...", "&Delete preset")
         else:
-            self.choice = self.tools.selectedItem()
-        QDialog.accept(self)
+            setButtons(None, None, None)
+        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(self.tools.selectedItem() is not None)
+    def newAction(self):
+        item = self.tools.currentItem()
+        if item is None:
+            return
+        elif item is self.tools.project_toolbits:
+            self.newCutterAction(is_global=False)
+        elif item is self.tools.inventory_toolbits:
+            self.newCutterAction(is_global=True)
+        elif isinstance(item.content, inventory.CutterBase):
+            self.newPresetAction(item.content, item.is_global)
+        elif isinstance(item.content, tuple):
+            self.newPresetAction(item.content[1], item.is_global)
+    def newCutterAction(self, is_global):
+        dlg = CreateEditCutterDialog(self.parent(), None)
+        if dlg.exec_():
+            cutter = dlg.cutter
+            if is_global:
+                inventory.inventory.toolbits.append(cutter)
+                saveInventory()
+            else:
+                self.document.opAddCutter(cutter)
+            self.tools.refreshCutters(cutter)
+    def newPresetAction(self, cutter, is_global):
+        QMessageBox.critical(self, "New preset", "Not implemented yet")
+    def editAction(self):
+        item = self.tools.currentItem()
+        if item is None:
+            return
+        elif isinstance(item.content, inventory.CutterBase):
+            self.editCutterAction(item.content, item.is_global)
+        elif isinstance(item.content, tuple):
+            self.editPresetAction(item.content[1], item.is_global)
+    def editCutterAction(self, cutter, is_global):
+        dlg = CreateEditCutterDialog(self.parent(), cutter)
+        if dlg.exec_():
+            modified_cutter = dlg.cutter
+            cutter.name = modified_cutter.name
+            cutter.resetTo(modified_cutter)
+            if is_global:
+                saveInventory()
+                # XXXKF check the project for a local version of this cutter
+                # 1. If renamed, offer updating the local name?
+                # 2. If modified, offer resetting? (or only if unmodified? only changed values?)
+            self.tools.refreshCutters(cutter)
+    def editPresetAction(self, cutter, is_global):
+        QMessageBox.critical(self, "Edit preset", "Not implemented yet")
+    def deleteAction(self):
+        item = self.tools.currentItem()
+        if item is None:
+            return
+        elif isinstance(item.content, inventory.CutterBase):
+            self.deleteCutterAction(item.content, item.is_global)
+        elif isinstance(item.content, tuple):
+            self.deletePresetAction(item.content[1], item.is_global)
+    def deleteCutterAction(self, cutter, is_global):
+        QMessageBox.critical(self, "Delete cutter", "Not implemented yet")
+    def deletePresetAction(self, preset, is_global):
+        QMessageBox.critical(self, "Delete preset", "Not implemented yet")
+    def accept(self):
+        self.choice = self.tools.selectedItem()
+        if self.choice:
+            QDialog.accept(self)
 
 class AddCutterDialog(SelectCutterDialog):
     def setTitle(self):
         self.setWindowTitle("Add a tool and/or a preset to the project")
+        self.prompt = "&Select a cutter and/or a preset from the global inventory to add to the project"
+    def getCutters(self):
+        return sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
     def cutterList(self):
-        toolbits = sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
-        return CutterListWidget(self, toolbits, self.document, self.cutter_type, inventory_only=True)
+        return CutterListWidget(self, self.getCutters, self.document, self.cutter_type, inventory_only=True)
 
-class CreateCutterDialog(QDialog):
-    def __init__(self, parent):
+class CreateEditCutterDialog(QDialog):
+    def __init__(self, parent, cutter):
         QDialog.__init__(self, parent)
+        self.edit_cutter = cutter
         self.initUI()
     def initUI(self):
-        self.setWindowTitle("Create a new tool and add it to the project")
+        if self.edit_cutter:
+            self.setWindowTitle("Modify an existing cutter")
+        else:
+            self.setWindowTitle("Create a new cutter")
         self.cutter = None
         self.form = QFormLayout(self)
         self.nameEdit = QLineEdit()
         self.form.addRow("Name", self.nameEdit)
         self.form.addRow(QLabel("Select the type of a cutter to create"))
         self.emRadio = QRadioButton("&End mill", self)
-        self.emRadio.setChecked(True)
         self.form.addRow(self.emRadio)
         self.drillRadio = QRadioButton("&Drill bit", self)
         self.form.addRow(self.drillRadio)
@@ -171,15 +285,31 @@ class CreateCutterDialog(QDialog):
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         self.form.addRow(self.buttonBox)
-        self.emRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(True))
-        self.drillRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(False))
+        if self.edit_cutter:
+            self.nameEdit.setText(self.edit_cutter.name)
+            self.flutesEdit.setText(str(self.edit_cutter.flutes) if self.edit_cutter.flutes else "")
+            self.diameterEdit.setText(str(self.edit_cutter.diameter))
+            self.lengthEdit.setText(str(self.edit_cutter.length) if self.edit_cutter.length else "")
+            if isinstance(self.edit_cutter, inventory.EndMillCutter):
+                self.emRadio.setChecked(True)
+                self.flutesEdit.setEnabled(True)
+            elif isinstance(self.edit_cutter, inventory.DrillBitCutter):
+                self.drillRadio.setChecked(True)
+                self.flutesEdit.setEnabled(False)
+            self.emRadio.setEnabled(False)
+            self.drillRadio.setEnabled(False)
+        else:
+            self.emRadio.setChecked(True)
+            self.emRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(True))
+            self.drillRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(False))
     def accept(self):
         name = self.nameEdit.text()
         if name == '':
             QMessageBox.critical(self, None, "Name is required")
             self.nameEdit.setFocus()
             return
-        if inventory.inventory.toolbitByName(name):
+        existing = inventory.inventory.toolbitByName(name)
+        if existing and existing is not self.edit_cutter:
             QMessageBox.critical(self, None, "Name is required to be unique")
             self.nameEdit.setFocus()
             return
