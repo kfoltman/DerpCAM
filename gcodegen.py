@@ -27,8 +27,12 @@ class Gcode(object):
     def __init__(self):
         self.gcode = []
         self.last_feed = 0
+        self.last_feed_index = None
     def add(self, line):
         self.gcode.append(line)
+    def comment(self, comment):
+        comment = comment.replace("(", "<").replace(")",">")
+        self.add(f"({comment})")
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
@@ -40,8 +44,12 @@ class Gcode(object):
         self.add("M2")
     def feed(self, feed):
         if feed != self.last_feed:
-            self.add("F%0.2f" % feed)
+            if self.last_feed_index == len(self.gcode) - 1:
+                self.gcode[-1] = f"F{feed:0.2f}"
+            else:
+                self.add(f"F{feed:0.2f}")
             self.last_feed = feed
+            self.last_feed_index = len(self.gcode) - 1
     def rapid(self, x=None, y=None, z=None):
         self.add("G0" + self.enc_coords(x, y, z))
     def linear(self, x=None, y=None, z=None):
@@ -73,8 +81,8 @@ class Gcode(object):
     def dwell(self, millis):
         self.add("G4 P%0.0f" % millis)
 
-    def helix_turn(self, x, y, r, start_z, end_z):
-        self.linear(x = x + r, y = y)
+    def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
+        self.linear(x = x + r * cos(angle), y = y + r * sin(angle))
         cur_z = start_z
         delta_z = end_z - start_z
         if False: # generate 4 quadrants for a circle - seems unnecessary
@@ -83,11 +91,10 @@ class Gcode(object):
             self.arc_ccw(x = x, y = y - r, i = r, z = cur_z + 0.75 * delta_z)
             self.arc_ccw(x = x + r, y = y, j = r, z = cur_z + delta_z)
         else:
-            ccw = True
-            if ccw:
-                self.arc_ccw(i = -r, z = cur_z + delta_z)
+            if climb:
+                self.arc_ccw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
             else:
-                self.arc_cw(i = -r, z = cur_z + delta_z)
+                self.arc_cw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
 
     def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
         if new_z == old_z:
@@ -98,10 +105,12 @@ class Gcode(object):
                 old_z = semi_safe_z
             if already_cut_z is not None:
                 # Plunge at hfeed mm/min right above the cut to avoid taking ages
-                if new_z < already_cut_z and old_z > already_cut_z:
+                if new_z <= already_cut_z and old_z >= already_cut_z:
                     self.feed(tool.hfeed)
                     self.linear(z=already_cut_z)
                     old_z = already_cut_z
+                    if old_z == new_z:
+                        return
             # Use plunge rate for the last part
             self.feed(tool.vfeed)
             self.linear(z=new_z)
@@ -150,11 +159,11 @@ class Gcode(object):
         cur_z = old_z
         while cur_z > new_z:
             next_z = max(new_z, cur_z - 2 * pi * r / tool.slope())
-            self.helix_turn(c.x, c.y, r, cur_z, next_z)
+            self.helix_turn(c.x, c.y, r, cur_z, next_z, helical_entry.angle, helical_entry.climb)
             cur_z = next_z
-        self.helix_turn(c.x, c.y, r, next_z, next_z)
-        self.linear(x=c.x, y=c.y, z=new_z)
-        return c
+        self.helix_turn(c.x, c.y, r, cur_z, cur_z, helical_entry.angle, helical_entry.climb)
+        self.linear(z=new_z)
+        return helical_entry.start
 
     def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
         if False:
@@ -220,7 +229,7 @@ class MachineParams(object):
     def __init__(self, safe_z, semi_safe_z):
         self.safe_z = safe_z
         self.semi_safe_z = semi_safe_z
-        self.over_tab_safety = 0.1
+        self.over_tab_safety = 0.2
 
 class Cut(object):
     def __init__(self, machine_params, props, tool):
@@ -304,7 +313,14 @@ class BaseCut2D(Cut):
         assert subpaths
         # Not a continuous path, need to jump to a new place
         firstpt = subpaths[0].path.seg_start()
-        if self.lastpt is None or dist(self.lastpt, firstpt) > (1 / 1000):
+        if subpaths[0].helical_entry:
+            he = subpaths[0].helical_entry
+            firstpt = he.start
+        # Assuming <1% of tool diameter of a gap is harmless enough. The tolerance
+        # needs to be low enough to avoid exceeding cutter engagement specified,
+        # but high enough not to be tripped by rasterization errors from
+        # pyclipper etc.
+        if self.lastpt is None or dist(self.lastpt, firstpt) >= self.tool.diameter / 100.0:
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
             else:
@@ -313,6 +329,12 @@ class BaseCut2D(Cut):
                 # good enough.
                 gcode.rapid(x=firstpt.x, y=firstpt.y)
             self.lastpt = firstpt
+        else:
+            # Minor discrepancies might lead to problems with arcs etc. so fix them
+            # by adding a simple line segment.
+            if dist(self.lastpt, firstpt) >= 0.001:
+                gcode.linear(x=firstpt.x, y=firstpt.y)
+                self.lastpt = firstpt
         # print ("Layer at %f, %d subpaths" % (self.depth, len(subpaths)))
         for subpath in subpaths:
             # print ("Start", self.lastpt, subpath.points[0])
@@ -364,23 +386,26 @@ class BaseCut2D(Cut):
         z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
         if z_already_cut_here < self.curz:
             if subpath.helical_entry:
+                z_already_cut_here = z_above_cut
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             else:
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z)
             self.curz = z_already_cut_here
-        gcode.feed(subpath.tool.hfeed)
         if subpath.helical_entry is not None:
+            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-            if subpath.helical_entry.point != subpath.path.seg_start():
+            if self.lastpt != subpath.path.seg_start():
                 # The helical entry ends somewhere else in the pocket, so feed to the right spot
                 self.lastpt = subpath.path.seg_start()
                 gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
             assert self.lastpt is not None
         else:
+            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
             if newz < self.curz:
                 self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
             assert self.lastpt is not None
+        gcode.feed(subpath.tool.hfeed)
         self.curz = newz
 
     def start_cutpath(self, gcode, cutpath):
@@ -650,7 +675,7 @@ class Contour(TabbedOperation):
         #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, helical_entry=helical_entry) for tp, helical_entry in contour_paths]).flattened()
+            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened()
         else:
             contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened()
@@ -832,7 +857,9 @@ class HelicalDrill(UntabbedOperation):
         for d in self.diameters():
             self.to_gcode_ring(gcode, d, rate_factor, machine_params)
             rate_factor = 1
-        gcode.rapid(z=machine_params.safe_z)
+        gcode.feed(self.tool.hfeed)
+        # Do not rub against the walls
+        gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
 
     def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
         r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)

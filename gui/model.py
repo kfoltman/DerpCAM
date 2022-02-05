@@ -559,20 +559,30 @@ class CutterAdapter(object):
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
+class AltComboOption(object):
+    pass
+
+class SavePresetOption(AltComboOption):
+    pass
+
+class LoadPresetOption(AltComboOption):
+    pass
+
 class ToolPresetAdapter(object):
     def getLookupData(self, item):
         item = item[0]
         res = []
         if item.cutter:
-            for preset in item.cutter.presets:
-                res.append((preset.id, preset.description()))
             pda = PresetDerivedAttributes(item)
             if pda.dirty:
-                res.append((Ellipsis, "<Make a preset>"))
+                res.append((SavePresetOption(), "<Convert to a preset>"))
+            for preset in item.cutter.presets:
+                res.append((preset.id, preset.description()))
+            res.append((LoadPresetOption(), "<Load a preset>"))
         return res
     def lookupById(self, id):
-        if id == Ellipsis:
-            return Ellipsis
+        if isinstance(id, AltComboOption):
+            return id
         return inventory.IdSequence.lookup(id)    
 
 class CycleTreeItem(CAMTreeItem):
@@ -634,9 +644,9 @@ class PresetDerivedAttributes(object):
         self.doc = overrides(operation.doc, preset and preset.maxdoc)
         if isinstance(operation.cutter, inventory.EndMillCutter):
             self.hfeed = overrides(operation.hfeed, preset and preset.hfeed)
-            self.stepover = overrides(operation.stepover, preset and 100.0 * preset.stepover)
-            self.extra_width = overrides(operation.extra_width, preset and (100.0 * preset.extra_width if preset.extra_width is not None else 0))
-            self.trc_rate = overrides(operation.trc_rate, preset and (100.0 * preset.trc_rate if preset.trc_rate is not None else 0))
+            self.stepover = overrides(operation.stepover, preset and preset.stepover and 100.0 * preset.stepover)
+            self.extra_width = overrides(operation.extra_width, (100.0 * preset.extra_width if preset and preset.extra_width is not None else 0))
+            self.trc_rate = overrides(operation.trc_rate, (100.0 * preset.trc_rate if preset and preset.trc_rate is not None else 0))
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
             self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
@@ -653,7 +663,7 @@ class PresetDerivedAttributes(object):
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
                 if self.operation.operation == OperationType.POCKET:
-                    if stepover is None:
+                    if self.stepover is None:
                         errors.append("Horizontal stepover is not set")
                     else:
                         errors.append("Horizontal stepover is out of range")
@@ -794,17 +804,29 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
             self.prop_trc_rate, self.prop_direction]
     def setPropertyValue(self, name, value):
-        if name == 'tool_preset' and value is Ellipsis:
-            from . import cutter_mgr
-            dlg = cutter_mgr.AddPresetDialog()
-            if dlg.exec_():
-                pda = PresetDerivedAttributes(self)
-                self.tool_preset = pda.toPreset(dlg.presetName)
-                self.cutter.presets.append(self.tool_preset)
-                pda.resetPresetDerivedValues(self)
-                self.document.refreshToolList()
-                self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
-            return
+        if name == 'tool_preset':
+            if isinstance(value, SavePresetOption):
+                from . import cutter_mgr
+                dlg = cutter_mgr.AddPresetDialog()
+                if dlg.exec_():
+                    pda = PresetDerivedAttributes(self)
+                    self.tool_preset = pda.toPreset(dlg.presetName)
+                    self.cutter.presets.append(self.tool_preset)
+                    pda.resetPresetDerivedValues(self)
+                    self.document.refreshToolList()
+                    self.document.selectPresetAsDefault(self.tool_preset.toolbit, self.tool_preset)
+                return
+            if isinstance(value, LoadPresetOption):
+                from . import cutter_mgr
+                cutter_type = inventory.DrillBitCutter if self.operation == OperationType.DRILLED_HOLE else inventory.EndMillCutter
+                if cutter_mgr.selectCutter(None, cutter_mgr.SelectCutterDialog, self.document, cutter_type):
+                    if self.cutter is not self.document.current_cutter_cycle.cutter:
+                        self.document.opMoveItem(self.parent(), self, self.document.current_cutter_cycle, 0)
+                        self.cutter = self.document.current_cutter_cycle.cutter
+                    self.tool_preset = self.document.default_preset_by_tool.get(self.cutter, None)
+                    self.updateCAM()
+                    self.document.refreshToolList()
+                return
         setattr(self, name, value)
         self.onPropertyValueSet(name)
     def onPropertyValueSet(self, name):

@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory, selectCutter
 import ezdxf
 import json
 from typing import Optional
@@ -151,6 +151,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.refreshToolList()
     def onToolListRefreshed(self):
         self.shapeTree.expandAll()
+    def onCutterSelected(self, cutter_cycle):
+        if cutter_cycle:
+            self.operTree.expand(cutter_cycle.index())
     def toolRevertFromInventory(self, item):
         # XXXKF undo
         if item.inventory_tool.base_object:
@@ -305,6 +308,7 @@ class CAMMainWindow(QMainWindow):
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
+        self.document.cutterSelected.connect(self.projectDW.onCutterSelected)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
@@ -326,8 +330,8 @@ class CAMMainWindow(QMainWindow):
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            #("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
-            #None,
+            ("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
@@ -342,51 +346,13 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
-    def millSelectTool(self, cutter_type=None):
-        dlg = SelectCutterDialog(self, document=self.document, cutter_type=cutter_type)
-        preset = None
-        if dlg.exec_():
-            if dlg.choice is Ellipsis:
-                dlg = CreateCutterDialog(self)
-                if dlg.exec_():
-                    cutter = dlg.cutter
-                    # inventory.inventory.toolbits.append(cutter)
-                    # saveInventory()
-                else:
-                    return False
-            else:
-                if isinstance(dlg.choice, model.CycleTreeItem):
-                    # project's tool/cycle
-                    self.document.selectCutterCycle(dlg.choice)
-                    self.document.selectPresetAsDefault(dlg.choice.cutter, None)
-                    return True
-                elif isinstance(dlg.choice, inventory.CutterBase):
-                    # inventory tool
-                    cutter = dlg.choice.newInstance()
-                else:
-                    assert isinstance(dlg.choice, tuple)
-                    parent, parent_preset = dlg.choice
-                    if isinstance(parent, model.CycleTreeItem):
-                        # project's preset
-                        self.document.selectCutterCycle(parent)
-                        self.document.selectPresetAsDefault(parent.cutter, parent_preset)
-                        return True
-                    else:
-                        cutter, preset, add = self.document.opAddLibraryPreset(parent_preset)
-                        if not add:
-                            if self.document.current_cutter_cycle.cutter is not cutter:
-                                for i in self.document.allCycles():
-                                    if i.cutter is cutter:
-                                        self.document.selectCutterCycle(i)
-                                        break
-                            self.document.selectPresetAsDefault(cutter, preset)
-                            self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
-                            return True
-        else:
+    def millAddTool(self):
+        self.millSelectTool(dlg_type=AddCutterDialog)
+    def millSelectTool(self, cutter_type=None, dlg_type=SelectCutterDialog):
+        if not selectCutter(self, dlg_type, self.document, cutter_type):
             return False
-        cycle = self.document.opAddCutter(cutter)
-        if preset:
-            self.document.selectPresetAsDefault(cycle.cutter, preset)
+        cycle = self.document.current_cutter_cycle
+        cutter = cycle.cutter
         self.projectDW.shapeTree.expand(self.document.itemForCutter(cutter).index())
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
