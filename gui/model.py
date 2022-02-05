@@ -1011,6 +1011,24 @@ class AddOperationUndoCommand(QUndoCommand):
     def redo(self):
         self.parent.insertRow(self.row, self.item)
 
+class DeletePresetUndoCommand(QUndoCommand):
+    def __init__(self, document, preset):
+        QUndoCommand.__init__(self, "Delete preset: " + preset.name)
+        self.document = document
+        self.preset = preset
+        self.was_default = False
+    def undo(self):
+        self.preset.toolbit.presets.append(self.preset)
+        if self.was_default:
+            self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
+        self.document.refreshToolList()
+    def redo(self):
+        self.preset.toolbit.deletePreset(self.preset)
+        if self.document.default_preset_by_tool.get(self.preset.toolbit, None) is self.preset:
+            del self.document.default_preset_by_tool[self.preset.toolbit]
+            self.was_default = True
+        self.document.refreshToolList()
+
 class DeleteOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         QUndoCommand.__init__(self, "Delete " + item.toString())
@@ -1079,7 +1097,6 @@ class DocumentModel(QObject):
         self.drawingFilename = None
         self.current_cutter_cycle = None
         self.project_toolbits = {}
-        self.project_tool_presets = {}
         self.default_preset_by_tool = {}
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
@@ -1097,7 +1114,6 @@ class DocumentModel(QObject):
         self.material.resetProperties()
         self.current_cutter_cycle = None
         self.project_toolbits = {}
-        self.project_tool_presets = {}
         self.default_preset_by_tool = {}
         self.refreshToolList()
         self.drawing.reset()
@@ -1137,6 +1153,7 @@ class DocumentModel(QObject):
                 tool.get('direction', 0), 0, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
+            self.default_preset_by_tool[prj_cutter] = prj_preset
             self.refreshToolList()
         add_cycles = 'operation_cycles' not in data
         if 'tools' in data:
@@ -1358,3 +1375,16 @@ class DocumentModel(QObject):
                 self.undoStack.endMacro()
     def opMoveItem(self, oldParent, child, newParent, pos):
         self.undoStack.push(MoveItemUndoCommand(oldParent, child, newParent, pos))
+    def opDeletePreset(self, preset):
+        self.undoStack.beginMacro(f"Delete preset: {preset.name}")
+        try:
+            changes = []
+            self.forEachOperation(lambda operation: changes.append((operation, None)))
+            self.opChangeProperty(OperationTreeItem.prop_preset, changes)
+            self.undoStack.push(DeletePresetUndoCommand(self, preset))
+        finally:
+            self.undoStack.endMacro()
+    def opUnlinkInventoryPreset(self, preset):
+        for tb in self.project_toolbits:
+            if tb.base_object is preset:
+                tb.base_object = None

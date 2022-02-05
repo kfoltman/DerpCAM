@@ -123,6 +123,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             action = menu.addAction("Reload from inventory")
             action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
             action.setEnabled(item.isModifiedStock())
+            menu.addSeparator()
+            action = menu.addAction("Delete from project")
+            action.triggered.connect(lambda: self.toolPresetDelete(item))
         elif isinstance(item, model.ToolTreeItem):
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolSaveToInventory(item))
@@ -185,6 +188,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
         saveInventory()
         self.document.refreshToolList()
         self.shapeTree.expandAll()
+    def toolPresetDelete(self, item):
+        if QMessageBox.question(self, "Delete project preset", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
+            self.document.opDeletePreset(item.inventory_preset)
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
         for idx, item in enumerate(self.document.drawing.items()):

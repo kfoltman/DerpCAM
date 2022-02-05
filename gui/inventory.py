@@ -145,6 +145,8 @@ class CutterBase(Serializable):
             if i.name == name:
                 return i
         return None
+    def deletePreset(self, preset):
+        del self.presets[self.presets.index(preset)]
         
 class MillDirection(EnumClass):
     CONVENTIONAL = 0

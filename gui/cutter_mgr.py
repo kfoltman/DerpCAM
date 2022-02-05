@@ -80,7 +80,7 @@ class CutterListWidget(QTreeWidget):
     def addToolbit(self, output_list, tb, tb_obj, current_item):
         if self.cutter_type is not None and not isinstance(tb, self.cutter_type):
             return
-        is_global = output_list is self.project_toolbits
+        is_global = output_list is self.inventory_toolbits
         self.lookup.append(tb)
         cutter = QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()])
         cutter.is_global = is_global
@@ -241,7 +241,18 @@ class SelectCutterDialog(QDialog):
     def deleteCutterAction(self, cutter, is_global):
         QMessageBox.critical(self, "Delete cutter", "Not implemented yet")
     def deletePresetAction(self, preset, is_global):
-        QMessageBox.critical(self, "Delete preset", "Not implemented yet")
+        if is_global:
+            if QMessageBox.question(self, "Delete inventory preset", "This will delete the preset from the global inventory. Continue?") == QMessageBox.Yes:
+                toolbit = preset.toolbit
+                toolbit.deletePreset(preset)
+                saveInventory()
+                self.tools.refreshCutters(toolbit)
+            return
+        else:
+            if QMessageBox.question(self, "Delete project preset", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
+                toolbit = preset.toolbit
+                self.document.opDeletePreset(preset)
+                self.tools.refreshCutters(toolbit)
     def accept(self):
         self.choice = self.tools.selectedItem()
         if self.choice:
