@@ -1120,7 +1120,7 @@ class DocumentModel(QObject):
         #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
     def load(self, data):
-        self.undoStack.clear()
+        self.reinitDocument()
         self.default_preset_by_tool = {}
         self.material.reload(data['material'])
         currentCutterCycle = None
