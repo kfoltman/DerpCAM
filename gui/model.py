@@ -1029,6 +1029,26 @@ class DeletePresetUndoCommand(QUndoCommand):
             self.was_default = True
         self.document.refreshToolList()
 
+class DeleteCycleUndoCommand(QUndoCommand):
+    def __init__(self, document, cycle):
+        QUndoCommand.__init__(self, "Delete cycle: " + cycle.cutter.name)
+        self.document = document
+        self.cycle = cycle
+        self.row = None
+        self.was_default = False
+    def undo(self):
+        self.document.operModel.invisibleRootItem().insertRow(self.row, self.cycle)
+        self.document.project_toolbits[self.cycle.cutter.name] = self.cycle.cutter
+        if self.was_default:
+            self.document.selectCycle(self.cycle)
+        self.document.refreshToolList()
+    def redo(self):
+        self.row = self.cycle.row()
+        self.was_default = self.cycle is self.document.current_cutter_cycle
+        self.document.operModel.invisibleRootItem().takeRow(self.row)
+        del self.document.project_toolbits[self.cycle.cutter.name]
+        self.document.refreshToolList()
+
 class DeleteOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         QUndoCommand.__init__(self, "Delete " + item.toString())
@@ -1309,15 +1329,18 @@ class DocumentModel(QObject):
             p = tool.child(i)
             if p.inventory_preset is preset:
                 return p
+    def selectCycle(self, cycle):
+        self.current_cutter_cycle = cycle
+        self.cutterSelected.emit(self.current_cutter_cycle)
     def opAddCutter(self, cutter: inventory.CutterBase):
         # XXXKF undo
         self.project_toolbits[cutter.name] = cutter
-        self.current_cutter_cycle = CycleTreeItem(self, cutter)
-        self.undoStack.push(AddOperationUndoCommand(self, self.current_cutter_cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
+        cycle = CycleTreeItem(self, cutter)
+        self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
         #self.operModel.appendRow(self.current_cutter_cycle)
         self.refreshToolList()
-        self.cutterSelected.emit(self.current_cutter_cycle)
-        return self.current_cutter_cycle
+        self.selectCycle(cycle)
+        return cycle
     def opAddLibraryPreset(self, library_preset: inventory.PresetBase):
         for cutter in self.project_toolbits.values():
             if cutter.base_object is library_preset.toolbit:
@@ -1379,12 +1402,23 @@ class DocumentModel(QObject):
         self.undoStack.beginMacro(f"Delete preset: {preset.name}")
         try:
             changes = []
-            self.forEachOperation(lambda operation: changes.append((operation, None)))
+            self.forEachOperation(lambda operation: changes.append((operation, None)) if operation.tool_preset is preset else None)
             self.opChangeProperty(OperationTreeItem.prop_preset, changes)
             self.undoStack.push(DeletePresetUndoCommand(self, preset))
         finally:
             self.undoStack.endMacro()
-    def opUnlinkInventoryPreset(self, preset):
+    def opDeleteCycle(self, cycle):
+        self.undoStack.beginMacro(f"Delete cycle: {cycle.cutter.name}")
+        try:
+            self.undoStack.push(DeleteCycleUndoCommand(self, cycle))
+        finally:
+            self.undoStack.endMacro()
+    def opUnlinkInventoryCutter(self, cutter):
         for tb in self.project_toolbits:
             if tb.base_object is preset:
                 tb.base_object = None
+    def opUnlinkInventoryPreset(self, preset):
+        for tb in self.project_toolbits.values():
+            for p in tb.presets:
+                if p.base_object is preset:
+                    p.base_object = None

@@ -174,11 +174,13 @@ class SelectCutterDialog(QDialog):
         if item is None:
             setButtons(None, None, None)
         elif item is self.tools.project_toolbits:
-            setButtons("&New cutter (project)...", None, None)
+            setButtons("&Add a cutter (project)...", None, None)
         elif item is self.tools.inventory_toolbits:
-            setButtons("&New cutter (inventory)...", None, None)
+            setButtons("&Add a cutter (inventory)...", None, None)
         elif isinstance(item.content, inventory.CutterBase):
             setButtons("&Create preset...", "&Modify cutter...", "&Delete cutter")
+        elif isinstance(item.content, model.CycleTreeItem):
+            setButtons("&Create preset...", "&Modify cutter...", "&Delete cycle/cutter")
         elif isinstance(item.content, tuple):
             setButtons("&Create preset...", "&Modify preset...", "&Delete preset")
         else:
@@ -192,7 +194,7 @@ class SelectCutterDialog(QDialog):
             self.newCutterAction(is_global=False)
         elif item is self.tools.inventory_toolbits:
             self.newCutterAction(is_global=True)
-        elif isinstance(item.content, inventory.CutterBase):
+        elif isinstance(item.content, inventory.CutterBase) or isinstance(item.content, model.CycleTreeItem):
             self.newPresetAction(item.content, item.is_global)
         elif isinstance(item.content, tuple):
             self.newPresetAction(item.content[1], item.is_global)
@@ -212,11 +214,12 @@ class SelectCutterDialog(QDialog):
         item = self.tools.currentItem()
         if item is None:
             return
-        elif isinstance(item.content, inventory.CutterBase):
+        elif isinstance(item.content, inventory.CutterBase) or isinstance(item.content, model.CycleTreeItem):
             self.editCutterAction(item.content, item.is_global)
         elif isinstance(item.content, tuple):
             self.editPresetAction(item.content[1], item.is_global)
-    def editCutterAction(self, cutter, is_global):
+    def editCutterAction(self, cutter_or_cycle, is_global):
+        cutter = cutter_or_cycle if is_global else cutter_or_cycle.cutter
         dlg = CreateEditCutterDialog(self.parent(), cutter)
         if dlg.exec_():
             modified_cutter = dlg.cutter
@@ -228,23 +231,36 @@ class SelectCutterDialog(QDialog):
                 # 1. If renamed, offer updating the local name?
                 # 2. If modified, offer resetting? (or only if unmodified? only changed values?)
             self.tools.refreshCutters(cutter)
+            self.document.refreshToolList()
     def editPresetAction(self, cutter, is_global):
         QMessageBox.critical(self, "Edit preset", "Not implemented yet")
     def deleteAction(self):
         item = self.tools.currentItem()
         if item is None:
             return
-        elif isinstance(item.content, inventory.CutterBase):
+        elif isinstance(item.content, inventory.CutterBase) or isinstance(item.content, model.CycleTreeItem):
             self.deleteCutterAction(item.content, item.is_global)
         elif isinstance(item.content, tuple):
             self.deletePresetAction(item.content[1], item.is_global)
-    def deleteCutterAction(self, cutter, is_global):
-        QMessageBox.critical(self, "Delete cutter", "Not implemented yet")
+    def deleteCutterAction(self, cutter_or_cycle, is_global):
+        if is_global:
+            cutter = cutter_or_cycle
+            if QMessageBox.question(self, "Delete inventory cutter", "This will delete the cutter from the global inventory. Continue?") == QMessageBox.Yes:
+                inventory.deleteCutter(cutter)
+                self.document.opUnlinkInventoryCutter(cutter)
+                saveInventory()
+                self.tools.refreshCutters(toolbit)
+        else:
+            cycle = cutter_or_cycle
+            if QMessageBox.question(self, "Delete cutting cycle", "This will delete the cutter and the associated cutting cycle from the project. Continue?") == QMessageBox.Yes:
+                self.document.opDeleteCycle(cycle)
+                self.tools.refreshCutters(None)
     def deletePresetAction(self, preset, is_global):
         if is_global:
             if QMessageBox.question(self, "Delete inventory preset", "This will delete the preset from the global inventory. Continue?") == QMessageBox.Yes:
                 toolbit = preset.toolbit
                 toolbit.deletePreset(preset)
+                self.document.opUnlinkInventoryPreset(preset)
                 saveInventory()
                 self.tools.refreshCutters(toolbit)
             return
