@@ -170,12 +170,14 @@ class EnumEditableProperty(EditableProperty):
         return validValues
 
 class FloatEditableProperty(EditableProperty):
-    def __init__(self, name, attribute, format, min = None, max = None, allow_none = False, none_value = "none"):
+    def __init__(self, name, attribute, format, unit="", min = None, max = None, allow_none = False, none_value = "none"):
         EditableProperty.__init__(self, name, attribute, format)
         self.min = min
         self.max = max
         self.allow_none = allow_none
         self.none_value = none_value
+        assert isinstance(unit, str)
+        self.unit = unit
     def toEditString(self, value):
         if value is None:
             return ""
@@ -185,9 +187,7 @@ class FloatEditableProperty(EditableProperty):
     def toDisplayString(self, value):
         if value is None:
             return self.none_value
-        return self.format % (value,)
-    def toEditString(self, value):
-        return "%s" % (value,)
+        return (self.format % (value,)) + f" {self.unit}"
     def validate(self, value):
         if value == "" and self.allow_none:
             return None
@@ -413,4 +413,101 @@ class PropertySheetWidget(QTableWidget):
         if self.properties:
             for i in range(len(self.properties)):
                 self.refreshRow(i)
+
+class BaseCreateEditDialog(QDialog):
+    def __init__(self, parent=None, title=None, values={}):
+        QDialog.__init__(self, parent)
+        self.values = values
+        self.result = None
+        if title:
+            self.setWindowTitle(title)
+        self.initUI()
+    def properties(self):
+        assert False
+    def initUI(self):
+        self.form = QFormLayout(self)
+        self.props = self.properties()
+        self.prop_controls = {}
+        for p in self.props:
+            if isinstance(p, StringEditableProperty):
+                editor = QLineEdit()
+                self.form.addRow(p.name, editor)
+                self.prop_controls[p] = editor
+            elif isinstance(p, EnumEditableProperty):
+                widget = QComboBox()
+                for data in p.enum_class.descriptions:
+                    widget.addItem(data[1], QVariant(data[0]))
+                self.form.addRow(p.name, widget)
+                self.prop_controls[p] = widget
+            elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                editor = QLineEdit()
+                if p.allow_none:
+                    editor.setPlaceholderText(p.none_value)
+                def fmt(v):
+                    return "" if v is None else p.format % (v, )
+                if p.min is not None or p.max is not None:
+                    if p.unit != "":
+                        self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)} {p.unit})", editor)
+                    else:
+                        self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)})", editor)
+                else:
+                    if p.unit != "":
+                        self.form.addRow(f"{p.name} ({p.unit})", editor)
+                    else:
+                        self.form.addRow(p.name, editor)
+                self.prop_controls[p] = editor
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.form.addRow(self.buttonBox)
+        self.readValues(self.values)
+    def readValues(self, values):
+        for p in self.props:
+            ctl = self.prop_controls.get(p, None)
+            if isinstance(p, StringEditableProperty):
+                ctl.setText(self.values.get(p.attribute))
+            elif isinstance(p, EnumEditableProperty):
+                ctl.setCurrentIndex(ctl.findData(self.values.get(p.attribute)))
+            elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                if self.values.get(p.attribute, None) is not None:
+                    ctl.setText(p.format % (self.values.get(p.attribute, None), ))
+                else:
+                    ctl.setText("")
+    def propertyEditError(self, p, msg):
+        ctl = self.prop_controls[p]
+        QMessageBox.critical(self, None, msg)
+        ctl.setFocus()
+    def accept(self):
+        result = {}
+        for p in self.props:
+            ctl = self.prop_controls.get(p, None)
+            if isinstance(p, StringEditableProperty):
+                text = ctl.text()
+                if text == '' and not p.allow_empty:
+                    return self.propertyEditError(p, f"{p.name} is required")
+                result[p.attribute] = text
+            elif isinstance(p, EnumEditableProperty):
+                result[p.attribute] = ctl.itemData(ctl.currentIndex())
+            elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                text = ctl.text()
+                if text == '' and not p.allow_none:
+                    return self.propertyEditError(p, f"{p.name} is required")
+                value = None
+                if text != '' and text != p.none_value:
+                    try:
+                        if isinstance(p, FloatEditableProperty):
+                            value = float(text)
+                        else:
+                            value = int(text)
+                    except ValueError as e:
+                        return self.propertyEditError(p, f"Value of {p.name} is not a valid number")
+                    if p.min is not None and value < p.min:
+                        return self.propertyEditError(p, f"Value of {p.name} is below a minimum of {p.min}")
+                    if p.max is not None and value > p.max:
+                        return self.propertyEditError(p, f"Value of {p.name} is above a maximum of {p.min}")
+                result[p.attribute] = value
+        self.result = self.processResult(result)
+        if self.result is None:
+            return
+        QDialog.accept(self)
 

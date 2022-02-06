@@ -6,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from . import inventory, model
+from . import inventory, model, propsheet
 
 class CutterListWidget(QTreeWidget):
     def __init__(self, parent, toolbits_func, document, cutter_type, inventory_only=False):
@@ -194,12 +194,16 @@ class SelectCutterDialog(QDialog):
             self.newCutterAction(is_global=False)
         elif item is self.tools.inventory_toolbits:
             self.newCutterAction(is_global=True)
-        elif isinstance(item.content, inventory.CutterBase) or isinstance(item.content, model.CycleTreeItem):
+        elif isinstance(item.content, inventory.CutterBase):
             self.newPresetAction(item.content, item.is_global)
-        elif isinstance(item.content, tuple):
-            self.newPresetAction(item.content[1], item.is_global)
+        elif isinstance(item.content, model.CycleTreeItem):
+            self.newPresetAction(item.content.cutter, item.is_global)
+        elif isinstance(item.content, tuple) and item.is_global:
+            self.newPresetAction(item.content[0], item.is_global)
+        elif isinstance(item.content, tuple) and not item.is_global:
+            self.newPresetAction(item.content[0].cutter, item.is_global)
     def newCutterAction(self, is_global):
-        dlg = CreateEditCutterDialog(self.parent(), None)
+        dlg = CreateEditCutterDialog(self, None)
         if dlg.exec_():
             cutter = dlg.cutter
             if is_global:
@@ -208,8 +212,24 @@ class SelectCutterDialog(QDialog):
             else:
                 self.document.opAddCutter(cutter)
             self.tools.refreshCutters(cutter)
+    @staticmethod
+    def presetEditorClassForCutter(cutter):
+        if isinstance(cutter, inventory.EndMillCutter):
+            return CreateEditEndMillPresetDialog
+        elif isinstance(cutter, inventory.DrillBitCutter):
+            return CreateEditDrillBitPresetDialog
+        assert False
     def newPresetAction(self, cutter, is_global):
-        QMessageBox.critical(self, "New preset", "Not implemented yet")
+        dlg = self.presetEditorClassForCutter(cutter)(self, "Create a preset in inventory" if is_global else "Create a preset in the project")
+        if dlg.exec_():
+            preset = dlg.result
+            preset.toolbit = cutter
+            if is_global:
+                cutter.presets.append(preset)
+                saveInventory()
+            else:
+                self.document.opAddProjectPreset(cutter, preset)
+            self.tools.refreshCutters(preset)
     def editAction(self):
         item = self.tools.currentItem()
         if item is None:
@@ -232,8 +252,22 @@ class SelectCutterDialog(QDialog):
                 # 2. If modified, offer resetting? (or only if unmodified? only changed values?)
             self.tools.refreshCutters(cutter)
             self.document.refreshToolList()
-    def editPresetAction(self, cutter, is_global):
-        QMessageBox.critical(self, "Edit preset", "Not implemented yet")
+    def editPresetAction(self, preset, is_global):
+        dlg = self.presetEditorClassForCutter(preset.toolbit)(self, "Modify a preset in inventory" if is_global else "Modify a preset in the project", preset)
+        if dlg.exec_():
+            result = dlg.result
+            saveInventory()
+            # XXXKF undo
+            cutter = preset.toolbit
+            preset.resetTo(result)
+            # XXXKF this might not be 100% safe
+            preset.name = result.name
+            preset.toolbit = cutter
+            if is_global:
+                # XXXKF check the project for a local version of this preset
+                saveInventory()
+            self.tools.refreshCutters(preset)
+            self.document.refreshToolList()
     def deleteAction(self):
         item = self.tools.currentItem()
         if item is None:
@@ -383,26 +417,31 @@ class CreateEditCutterDialog(QDialog):
             self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, self.length)
         QDialog.accept(self)
 
-class AddPresetDialog(QDialog):
-    def __init__(self, parent=None):
-        QDialog.__init__(self, parent)
-        self.initUI()
-    def initUI(self):
-        self.form = QFormLayout(self)
-        self.nameEdit = QLineEdit()
-        self.form.addRow("Name", self.nameEdit)
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        self.form.addRow(self.buttonBox)
-    def accept(self):
-        name = self.nameEdit.text()
-        if name == '':
-            QMessageBox.critical(self, None, "Name is required")
-            self.nameEdit.setFocus()
-            return
-        self.presetName = name
-        QDialog.accept(self)
+class CreateEditEndMillPresetDialog(propsheet.BaseCreateEditDialog):
+    def __init__(self, parent=None, title=None, preset=None):
+        def percent(v):
+            return v * 100 if v is not None else None
+        if preset is not None:
+            values = {'name' : preset.name, 'rpm' : preset.rpm, 'hfeed' : preset.hfeed, 'vfeed' : preset.vfeed, 'depth' : preset.maxdoc,
+                'direction' : preset.direction,
+                'stepover' : percent(preset.stepover), 'extra_width' : percent(preset.extra_width), 'trc_rate' : percent(preset.trc_rate)}
+        else:
+            values = { 'direction': inventory.MillDirection.CONVENTIONAL }
+        propsheet.BaseCreateEditDialog.__init__(self, parent, title, values)
+    def properties(self):
+        return model.ToolPresetTreeItem.properties_endmill()
+    def processResult(self, result):
+        def percent(v):
+            return v * 0.01 if v is not None else None
+        return inventory.EndMillPreset.new(None, name=result['name'], toolbit=None, rpm=result['rpm'], hfeed=result['hfeed'], vfeed=result['vfeed'],
+            maxdoc=result['depth'], stepover=percent(result['stepover']), direction=result['direction'],
+            extra_width=percent(result['extra_width']), trc_rate=percent(result['trc_rate']))
+
+class CreateEditDrillBitPresetDialog(propsheet.BaseCreateEditDialog):
+    def properties(self):
+        return model.ToolPresetTreeItem.properties_drillbit()
+    def processResult(self, result):
+        preset = inventory.DrillBitPreset.new(None, name=result['name'], toolbit=None, rpm=result['rpm'], vfeed=result['vfeed'], maxdoc=result['depth'])
 
 def loadInventory():
     toolsFile = QStandardPaths.locate(QStandardPaths.DataLocation, "tools.json")

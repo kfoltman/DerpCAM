@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, loadInventory, saveInventory, selectCutter
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, loadInventory, saveInventory, selectCutter
 import ezdxf
 import json
 from typing import Optional
