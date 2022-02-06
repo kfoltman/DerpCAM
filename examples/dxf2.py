@@ -168,8 +168,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if cutter_cycle:
             self.operTree.expand(cutter_cycle.index())
     def toolRevertFromInventory(self, item):
-        # XXXKF undo
         if item.inventory_tool.base_object:
+            self.document.opRevertTool(item)
             item.inventory_tool.resetTo(item.inventory_tool.base_object)
             self.document.refreshToolList()
             self.shapeTree.expandAll()
