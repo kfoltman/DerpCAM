@@ -269,7 +269,6 @@ class CAMListTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self, document, name)
         self.reset()
     def reset(self):
-        self.removeRows(0, self.rowCount())
         self.resetProperties()
     def resetProperties(self):
         pass
@@ -363,25 +362,58 @@ class DrawingTreeItem(CAMListTreeItem):
     def onPropertyValueSet(self, name):
         self.emitDataChanged()
         
-class ToolListTreeItem(CAMListTreeItem):
-    def __init__(self, document):
-        CAMListTreeItem.__init__(self, document, "Tool list")
-        self.reset()
+class CAMListTreeItemWithChildren(CAMListTreeItem):
+    def __init__(self, document, title):
+        # Child items already in a tree
+        self.child_items = {}
+        # Deleted child items
+        self.recycled_items = {}
+        CAMListTreeItem.__init__(self, document, title)
+    def childList(self):
+        # Returns list of data items that map to child nodes in the tree
+        assert False
+    def createChildItem(self, data):
+        # Returns a CAMListTreeItem for a data item
+        assert False
+    def syncChildren(self):
+        expectedChildren = self.childList()
+        # Recycle (without deleting) child items deleted from the list
+        # (they may still be referenced in undo)
+        excess = set(self.child_items.keys()) - set(expectedChildren)
+        for child in excess:
+            self.recycled_items[child] = self.takeRow(self.child_items.pop(child).row())
+        for child in expectedChildren:
+            item = self.child_items.get(child, None)
+            if item is None:
+                item = self.recycled_items.pop(child, None)
+                if item is None:
+                    item = self.createChildItem(child)
+                self.child_items[child] = item
+                self.appendRow(item)
+            if hasattr(item, 'syncChildren'):
+                item.syncChildren()
+        self.sortChildren(0)
     def reset(self):
         CAMListTreeItem.reset(self)
-        cutters = self.document.project_toolbits.values()
-        cutters = sorted(cutters, key = lambda item: item.name)
-        for cutter in cutters:
-            self.appendRow(ToolTreeItem(self.document, cutter, True))
+        self.syncChildren()
 
-class ToolTreeItem(CAMListTreeItem):
+class ToolListTreeItem(CAMListTreeItemWithChildren):
+    def __init__(self, document):
+        CAMListTreeItemWithChildren.__init__(self, document, "Tool list")
+        self.reset()
+    def childList(self):
+        return sorted(self.document.project_toolbits.values(), key = lambda item: item.name)
+    def createChildItem(self, data):
+        return ToolTreeItem(self.document, data, True)
+
+class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
     prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
-        CAMListTreeItem.__init__(self, document, "Tool")
+        CAMListTreeItemWithChildren.__init__(self, document, "Tool")
         self.setEditable(False)
         self.reset()
     def isLocal(self):
@@ -395,10 +427,10 @@ class ToolTreeItem(CAMListTreeItem):
             return QVariant(self.inventory_tool.description())
         is_local = self.isLocal()
         return self.format_item_as(role, CAMTreeItem.data(self, role), italic=not is_local)
-    def reset(self):
-        CAMListTreeItem.reset(self)
-        for preset in self.inventory_tool.presets:
-            self.appendRow(ToolPresetTreeItem(self.document, preset))
+    def childList(self):
+        return sorted(self.inventory_tool.presets, key = lambda item: item.name)
+    def createChildItem(self, data):
+        return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
             return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length]
