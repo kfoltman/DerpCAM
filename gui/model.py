@@ -1320,6 +1320,7 @@ class DocumentModel(QObject):
         self.updateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
+        self.undoStack.clear()
     def make_machine_params(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def importDrawing(self, fn):
