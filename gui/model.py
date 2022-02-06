@@ -1145,6 +1145,26 @@ class MoveItemUndoCommand(QUndoCommand):
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
 
+class ModifyPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify preset")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.name = data.name
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old_data = preset.newInstance()
+        self.updateTo(self.new_data)
+
 class BaseRevertUndoCommand(QUndoCommand):
     def __init__(self, item):
         QUndoCommand.__init__(self, self.NAME)
@@ -1509,3 +1529,6 @@ class DocumentModel(QObject):
         self.undoStack.push(RevertPresetUndoCommand(item))
     def opRevertTool(self, item):
         self.undoStack.push(RevertToolUndoCommand(item))
+    def opModifyPreset(self, preset, new_data):
+        item = self.itemForPreset(preset)
+        self.undoStack.push(ModifyPresetUndoCommand(item, new_data))

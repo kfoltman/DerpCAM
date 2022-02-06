@@ -257,17 +257,17 @@ class SelectCutterDialog(QDialog):
         if dlg.exec_():
             result = dlg.result
             saveInventory()
-            # XXXKF undo
             cutter = preset.toolbit
-            preset.resetTo(result)
-            # XXXKF this might not be 100% safe
-            preset.name = result.name
-            preset.toolbit = cutter
             if is_global:
+                preset.resetTo(result)
+                # XXXKF this might not be 100% safe - must unlink base_object in the project
                 # XXXKF check the project for a local version of this preset
+                preset.name = result.name
+                preset.toolbit = cutter
                 saveInventory()
+            else:
+                self.document.opModifyPreset(preset, result)
             self.tools.refreshCutters(preset)
-            self.document.refreshToolList()
     def deleteAction(self):
         item = self.tools.currentItem()
         if item is None:
