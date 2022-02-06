@@ -439,13 +439,17 @@ class ToolPresetTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Preset: " + self.inventory_preset.description())
-        is_default = self.parent() and self.document.default_preset_by_tool.get(self.parent().inventory_tool, None) is self.inventory_preset
+        is_default = self.isDefault()
         is_local = self.isLocal()
         return self.format_item_as(role, CAMTreeItem.data(self, role), bold=is_default, italic=not is_local)
+    def isDefault(self):
+        return self.parent() and self.document.default_preset_by_tool.get(self.parent().inventory_tool, None) is self.inventory_preset
     def isLocal(self):
         return not self.inventory_preset.base_object or not (self.inventory_preset.equals(self.inventory_preset.base_object))
     def isModifiedStock(self):
         return self.parent().inventory_tool.base_object is not None and self.inventory_preset.base_object is not None and not (self.inventory_preset.equals(self.inventory_preset.base_object))
+    def isNewObject(self):
+        return self.inventory_preset.base_object is None
     def properties(self):
         if isinstance(self.inventory_preset, inventory.EndMillPreset):
             return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm, self.prop_extra_width, self.prop_trc_rate]
@@ -754,7 +758,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name.startswith("trc_"):
             return False
-        if (self.operation == OperationType.INSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
+        if (self.operation == OperationType.OUTSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
             return False
         if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'stepover']:
             return False
@@ -770,7 +774,7 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem):
-                if self.shape.closed:
+                if self.orig_shape.closed:
                     return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE]
                 else:
                     return [OperationType.ENGRAVE]
@@ -1011,6 +1015,44 @@ class AddOperationUndoCommand(QUndoCommand):
     def redo(self):
         self.parent.insertRow(self.row, self.item)
 
+class DeletePresetUndoCommand(QUndoCommand):
+    def __init__(self, document, preset):
+        QUndoCommand.__init__(self, "Delete preset: " + preset.name)
+        self.document = document
+        self.preset = preset
+        self.was_default = False
+    def undo(self):
+        self.preset.toolbit.presets.append(self.preset)
+        if self.was_default:
+            self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
+        self.document.refreshToolList()
+    def redo(self):
+        self.preset.toolbit.deletePreset(self.preset)
+        if self.document.default_preset_by_tool.get(self.preset.toolbit, None) is self.preset:
+            del self.document.default_preset_by_tool[self.preset.toolbit]
+            self.was_default = True
+        self.document.refreshToolList()
+
+class DeleteCycleUndoCommand(QUndoCommand):
+    def __init__(self, document, cycle):
+        QUndoCommand.__init__(self, "Delete cycle: " + cycle.cutter.name)
+        self.document = document
+        self.cycle = cycle
+        self.row = None
+        self.was_default = False
+    def undo(self):
+        self.document.operModel.invisibleRootItem().insertRow(self.row, self.cycle)
+        self.document.project_toolbits[self.cycle.cutter.name] = self.cycle.cutter
+        if self.was_default:
+            self.document.selectCycle(self.cycle)
+        self.document.refreshToolList()
+    def redo(self):
+        self.row = self.cycle.row()
+        self.was_default = self.cycle is self.document.current_cutter_cycle
+        self.document.operModel.invisibleRootItem().takeRow(self.row)
+        del self.document.project_toolbits[self.cycle.cutter.name]
+        self.document.refreshToolList()
+
 class DeleteOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         QUndoCommand.__init__(self, "Delete " + item.toString())
@@ -1079,7 +1121,6 @@ class DocumentModel(QObject):
         self.drawingFilename = None
         self.current_cutter_cycle = None
         self.project_toolbits = {}
-        self.project_tool_presets = {}
         self.default_preset_by_tool = {}
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
@@ -1097,7 +1138,6 @@ class DocumentModel(QObject):
         self.material.resetProperties()
         self.current_cutter_cycle = None
         self.project_toolbits = {}
-        self.project_tool_presets = {}
         self.default_preset_by_tool = {}
         self.refreshToolList()
         self.drawing.reset()
@@ -1137,6 +1177,7 @@ class DocumentModel(QObject):
                 tool.get('direction', 0), 0, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
+            self.default_preset_by_tool[prj_cutter] = prj_preset
             self.refreshToolList()
         add_cycles = 'operation_cycles' not in data
         if 'tools' in data:
@@ -1292,15 +1333,18 @@ class DocumentModel(QObject):
             p = tool.child(i)
             if p.inventory_preset is preset:
                 return p
+    def selectCycle(self, cycle):
+        self.current_cutter_cycle = cycle
+        self.cutterSelected.emit(self.current_cutter_cycle)
     def opAddCutter(self, cutter: inventory.CutterBase):
         # XXXKF undo
         self.project_toolbits[cutter.name] = cutter
-        self.current_cutter_cycle = CycleTreeItem(self, cutter)
-        self.undoStack.push(AddOperationUndoCommand(self, self.current_cutter_cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
+        cycle = CycleTreeItem(self, cutter)
+        self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
         #self.operModel.appendRow(self.current_cutter_cycle)
         self.refreshToolList()
-        self.cutterSelected.emit(self.current_cutter_cycle)
-        return self.current_cutter_cycle
+        self.selectCycle(cycle)
+        return cycle
     def opAddLibraryPreset(self, library_preset: inventory.PresetBase):
         for cutter in self.project_toolbits.values():
             if cutter.base_object is library_preset.toolbit:
@@ -1358,3 +1402,27 @@ class DocumentModel(QObject):
                 self.undoStack.endMacro()
     def opMoveItem(self, oldParent, child, newParent, pos):
         self.undoStack.push(MoveItemUndoCommand(oldParent, child, newParent, pos))
+    def opDeletePreset(self, preset):
+        self.undoStack.beginMacro(f"Delete preset: {preset.name}")
+        try:
+            changes = []
+            self.forEachOperation(lambda operation: changes.append((operation, None)) if operation.tool_preset is preset else None)
+            self.opChangeProperty(OperationTreeItem.prop_preset, changes)
+            self.undoStack.push(DeletePresetUndoCommand(self, preset))
+        finally:
+            self.undoStack.endMacro()
+    def opDeleteCycle(self, cycle):
+        self.undoStack.beginMacro(f"Delete cycle: {cycle.cutter.name}")
+        try:
+            self.undoStack.push(DeleteCycleUndoCommand(self, cycle))
+        finally:
+            self.undoStack.endMacro()
+    def opUnlinkInventoryCutter(self, cutter):
+        for tb in self.project_toolbits:
+            if tb.base_object is preset:
+                tb.base_object = None
+    def opUnlinkInventoryPreset(self, preset):
+        for tb in self.project_toolbits.values():
+            for p in tb.presets:
+                if p.base_object is preset:
+                    p.base_object = None

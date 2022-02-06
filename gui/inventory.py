@@ -128,11 +128,12 @@ class CutterBase(Serializable):
         Serializable.__init__(self, id, name)
         self.presets = []
     @classmethod
-    def new_impl(klass, id, name, material, diameter, length):
+    def new_impl(klass, id, name, material, diameter, length, flutes):
         res = klass(id, name)
         res.material = material
         res.diameter = float(diameter)
         res.length = float(length) if length is not None else None
+        res.flutes = int(flutes)
         res.presets = []
         return res
     def description(self):
@@ -144,6 +145,8 @@ class CutterBase(Serializable):
             if i.name == name:
                 return i
         return None
+    def deletePreset(self, preset):
+        del self.presets[self.presets.index(preset)]
         
 class MillDirection(EnumClass):
     CONVENTIONAL = 0
@@ -196,11 +199,10 @@ class EndMillPreset(PresetBase):
 class EndMillCutter(CutterBase):
     cutter_type_name = "End mill"
     cutter_type_priority = 1
-    properties = CutterBase.properties + [ 'flutes' ]
+    properties = CutterBase.properties
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
-        res = klass.new_impl(id, name, material, diameter, length)
-        res.flutes = int(flutes)
+        res = klass.new_impl(id, name, material, diameter, length, flutes)
         return res
     def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate):
         self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate))
@@ -238,8 +240,8 @@ class DrillBitCutter(CutterBase):
     cutter_type_name = "Drill bit"
     cutter_type_priority = 2
     @classmethod
-    def new(klass, id, name, material, diameter, length):
-        return klass.new_impl(id, name, material, diameter, length)
+    def new(klass, id, name, material, diameter, length, flutes=2):
+        return klass.new_impl(id, name, material, diameter, length, flutes)
     def addPreset(self, id, name, rpm, vfeed, maxdoc):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self

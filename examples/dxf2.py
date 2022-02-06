@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, CreateCutterDialog, loadInventory, saveInventory, selectCutter
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, loadInventory, saveInventory, selectCutter
 import ezdxf
 import json
 from typing import Optional
@@ -116,13 +116,23 @@ class CAMObjectTreeDockWidget(QDockWidget):
         elif isinstance(item, model.CycleTreeItem):
             menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
         elif isinstance(item, model.ToolPresetTreeItem):
-            menu.addAction("Set as default").triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
+            action = menu.addAction("Set as default")
+            action.setCheckable(True)
+            action.setChecked(item.isDefault())
+            action.setEnabled(not item.isDefault())
+            action.triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
-            action.setEnabled(item.isLocal() and not item.parent().isLocal())
+            action.setEnabled(item.isNewObject() and not item.parent().isNewObject())
+            action = menu.addAction("Update in inventory")
+            action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
+            action.setEnabled(item.isModifiedStock() and not item.parent().isNewObject())
             action = menu.addAction("Reload from inventory")
             action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
             action.setEnabled(item.isModifiedStock())
+            menu.addSeparator()
+            action = menu.addAction("Delete from project")
+            action.triggered.connect(lambda: self.toolPresetDelete(item))
         elif isinstance(item, model.ToolTreeItem):
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolSaveToInventory(item))
@@ -185,6 +195,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
         saveInventory()
         self.document.refreshToolList()
         self.shapeTree.expandAll()
+    def toolPresetDelete(self, item):
+        if QMessageBox.question(self, "Delete project preset", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
+            self.document.opDeletePreset(item.inventory_preset)
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
         for idx, item in enumerate(self.document.drawing.items()):
@@ -330,7 +343,7 @@ class CAMMainWindow(QMainWindow):
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            ("&Add tool...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Add a milling cutter or a drill bit to the project"),
+            ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
             None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
