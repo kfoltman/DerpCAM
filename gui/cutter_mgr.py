@@ -209,9 +209,10 @@ class SelectCutterDialog(QDialog):
             if is_global:
                 inventory.inventory.toolbits.append(cutter)
                 saveInventory()
+                self.tools.refreshCutters(cutter)
             else:
-                self.document.opAddCutter(cutter)
-            self.tools.refreshCutters(cutter)
+                cycle = self.document.opAddCutter(cutter)
+                self.tools.refreshCutters(cycle)
     @staticmethod
     def presetEditorClassForCutter(cutter):
         if isinstance(cutter, inventory.EndMillCutter):
@@ -243,14 +244,16 @@ class SelectCutterDialog(QDialog):
         dlg = CreateEditCutterDialog(self.parent(), cutter)
         if dlg.exec_():
             modified_cutter = dlg.cutter
-            cutter.name = modified_cutter.name
-            cutter.resetTo(modified_cutter)
             if is_global:
+                cutter.name = modified_cutter.name
+                cutter.resetTo(modified_cutter)
                 saveInventory()
                 # XXXKF check the project for a local version of this cutter
                 # 1. If renamed, offer updating the local name?
                 # 2. If modified, offer resetting? (or only if unmodified? only changed values?)
-            self.tools.refreshCutters(cutter)
+            else:
+                self.document.opModifyCutter(cutter, modified_cutter)
+            self.tools.refreshCutters(cutter_or_cycle)
             self.document.refreshToolList()
     def editPresetAction(self, preset, is_global):
         dlg = self.presetEditorClassForCutter(preset.toolbit)(self, "Modify a preset in inventory" if is_global else "Modify a preset in the project", preset)
@@ -283,7 +286,7 @@ class SelectCutterDialog(QDialog):
                 inventory.deleteCutter(cutter)
                 self.document.opUnlinkInventoryCutter(cutter)
                 saveInventory()
-                self.tools.refreshCutters(toolbit)
+                self.tools.refreshCutters(None)
         else:
             cycle = cutter_or_cycle
             if QMessageBox.question(self, "Delete cutting cycle", "This will delete the cutter, its presets and all the operations that use that cutter from the project. Continue?") == QMessageBox.Yes:

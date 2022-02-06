@@ -381,7 +381,7 @@ class CAMListTreeItemWithChildren(CAMListTreeItem):
         # (they may still be referenced in undo)
         excess = set(self.child_items.keys()) - set(expectedChildren)
         for child in excess:
-            self.recycled_items[child] = self.takeRow(self.child_items.pop(child).row())
+            self.recycled_items[child] = self.takeRow(self.child_items.pop(child).row())[0]
         for child in expectedChildren:
             item = self.child_items.get(child, None)
             if item is None:
@@ -1051,8 +1051,14 @@ class AddOperationUndoCommand(QUndoCommand):
         self.row = row
     def undo(self):
         self.parent.takeRow(self.row)
+        if isinstance(self.item, CycleTreeItem):
+            del self.document.project_toolbits[self.item.cutter.name]
+            self.item.document.refreshToolList()
     def redo(self):
         self.parent.insertRow(self.row, self.item)
+        if isinstance(self.item, CycleTreeItem):
+            self.document.project_toolbits[self.item.cutter.name] = self.item.cutter
+            self.item.document.refreshToolList()
 
 class DeletePresetUndoCommand(QUndoCommand):
     def __init__(self, document, preset):
@@ -1144,6 +1150,37 @@ class MoveItemUndoCommand(QUndoCommand):
         self.newParent.insertRow(self.newPos, self.child)
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
+
+class AddPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, preset):
+        QUndoCommand.__init__(self, "Create preset")
+        self.item = item
+        self.preset = preset
+    def undo(self):
+        self.item.inventory_tool.deletePreset(self.preset)
+        self.item.document.refreshToolList()
+    def redo(self):
+        self.item.inventory_tool.presets.append(self.preset)
+        self.item.document.refreshToolList()
+
+class ModifyCutterUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify cutter")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        cutter = self.item.inventory_tool
+        cutter.resetTo(data)
+        cutter.name = data.name
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        cutter = self.item.inventory_tool
+        self.old_data = cutter.newInstance()
+        self.updateTo(self.new_data)
 
 class ModifyPresetUndoCommand(QUndoCommand):
     def __init__(self, item, new_data):
@@ -1430,8 +1467,6 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = cycle
         self.cutterSelected.emit(self.current_cutter_cycle)
     def opAddCutter(self, cutter: inventory.CutterBase):
-        # XXXKF undo
-        self.project_toolbits[cutter.name] = cutter
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
         #self.operModel.appendRow(self.current_cutter_cycle)
@@ -1439,10 +1474,8 @@ class DocumentModel(QObject):
         self.selectCycle(cycle)
         return cycle
     def opAddProjectPreset(self, cutter: inventory.CutterBase, preset: inventory.PresetBase):
-        # XXXKF undo
-        if not cutter.presetByName(preset.name):
-            cutter.presets.append(preset)
-            self.refreshToolList()
+        item = self.itemForCutter(cutter)
+        self.undoStack.push(AddPresetUndoCommand(item, preset))
     def opAddLibraryPreset(self, library_preset: inventory.PresetBase):
         # XXXKF undo
         for cutter in self.project_toolbits.values():
@@ -1532,3 +1565,6 @@ class DocumentModel(QObject):
     def opModifyPreset(self, preset, new_data):
         item = self.itemForPreset(preset)
         self.undoStack.push(ModifyPresetUndoCommand(item, new_data))
+    def opModifyCutter(self, cutter, new_data):
+        item = self.itemForCutter(cutter)
+        self.undoStack.push(ModifyCutterUndoCommand(item, new_data))

@@ -133,7 +133,7 @@ class CutterBase(Serializable):
         res.material = material
         res.diameter = float(diameter)
         res.length = float(length) if length is not None else None
-        res.flutes = int(flutes)
+        res.flutes = int(flutes) if flutes is not None else 0
         res.presets = []
         return res
     def description(self):
