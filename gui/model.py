@@ -439,13 +439,17 @@ class ToolPresetTreeItem(CAMTreeItem):
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Preset: " + self.inventory_preset.description())
-        is_default = self.parent() and self.document.default_preset_by_tool.get(self.parent().inventory_tool, None) is self.inventory_preset
+        is_default = self.isDefault()
         is_local = self.isLocal()
         return self.format_item_as(role, CAMTreeItem.data(self, role), bold=is_default, italic=not is_local)
+    def isDefault(self):
+        return self.parent() and self.document.default_preset_by_tool.get(self.parent().inventory_tool, None) is self.inventory_preset
     def isLocal(self):
         return not self.inventory_preset.base_object or not (self.inventory_preset.equals(self.inventory_preset.base_object))
     def isModifiedStock(self):
         return self.parent().inventory_tool.base_object is not None and self.inventory_preset.base_object is not None and not (self.inventory_preset.equals(self.inventory_preset.base_object))
+    def isNewObject(self):
+        return self.inventory_preset.base_object is None
     def properties(self):
         if isinstance(self.inventory_preset, inventory.EndMillPreset):
             return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm, self.prop_extra_width, self.prop_trc_rate]
@@ -754,7 +758,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name.startswith("trc_"):
             return False
-        if (self.operation == OperationType.INSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
+        if (self.operation == OperationType.OUTSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
             return False
         if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'stepover']:
             return False
@@ -770,7 +774,7 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem):
-                if self.shape.closed:
+                if self.orig_shape.closed:
                     return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE]
                 else:
                     return [OperationType.ENGRAVE]
