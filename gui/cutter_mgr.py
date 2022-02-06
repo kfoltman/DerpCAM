@@ -335,14 +335,16 @@ class CreateEditCutterDialog(QDialog):
         self.nameEdit = QLineEdit()
         self.form.addRow("Name", self.nameEdit)
         self.form.addRow(QLabel("Select the type of a cutter to create"))
+        hbox = QHBoxLayout()
         self.emRadio = QRadioButton("&End mill", self)
-        self.form.addRow(self.emRadio)
+        hbox.addWidget(self.emRadio)
         self.drillRadio = QRadioButton("&Drill bit", self)
-        self.form.addRow(self.drillRadio)
-        self.flutesEdit = QLineEdit()
-        self.form.addRow("# Flutes (opt.)", self.flutesEdit)
+        hbox.addWidget(self.drillRadio)
+        self.form.addRow(hbox)
         self.diameterEdit = QLineEdit()
         self.form.addRow("Diameter", self.diameterEdit)
+        self.flutesEdit = QLineEdit()
+        self.form.addRow("# Flutes", self.flutesEdit)
         self.lengthEdit = QLineEdit()
         self.form.addRow("Usable flute length (max depth, opt.)", self.lengthEdit)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -351,21 +353,18 @@ class CreateEditCutterDialog(QDialog):
         self.form.addRow(self.buttonBox)
         if self.edit_cutter:
             self.nameEdit.setText(self.edit_cutter.name)
-            self.flutesEdit.setText(str(self.edit_cutter.flutes) if self.edit_cutter.flutes else "")
+            self.flutesEdit.setText(str(self.edit_cutter.flutes))
             self.diameterEdit.setText(str(self.edit_cutter.diameter))
             self.lengthEdit.setText(str(self.edit_cutter.length) if self.edit_cutter.length else "")
             if isinstance(self.edit_cutter, inventory.EndMillCutter):
                 self.emRadio.setChecked(True)
-                self.flutesEdit.setEnabled(True)
             elif isinstance(self.edit_cutter, inventory.DrillBitCutter):
                 self.drillRadio.setChecked(True)
-                self.flutesEdit.setEnabled(False)
             self.emRadio.setEnabled(False)
             self.drillRadio.setEnabled(False)
         else:
+            self.flutesEdit.setText("2")
             self.emRadio.setChecked(True)
-            self.emRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(True))
-            self.drillRadio.pressed.connect(lambda: self.flutesEdit.setEnabled(False))
     def accept(self):
         name = self.nameEdit.text()
         if name == '':
@@ -377,18 +376,17 @@ class CreateEditCutterDialog(QDialog):
             QMessageBox.critical(self, None, "Name is required to be unique")
             self.nameEdit.setFocus()
             return
-        if self.emRadio.isChecked():
-            try:
-                if self.flutesEdit.text() != '':
-                    flutes = float(self.flutesEdit.text())
-                    if flutes <= 0 or flutes > 100:
-                        raise ValueError("Invalid flutes value")
-                else:
-                    flutes = None
-            except ValueError as e:
-                QMessageBox.critical(self, None, "Cutter number of flutes is specified but not valid")
-                self.flutesEdit.setFocus()
-                return
+        try:
+            if self.flutesEdit.text() != '':
+                flutes = float(self.flutesEdit.text())
+                if flutes < 1 or flutes > 100:
+                    raise ValueError("Invalid number of flutes")
+            else:
+                raise ValueError("Missing number of flutes")
+        except ValueError as e:
+            QMessageBox.critical(self, None, str(e))
+            self.flutesEdit.setFocus()
+            return
         try:
             diameter = float(self.diameterEdit.text())
             if diameter <= 0 or diameter > 100:
