@@ -181,11 +181,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def toolPresetSetAsCurrent(self, item):
         self.document.selectPresetAsDefault(item.inventory_preset.toolbit, item.inventory_preset)
     def toolPresetRevertFromInventory(self, item):
-        # XXXKF undo
         if item.inventory_preset.base_object:
-            item.inventory_preset.resetTo(item.inventory_preset.base_object)
-            item.inventory_preset.toolbit = item.parent().inventory_tool
-            self.document.refreshToolList()
+            self.document.opRevertPreset(item)
             self.shapeTree.expandAll()
     def toolPresetSaveToInventory(self, item):
         inv_toolbit = item.inventory_preset.toolbit.base_object

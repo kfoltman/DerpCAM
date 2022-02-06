@@ -1138,6 +1138,23 @@ class MoveItemUndoCommand(QUndoCommand):
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
 
+class RevertPresetUndoCommand(QUndoCommand):
+    def __init__(self, item):
+        QUndoCommand.__init__(self, "Revert preset")
+        self.item = item
+        self.old = None
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old)
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old = preset.newInstance()
+        self.updateTo(preset.base_object)
+
 class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
     tabEditRequested = pyqtSignal([OperationTreeItem])
@@ -1458,3 +1475,5 @@ class DocumentModel(QObject):
             for p in tb.presets:
                 if p.base_object is preset:
                     p.base_object = None
+    def opRevertPreset(self, item):
+        self.undoStack.push(RevertPresetUndoCommand(item))
