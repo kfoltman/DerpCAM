@@ -252,7 +252,7 @@ class SelectCutterDialog(QDialog):
                 self.tools.refreshCutters(toolbit)
         else:
             cycle = cutter_or_cycle
-            if QMessageBox.question(self, "Delete cutting cycle", "This will delete the cutter and the associated cutting cycle from the project. Continue?") == QMessageBox.Yes:
+            if QMessageBox.question(self, "Delete cutting cycle", "This will delete the cutter, its presets and all the operations that use that cutter from the project. Continue?") == QMessageBox.Yes:
                 self.document.opDeleteCycle(cycle)
                 self.tools.refreshCutters(None)
     def deletePresetAction(self, preset, is_global):
