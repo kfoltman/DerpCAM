@@ -552,7 +552,7 @@ class CAMMainWindow(QMainWindow):
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
         if self.document.drawingFilename is not None:
-            path = self.document.drawingFilename.replace(".dxf", ".dcp") # XXXKF too crude
+            path = os.path.splitext(self.document.drawingFilename)[0] + ".dcp"
             dlg.selectFile(path)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
