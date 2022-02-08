@@ -142,10 +142,10 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
-    prop_x = FloatEditableProperty("Centre X", "x", "%0.2f mm", min=0, max=100, allow_none=False)
-    prop_y = FloatEditableProperty("Centre Y", "y", "%0.2f mm", min=0, max=100, allow_none=False)
-    prop_dia = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
-    prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_x = FloatEditableProperty("Centre X", "x", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
+    prop_y = FloatEditableProperty("Centre Y", "y", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
+    prop_dia = FloatEditableProperty("Diameter", "diameter", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
+    prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
     def __init__(self, document, centre, r, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.centre = centre
@@ -269,7 +269,6 @@ class CAMListTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self, document, name)
         self.reset()
     def reset(self):
-        self.removeRows(0, self.rowCount())
         self.resetProperties()
     def resetProperties(self):
         pass
@@ -363,25 +362,58 @@ class DrawingTreeItem(CAMListTreeItem):
     def onPropertyValueSet(self, name):
         self.emitDataChanged()
         
-class ToolListTreeItem(CAMListTreeItem):
-    def __init__(self, document):
-        CAMListTreeItem.__init__(self, document, "Tool list")
-        self.reset()
+class CAMListTreeItemWithChildren(CAMListTreeItem):
+    def __init__(self, document, title):
+        # Child items already in a tree
+        self.child_items = {}
+        # Deleted child items
+        self.recycled_items = {}
+        CAMListTreeItem.__init__(self, document, title)
+    def childList(self):
+        # Returns list of data items that map to child nodes in the tree
+        assert False
+    def createChildItem(self, data):
+        # Returns a CAMListTreeItem for a data item
+        assert False
+    def syncChildren(self):
+        expectedChildren = self.childList()
+        # Recycle (without deleting) child items deleted from the list
+        # (they may still be referenced in undo)
+        excess = set(self.child_items.keys()) - set(expectedChildren)
+        for child in excess:
+            self.recycled_items[child] = self.takeRow(self.child_items.pop(child).row())[0]
+        for child in expectedChildren:
+            item = self.child_items.get(child, None)
+            if item is None:
+                item = self.recycled_items.pop(child, None)
+                if item is None:
+                    item = self.createChildItem(child)
+                self.child_items[child] = item
+                self.appendRow(item)
+            if hasattr(item, 'syncChildren'):
+                item.syncChildren()
+        self.sortChildren(0)
     def reset(self):
         CAMListTreeItem.reset(self)
-        cutters = self.document.project_toolbits.values()
-        cutters = sorted(cutters, key = lambda item: item.name)
-        for cutter in cutters:
-            self.appendRow(ToolTreeItem(self.document, cutter, True))
+        self.syncChildren()
 
-class ToolTreeItem(CAMListTreeItem):
+class ToolListTreeItem(CAMListTreeItemWithChildren):
+    def __init__(self, document):
+        CAMListTreeItemWithChildren.__init__(self, document, "Tool list")
+        self.reset()
+    def childList(self):
+        return sorted(self.document.project_toolbits.values(), key = lambda item: item.name)
+    def createChildItem(self, data):
+        return ToolTreeItem(self.document, data, True)
+
+class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
-    prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f mm", min=0, max=100, allow_none=False)
+    prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
     prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
-        CAMListTreeItem.__init__(self, document, "Tool")
+        CAMListTreeItemWithChildren.__init__(self, document, "Tool")
         self.setEditable(False)
         self.reset()
     def isLocal(self):
@@ -395,10 +427,10 @@ class ToolTreeItem(CAMListTreeItem):
             return QVariant(self.inventory_tool.description())
         is_local = self.isLocal()
         return self.format_item_as(role, CAMTreeItem.data(self, role), italic=not is_local)
-    def reset(self):
-        CAMListTreeItem.reset(self)
-        for preset in self.inventory_tool.presets:
-            self.appendRow(ToolPresetTreeItem(self.document, preset))
+    def childList(self):
+        return sorted(self.inventory_tool.presets, key = lambda item: item.name)
+    def createChildItem(self, data):
+        return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
             return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length]
@@ -421,14 +453,15 @@ class ToolTreeItem(CAMListTreeItem):
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
-    prop_doc = FloatEditableProperty("Cut depth/pass", "depth", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f/min", min=0.1, max=60000, allow_none=True)
-    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
-    prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
+    prop_doc = FloatEditableProperty("Cut depth/pass", "depth", "%0.2f", unit="mm", min=0.01, max=100, allow_none=True)
+    prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f", unit="/min", min=0.1, max=60000, allow_none=True)
+    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f", unit="%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
-    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.1f %%", min=0, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.1f %%", min=0, max=100, allow_none=True)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.1f", unit="%", min=0, max=100, allow_none=True)
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.1f", unit="%", min=0, max=100, allow_none=True)
+
     def __init__(self, document, preset):
         self.inventory_preset = preset
         CAMTreeItem.__init__(self, document, "Tool preset")
@@ -452,10 +485,16 @@ class ToolPresetTreeItem(CAMTreeItem):
         return self.inventory_preset.base_object is None
     def properties(self):
         if isinstance(self.inventory_preset, inventory.EndMillPreset):
-            return [self.prop_name, self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover, self.prop_direction, self.prop_rpm, self.prop_extra_width, self.prop_trc_rate]
+            return self.properties_endmill()
         elif isinstance(self.inventory_preset, inventory.DrillBitPreset):
-            return [self.prop_name, self.prop_doc, self.prop_vfeed, self.prop_rpm]
+            return self.properties_drillbit()
         return []
+    @classmethod
+    def properties_endmill(klass):
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_extra_width, klass.prop_trc_rate]
+    @classmethod
+    def properties_drillbit(klass):
+        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm]
     def getPropertyValue(self, name):
         if name == 'depth':
             return self.inventory_preset.maxdoc
@@ -508,9 +547,9 @@ class MaterialType(EnumClass):
 
 class WorkpieceTreeItem(CAMTreeItem):
     prop_material = EnumEditableProperty("Material", "material", MaterialType, allow_none=True, none_value="Unknown")
-    prop_thickness = FloatEditableProperty("Thickness", "thickness", "%0.2f mm", min=0, max=100, allow_none=True)
-    prop_clearance = FloatEditableProperty("Clearance", "clearance", "%0.2f mm", min=0, max=100, allow_none=True)
-    prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f mm", min=0, max=100, allow_none=True)
+    prop_thickness = FloatEditableProperty("Thickness", "thickness", "%0.2f", unit="mm", min=0, max=100, allow_none=True)
+    prop_clearance = FloatEditableProperty("Clearance", "clearance", "%0.2f", unit="mm", min=0, max=100, allow_none=True)
+    prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", "%0.2f", unit="mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
@@ -697,20 +736,20 @@ class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
     prop_preset = RefEditableProperty("Tool preset", "tool_preset", ToolPresetAdapter(), allow_none=True, none_value="<none>")
-    prop_depth = FloatEditableProperty("Depth", "depth", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full depth")
-    prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f mm", min=0, max=100)
-    prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f mm", min=0, max=100, allow_none=True, none_value="full height")
+    prop_depth = FloatEditableProperty("Depth", "depth", "%0.2f", unit="mm", min=0, max=100, allow_none=True, none_value="full depth")
+    prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", "%0.2f", unit="mm", min=0, max=100)
+    prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", "%0.2f", unit="mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
-    prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f mm", min=-20, max=20)
-    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f %%", min=0, max=100, allow_none=True)
+    prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
+    prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f", unit="%", min=0, max=100, allow_none=True)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
 
-    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f mm/min", min=0.1, max=10000, allow_none=True)
-    prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f %%", min=1, max=100, allow_none=True)
-    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f mm", min=0.01, max=100, allow_none=True)
-    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f %%", min=0, max=200, allow_none=True)
+    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f", unit="%", min=1, max=100, allow_none=True)
+    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", "%0.2f", unit="mm", min=0.01, max=100, allow_none=True)
+    prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f", unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
 
     def __init__(self, document):
@@ -1012,8 +1051,14 @@ class AddOperationUndoCommand(QUndoCommand):
         self.row = row
     def undo(self):
         self.parent.takeRow(self.row)
+        if isinstance(self.item, CycleTreeItem):
+            del self.document.project_toolbits[self.item.cutter.name]
+            self.item.document.refreshToolList()
     def redo(self):
         self.parent.insertRow(self.row, self.item)
+        if isinstance(self.item, CycleTreeItem):
+            self.document.project_toolbits[self.item.cutter.name] = self.item.cutter
+            self.item.document.refreshToolList()
 
 class DeletePresetUndoCommand(QUndoCommand):
     def __init__(self, document, preset):
@@ -1105,6 +1150,90 @@ class MoveItemUndoCommand(QUndoCommand):
         self.newParent.insertRow(self.newPos, self.child)
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
+
+class AddPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, preset):
+        QUndoCommand.__init__(self, "Create preset")
+        self.item = item
+        self.preset = preset
+    def undo(self):
+        self.item.inventory_tool.deletePreset(self.preset)
+        self.item.document.refreshToolList()
+    def redo(self):
+        self.item.inventory_tool.presets.append(self.preset)
+        self.item.document.refreshToolList()
+
+class ModifyCutterUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify cutter")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        cutter = self.item.inventory_tool
+        cutter.resetTo(data)
+        cutter.name = data.name
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        cutter = self.item.inventory_tool
+        self.old_data = cutter.newInstance()
+        self.updateTo(self.new_data)
+
+class ModifyPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify preset")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.name = data.name
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old_data = preset.newInstance()
+        self.updateTo(self.new_data)
+
+class BaseRevertUndoCommand(QUndoCommand):
+    def __init__(self, item):
+        QUndoCommand.__init__(self, self.NAME)
+        self.item = item
+        self.old = None
+    def undo(self):
+        self.updateTo(self.old)
+
+class RevertPresetUndoCommand(BaseRevertUndoCommand):
+    NAME = "Revert preset"
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old = preset.newInstance()
+        self.updateTo(preset.base_object)
+
+class RevertToolUndoCommand(BaseRevertUndoCommand):
+    NAME = "Revert tool"
+    def updateTo(self, data):
+        tool = self.item.inventory_tool
+        tool.resetTo(data)
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def redo(self):
+        tool = self.item.inventory_tool
+        self.old = tool.newInstance()
+        self.updateTo(tool.base_object)
 
 class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
@@ -1255,6 +1384,7 @@ class DocumentModel(QObject):
         self.updateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
+        self.undoStack.clear()
     def make_machine_params(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def importDrawing(self, fn):
@@ -1337,15 +1467,17 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = cycle
         self.cutterSelected.emit(self.current_cutter_cycle)
     def opAddCutter(self, cutter: inventory.CutterBase):
-        # XXXKF undo
-        self.project_toolbits[cutter.name] = cutter
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
         #self.operModel.appendRow(self.current_cutter_cycle)
         self.refreshToolList()
         self.selectCycle(cycle)
         return cycle
+    def opAddProjectPreset(self, cutter: inventory.CutterBase, preset: inventory.PresetBase):
+        item = self.itemForCutter(cutter)
+        self.undoStack.push(AddPresetUndoCommand(item, preset))
     def opAddLibraryPreset(self, library_preset: inventory.PresetBase):
+        # XXXKF undo
         for cutter in self.project_toolbits.values():
             if cutter.base_object is library_preset.toolbit:
                 preset = library_preset.newInstance()
@@ -1426,3 +1558,13 @@ class DocumentModel(QObject):
             for p in tb.presets:
                 if p.base_object is preset:
                     p.base_object = None
+    def opRevertPreset(self, item):
+        self.undoStack.push(RevertPresetUndoCommand(item))
+    def opRevertTool(self, item):
+        self.undoStack.push(RevertToolUndoCommand(item))
+    def opModifyPreset(self, preset, new_data):
+        item = self.itemForPreset(preset)
+        self.undoStack.push(ModifyPresetUndoCommand(item, new_data))
+    def opModifyCutter(self, cutter, new_data):
+        item = self.itemForCutter(cutter)
+        self.undoStack.push(ModifyCutterUndoCommand(item, new_data))

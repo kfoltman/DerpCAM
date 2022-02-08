@@ -7,11 +7,13 @@ class GeometrySettings:
     simplify_arcs = True
     simplify_lines = False
 
-def PtsToInts(points):
-    return [(round(p.x * GeometrySettings.RESOLUTION), round(p.y * GeometrySettings.RESOLUTION)) for p in points]
+def PtsToInts(points, res=None):
+    res = res or GeometrySettings.RESOLUTION
+    return [(round(p.x * res), round(p.y * res)) for p in points]
 
-def PtsFromInts(points):
-    return [PathPoint(x / GeometrySettings.RESOLUTION, y / GeometrySettings.RESOLUTION) for x, y in points]
+def PtsFromInts(points, res=None):
+    res = res or GeometrySettings.RESOLUTION
+    return [PathPoint(x / res, y / res) for x, y in points]
     
 def PtsToIntsPos(points):
     res = [(round(x * GeometrySettings.RESOLUTION), round(y * GeometrySettings.RESOLUTION)) for x, y in points]

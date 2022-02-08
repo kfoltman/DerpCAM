@@ -11,7 +11,7 @@ import process
 import gcodegen
 import view
 from gui import propsheet, settings, canvas, model, inventory
-from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, AddPresetDialog, loadInventory, saveInventory, selectCutter
+from gui.cutter_mgr import SelectCutterDialog, AddCutterDialog, loadInventory, saveInventory, selectCutter
 import ezdxf
 import json
 from typing import Optional
@@ -143,6 +143,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             action = menu.addAction("Reload from inventory")
             action.triggered.connect(lambda: self.toolRevertFromInventory(item))
             action.setEnabled(item.isModifiedStock())
+            menu.addSeparator()
+            action = menu.addAction("Delete from project")
+            action.triggered.connect(lambda: self.toolDelete(item))
         menu.exec_(point)
     def toolSaveToInventory(self, item):
         if not item.inventory_tool.base_object:
@@ -165,19 +168,21 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if cutter_cycle:
             self.operTree.expand(cutter_cycle.index())
     def toolRevertFromInventory(self, item):
-        # XXXKF undo
         if item.inventory_tool.base_object:
+            self.document.opRevertTool(item)
             item.inventory_tool.resetTo(item.inventory_tool.base_object)
             self.document.refreshToolList()
             self.shapeTree.expandAll()
+    def toolDelete(self, item):
+        cycle = self.document.cycleForCutter(item.inventory_tool)
+        if QMessageBox.question(self, "Delete cutter from project",
+            "This will delete the cutter, its presets and all the operations that use that cutter from the project. Continue?") == QMessageBox.Yes:
+            self.document.opDeleteCycle(cycle)
     def toolPresetSetAsCurrent(self, item):
         self.document.selectPresetAsDefault(item.inventory_preset.toolbit, item.inventory_preset)
     def toolPresetRevertFromInventory(self, item):
-        # XXXKF undo
         if item.inventory_preset.base_object:
-            item.inventory_preset.resetTo(item.inventory_preset.base_object)
-            item.inventory_preset.toolbit = item.parent().inventory_tool
-            self.document.refreshToolList()
+            self.document.opRevertPreset(item)
             self.shapeTree.expandAll()
     def toolPresetSaveToInventory(self, item):
         inv_toolbit = item.inventory_preset.toolbit.base_object
@@ -196,7 +201,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.document.refreshToolList()
         self.shapeTree.expandAll()
     def toolPresetDelete(self, item):
-        if QMessageBox.question(self, "Delete project preset", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
+        if QMessageBox.question(self, "Delete preset from project", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
             self.document.opDeletePreset(item.inventory_preset)
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
@@ -547,7 +552,7 @@ class CAMMainWindow(QMainWindow):
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
         if self.document.drawingFilename is not None:
-            path = self.document.drawingFilename.replace(".dxf", ".dcp") # XXXKF too crude
+            path = os.path.splitext(self.document.drawingFilename)[0] + ".dcp"
             dlg.selectFile(path)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]

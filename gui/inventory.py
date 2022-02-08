@@ -133,7 +133,7 @@ class CutterBase(Serializable):
         res.material = material
         res.diameter = float(diameter)
         res.length = float(length) if length is not None else None
-        res.flutes = int(flutes)
+        res.flutes = int(flutes) if flutes is not None else 0
         res.presets = []
         return res
     def description(self):
@@ -202,7 +202,7 @@ class EndMillCutter(CutterBase):
     properties = CutterBase.properties
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
-        res = klass.new_impl(id, name, material, diameter, length, flutes)
+        res = klass.new_impl(id, name, material, diameter, length, int(flutes))
         return res
     def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate):
         self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate))

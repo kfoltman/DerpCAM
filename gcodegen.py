@@ -123,7 +123,7 @@ class Gcode(object):
         assert dist(lastpt, subpath.seg_start()) < 1 / GeometrySettings.RESOLUTION, f"lastpt={lastpt} != firstpt={subpath.seg_start()}"
         tdist = 0
         for lastpt, pt in PathSegmentIterator(subpath):
-            if pt.is_arc():
+            if pt.is_arc() and pt.length() > 1 / GeometrySettings.RESOLUTION and pt.c.r > 1 / GeometrySettings.RESOLUTION:
                 arc = pt
                 cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
                 assert dist(lastpt, arc.p1) < 1 / GeometrySettings.RESOLUTION
@@ -133,8 +133,9 @@ class Gcode(object):
                 else:
                     self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y)
             else:
+                pt = pt.seg_end() # in case this was an arc
                 if new_z is not None:
-                    tdist += dist(lastpt, pt)
+                    tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
                     self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
                     self.linear(x=pt.x, y=pt.y)
