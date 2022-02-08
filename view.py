@@ -108,7 +108,7 @@ class OperationsRenderer(object):
             pc = PyclipperOffset()
             pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
             #outlines = pc.Execute(res * pen.widthF() / 2)
-            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 5)
+            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 3)
             outlines = pc.Execute(initv)
 
             pc = Pyclipper()
