@@ -95,11 +95,98 @@ class OperationsRenderer(object):
             for tp in path.toolpaths:
                 self.addToolpathsTransformed(owner, pen, tp, stage, operation)
             return
+        if pen.widthF():
+            t = time.time()
+            #print ("Before buffer")
+            points = CircleFitter.interpolate_arcs(path.path.nodes, gcodegen.debug_simplify_arcs, owner.scalingFactor())
+            if path.path.closed:
+                points += points[0:1]
+            else:
+                points += points[::-1]
+            brush = QBrush(pen.color())
+            ints = PtsToInts(points)
+            #ints = CleanPolygon(ints)
+            pc = PyclipperOffset()
+            pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
+            #outlines = pc.Execute(res * pen.widthF() / 2)
+            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 3)
+            outlines = pc.Execute(initv)
+
+            pc = Pyclipper()
+            for o in outlines:
+                pc.AddPath(o, PT_SUBJECT, True)
+            outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+            #print (len(outlines))
+            outlines2 = []
+            for o in outlines:
+                pc = PyclipperOffset()
+                pc.AddPath(o, JT_ROUND, ET_CLOSEDPOLYGON)
+                outlines2 += pc.Execute(GeometrySettings.RESOLUTION * pen.widthF() / 2 - initv)
+            outlines = outlines2
+            pc = Pyclipper()
+            for o in outlines:
+                pc.AddPath(o, PT_SUBJECT, True)
+            outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+            #print ("->", len(outlines))
+            for o in outlines:
+                owner.addPolygons(brush, [PtsFromInts(ints) for ints in outlines], GeometrySettings.simplify_arcs)
+            #print ("After buffer", time.time() - t)
+            return
         if GeometrySettings.simplify_arcs:
             path = path.lines_to_arcs()
         if GeometrySettings.simplify_lines:
             path = path.optimize_lines()
         owner.addLines(pen, path.path.nodes, path.path.closed, GeometrySettings.simplify_arcs)
+
+class LineDrawingOp(object):
+    def __init__(self, pen, path, bounds, darken):
+        self.pen = pen
+        self.path = path
+        self.bounds = bounds
+        self.darken = darken
+    def paint(self, qp, transform, drawingArea, is_draft):
+        if self.darken:
+            qp.setCompositionMode(QPainter.CompositionMode_Darken)
+        else:
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        bounds = transform.mapRect(self.bounds)
+        if bounds.intersects(drawingArea):
+            # Skip all the thick lines when drawing during an interactive
+            # operation like panning and zooming
+            pen = self.pen
+            if not isinstance(pen, QPen):
+                pen, is_slow = pen(path, scale)
+            else:
+                is_slow = pen.widthF() and not isinstance(self.path, QPointF) and self.path.elementCount() > 1000
+            if is_draft and is_slow:
+                return
+            qp.setPen(pen)
+            # Do not anti-alias very long segments
+            if is_slow:
+                qp.setRenderHint(QPainter.Antialiasing, False)
+            if isinstance(self.path, QPointF):
+                qp.drawPoint(self.path)
+            else:
+                qp.drawPath(self.path)
+            if is_slow:
+                qp.setRenderHint(QPainter.Antialiasing, True)
+
+class FillDrawingOp(object):
+    def __init__(self, brush, path, bounds, darken):
+        self.brush = brush
+        self.path = path
+        self.bounds = bounds
+        self.darken = darken
+    def paint(self, qp, transform, drawingArea, is_draft):
+        #if is_draft:
+        #    return
+        if self.darken:
+            qp.setCompositionMode(QPainter.CompositionMode_Darken)
+        else:
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        bounds = transform.mapRect(self.bounds)
+        if bounds.intersects(drawingArea):
+            qp.fillPath(self.path, self.brush)
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
@@ -140,20 +227,36 @@ class PathViewer(QWidget):
         vpt2 = self.unproject(pt)
         self.zero += vpt - vpt2
         self.repaint()
+    def addFilledPath(self, brush, polylines, darken=True):
+        path = QPainterPath()
+        for polyline in polylines:
+            path.moveTo(polyline[0].x, polyline[0].y)
+            for point in polyline[1:]:
+                if point.is_point():
+                    path.lineTo(point.x, point.y)
+                else:
+                    arc = point
+                    path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+            path.closeSubpath()
+        self.drawingOps.append(FillDrawingOp(brush, path, path.boundingRect(), darken))
     def addPath(self, pen, *polylines, darken=True):
-        paths = []
         for polyline in polylines:
             path = QPainterPath()
             if len(polyline) == 1:
                 x, y = polyline[0].x, polyline[0].y
-                self.drawingOps.append((pen, QPointF(x, y), QRectF(x, y, 1, 1), darken))
-            path.moveTo(polyline[0].x, polyline[0].y)
-            for point in polyline[1:]:
-                path.lineTo(point.x, point.y)
-            if polyline[0] == polyline[-1]:
-                self.drawingOps.append((pen, path, path.boundingRect(), darken))
+                self.drawingOps.append(LineDrawingOp(pen, QPointF(x, y), QRectF(x, y, 1, 1), darken))
             else:
-                self.drawingOps.append((pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1)), darken))
+                path.moveTo(polyline[0].x, polyline[0].y)
+                for point in polyline[1:]:
+                    if point.is_point():
+                        path.lineTo(point.x, point.y)
+                    else:
+                        arc = point
+                        path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+                if polyline[0] == polyline[-1].seg_end():
+                    self.drawingOps.append(LineDrawingOp(pen, path, path.boundingRect(), darken))
+                else:
+                    self.drawingOps.append(LineDrawingOp(pen, path, path.boundingRect().marginsAdded(QMarginsF(1, 1, 1, 1)), darken))
 
     def renderDrawing(self):
         self.drawingOps = []
@@ -175,33 +278,8 @@ class PathViewer(QWidget):
         transform = QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
         qp.setTransform(transform)
         drawingArea = QRectF(self.rect())
-        for pen, path, bbox, darken in self.drawingOps:
-            if darken:
-                qp.setCompositionMode(QPainter.CompositionMode_Darken)
-            else:
-                qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            bounds = transform.mapRect(bbox)
-            if bounds.intersects(drawingArea):
-                # Skip all the thick lines when drawing during an interactive
-                # operation like panning and zooming
-                if not isinstance(pen, QPen):
-                    pen, is_slow = pen(path, scale)
-                else:
-                    is_slow = pen.widthF() and not isinstance(path, QPointF) and path.elementCount() > 1000
-                if self.isDraft() and is_slow:
-                    continue
-                qp.setPen(pen)
-                # Do not anti-alias very long segments
-                if is_slow:
-                    qp.setRenderHint(1, False)
-                    qp.setRenderHint(8, False)
-                if isinstance(path, QPointF):
-                    qp.drawPoint(path)
-                else:
-                    qp.drawPath(path)
-                if is_slow:
-                    qp.setRenderHint(1, True)
-                    qp.setRenderHint(8, True)
+        for op in self.drawingOps:
+            op.paint(qp, transform, drawingArea, self.isDraft())
         qp.setTransform(QTransform())
 
     def paintOverlays(self, e, qp):
@@ -237,10 +315,15 @@ class PathViewer(QWidget):
     def addLines(self, pen, points, closed, has_arcs=False, darken=True):
         if has_arcs:
             points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
-        if closed and points[0] != points[-1]:
+        if closed and points[0] != points[-1].seg_end():
             self.addPath(pen, points + points[0:1], darken=darken)
         else:
             self.addPath(pen, points, darken=darken)
+
+    def addPolygons(self, brush, polygons, has_arcs=False, darken=True):
+        #if has_arcs:
+        #    points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
+        self.addFilledPath(brush, polygons, darken=darken)
 
     def processMove(self, e):
         orig_zero, orig_pos = self.click_data
