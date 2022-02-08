@@ -99,17 +99,16 @@ class OperationsRenderer(object):
             t = time.time()
             #print ("Before buffer")
             points = CircleFitter.interpolate_arcs(path.path.nodes, gcodegen.debug_simplify_arcs, owner.scalingFactor())
-            if path.path.closed:
-                points += points[0:1]
-            else:
-                points += points[::-1]
             brush = QBrush(pen.color())
             ints = PtsToInts(points)
+            if path.path.closed:
+                ints += ints[0]
+            ints += ints[::-1]
             #ints = CleanPolygon(ints)
             pc = PyclipperOffset()
             pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
             #outlines = pc.Execute(res * pen.widthF() / 2)
-            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 3)
+            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 5)
             outlines = pc.Execute(initv)
 
             pc = Pyclipper()
@@ -120,7 +119,7 @@ class OperationsRenderer(object):
             outlines2 = []
             for o in outlines:
                 pc = PyclipperOffset()
-                pc.AddPath(o, JT_ROUND, ET_CLOSEDPOLYGON)
+                pc.AddPath(o, JT_ROUND, ET_CLOSEDLINE)
                 outlines2 += pc.Execute(GeometrySettings.RESOLUTION * pen.widthF() / 2 - initv)
             outlines = outlines2
             pc = Pyclipper()
