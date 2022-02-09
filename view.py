@@ -102,7 +102,7 @@ class OperationsRenderer(object):
             brush = QBrush(pen.color())
             ints = PtsToInts(points)
             if path.path.closed:
-                ints += ints[0]
+                ints += [ints[0]]
             ints += ints[::-1]
             #ints = CleanPolygon(ints)
             pc = PyclipperOffset()
