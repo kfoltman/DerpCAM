@@ -951,6 +951,7 @@ class OperationTreeItem(CAMTreeItem):
         if self.worker:
             self.worker.join()
             self.worker = None
+            self.document.operationsUpdated.emit()
     def cancelWorker(self):
         if self.worker:
             self.worker.cancelled = True
