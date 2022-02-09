@@ -559,6 +559,7 @@ class FaceMill(UntabbedOperation):
         UntabbedOperation.__init__(self, shape, tool, props, shape.face_mill(tool, angle, margin, zigzag))
 
 class Pocket(UntabbedOperation):
+    pyvlock = threading.RLock()
     def __init__(self, shape, tool, props):
         from shapely.geometry import LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
         from shapely.ops import linemerge, nearest_points
@@ -588,7 +589,10 @@ class Pocket(UntabbedOperation):
                     inputs += i.geoms
         tps = []
         for polygon in inputs:
-            tp = cam.geometry.ToolPath(polygon, 0.5 * tool.diameter * tool.stepover, cam.geometry.ArcDir.CW)
+            step = 0.5 * tool.diameter * tool.stepover
+            with self.pyvlock:
+                v = cam.geometry.Voronoi(polygon, tolerence = step)
+            tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v)
             gen_path = []
             x, y = tp.start_point.x, tp.start_point.y
             r = 0
