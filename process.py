@@ -3,6 +3,7 @@ from math import *
 from geom import *
 from milling_tool import *
 from toolpath import *
+import threading
 
 def findPathNesting(tps):
     nestings = []
@@ -252,6 +253,8 @@ class Shape(object):
         #for island in tps_islands:
         #    mergeToolpaths(tps, island, tool.diameter)
         while True:
+            if getattr(threading.current_thread(), 'cancelled', False):
+                return None
             res = self.contour(tool, False, displace_now, subtract=islands_transformed)
             if not res:
                 break

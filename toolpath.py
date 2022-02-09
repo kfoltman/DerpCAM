@@ -170,6 +170,35 @@ class Toolpath(object):
             #print (spos, epos, '->', cspos, cepos)
             spos, epos = cspos, cepos
         return Tab(spos, epos, helical_entry)
+    def render_as_outlines(self):
+        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 1)
+        ints = PtsToInts(points)
+        if self.path.closed:
+            ints += [ints[0]]
+        ints += ints[::-1]
+        #ints = CleanPolygon(ints)
+        pc = PyclipperOffset()
+        pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
+        #outlines = pc.Execute(res * pen.widthF() / 2)
+        initv = min(GeometrySettings.RESOLUTION * self.tool.diameter / 2, 3)
+        outlines = pc.Execute(initv)
+
+        pc = Pyclipper()
+        for o in outlines:
+            pc.AddPath(o, PT_SUBJECT, True)
+        outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+        #print (len(outlines))
+        outlines2 = []
+        for o in outlines:
+            pc = PyclipperOffset()
+            pc.AddPath(o, JT_ROUND, ET_CLOSEDLINE)
+            outlines2 += pc.Execute(GeometrySettings.RESOLUTION * self.tool.diameter / 2 - initv)
+        outlines = outlines2
+        pc = Pyclipper()
+        for o in outlines:
+            pc.AddPath(o, PT_SUBJECT, True)
+        outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+        return [PtsFromInts(ints) for ints in outlines]
 
 class Toolpaths(object):
     def __init__(self, toolpaths):

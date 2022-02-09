@@ -323,6 +323,7 @@ class CAMMainWindow(QMainWindow):
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
+        self.document.operationsUpdated.connect(self.onOperationsUpdated)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
@@ -364,6 +365,12 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
+        self.idleTimer = self.startTimer(100)
+    def timerEvent(self, event):
+        if event.timerId() == self.idleTimer:
+            self.document.pollForUpdateCAM()
+            return
+        QMainWindow.timerEvent(self, event)
     def millAddTool(self):
         self.millSelectTool(dlg_type=AddCutterDialog)
     def millSelectTool(self, cutter_type=None, dlg_type=SelectCutterDialog):
@@ -375,6 +382,8 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
+    def onOperationsUpdated(self):
+        self.viewer.majorUpdate(reset_zoom=False)
     def updateOperations(self):
         self.viewer.majorUpdate()
         #self.projectDW.updateFromOperations(self.viewer.operations)
@@ -398,17 +407,17 @@ class CAMMainWindow(QMainWindow):
         self.propsDW.updatePropertiesFor(item)
     def materialChanged(self):
         self.propsDW.updateProperties()
-        self.document.updateCAM()
+        self.document.startUpdateCAM()
         self.viewer.majorUpdate()
     def toolChanged(self):
         self.propsDW.updateProperties()
-        self.document.updateCAM()
+        self.document.startUpdateCAM()
         self.viewer.majorUpdate()
     def toolPresetChanged(self):
         self.propsDW.updateProperties()
         self.viewer.majorUpdate()
     def drawingChanged(self):
-        self.document.updateCAM()
+        self.document.startUpdateCAM()
         self.viewer.majorUpdate()
     def operChanged(self):
         self.propsDW.updateProperties()
@@ -443,7 +452,7 @@ class CAMMainWindow(QMainWindow):
         dlg.initUI()
         if dlg.exec():
             self.configSettings.update()
-            self.document.updateCAM()
+            self.document.startUpdateCAM()
             self.viewer.renderDrawing()
             self.viewer.repaint()
             #self.viewer.majorUpdate()
@@ -570,7 +579,8 @@ class CAMMainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, None, str(e))
             return
-        self.document.updateCAM()
+        self.document.startUpdateCAM()
+        self.document.waitForUpdateCAM()
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
         if self.document.drawingFilename:
             path = os.path.splitext(self.document.drawingFilename)[0] + ".ngc"
@@ -605,6 +615,7 @@ class CAMMainWindow(QMainWindow):
             def write(self, fn):
                 self.operations.to_gcode_file(fn)
         with view.Spinner():
+            self.document.waitForUpdateCAM()
             exporter = OpExporter(self.document)
             exporter.write(fn)
     def fileExit(self):

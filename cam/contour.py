@@ -1,5 +1,5 @@
 import geom, process, toolpath
-import math
+import math, threading
 
 def plain_clipper(shape, diameter, outside, displace, climb):
     dist = (0.5 * diameter + displace) * geom.GeometrySettings.RESOLUTION
@@ -38,6 +38,8 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     segmentation = []
     outlen = 0
     while i <= ilen:
+        if getattr(threading.current_thread(), 'cancelled', False):
+            return None
         step2 = 1
         pt = inside.interpolate(i)
         while True:
@@ -116,6 +118,8 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     inside = [geom.Path(PtsFromInts(path), shape.closed) for path in res]
 
     paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size, is_outside ^ climb, climb) for geom in inside]
+    if None in paths:
+        return None
     return paths
     
 plain = plain_clipper
