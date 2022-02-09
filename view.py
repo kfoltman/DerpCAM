@@ -143,7 +143,7 @@ class LineDrawingOp(object):
         self.path = path
         self.bounds = bounds
         self.darken = darken
-    def paint(self, qp, transform, drawingArea, is_draft):
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
         if self.darken:
             qp.setCompositionMode(QPainter.CompositionMode_Darken)
         else:
@@ -154,7 +154,7 @@ class LineDrawingOp(object):
             # operation like panning and zooming
             pen = self.pen
             if not isinstance(pen, QPen):
-                pen, is_slow = pen(path, scale)
+                pen, is_slow = pen(self.path, scale)
             else:
                 is_slow = pen.widthF() and not isinstance(self.path, QPointF) and self.path.elementCount() > 1000
             if is_draft and is_slow:
@@ -176,7 +176,7 @@ class FillDrawingOp(object):
         self.path = path
         self.bounds = bounds
         self.darken = darken
-    def paint(self, qp, transform, drawingArea, is_draft):
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
         #if is_draft:
         #    return
         if self.darken:
@@ -278,7 +278,7 @@ class PathViewer(QWidget):
         qp.setTransform(transform)
         drawingArea = QRectF(self.rect())
         for op in self.drawingOps:
-            op.paint(qp, transform, drawingArea, self.isDraft())
+            op.paint(qp, transform, drawingArea, self.isDraft(), scale)
         qp.setTransform(QTransform())
 
     def paintOverlays(self, e, qp):
