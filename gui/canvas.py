@@ -100,13 +100,16 @@ class DrawingViewer(view.PathViewer):
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
             qp.setOpacity(1.0)
+        if self.document.pollForUpdateCAM():
+            qp.setPen(QPen(QColor(128, 0, 0), 0))
+            qp.drawText(QRect(40, 35, 200, 55), Qt.AlignVCenter, "Update in progress...")
     def keyPressEvent(self, e):
         if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
             self.exitEditMode()
         return view.PathViewer.keyPressEvent(self, e)
     def exitEditMode(self):
         item = self.mode_item
-        item.updateCAM()
+        item.startUpdateCAM()
         self.changeMode(DrawingUIMode.MODE_NORMAL, None)
         self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()

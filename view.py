@@ -97,39 +97,15 @@ class OperationsRenderer(object):
             return
         if pen.widthF():
             t = time.time()
-            #print ("Before buffer")
-            points = CircleFitter.interpolate_arcs(path.path.nodes, gcodegen.debug_simplify_arcs, owner.scalingFactor())
+            # print ("Before buffer")
             brush = QBrush(pen.color())
-            ints = PtsToInts(points)
-            if path.path.closed:
-                ints += ints[0]
-            ints += ints[::-1]
-            #ints = CleanPolygon(ints)
-            pc = PyclipperOffset()
-            pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
-            #outlines = pc.Execute(res * pen.widthF() / 2)
-            initv = min(GeometrySettings.RESOLUTION * pen.widthF() / 2, 5)
-            outlines = pc.Execute(initv)
-
-            pc = Pyclipper()
-            for o in outlines:
-                pc.AddPath(o, PT_SUBJECT, True)
-            outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
-            #print (len(outlines))
-            outlines2 = []
-            for o in outlines:
-                pc = PyclipperOffset()
-                pc.AddPath(o, JT_ROUND, ET_CLOSEDLINE)
-                outlines2 += pc.Execute(GeometrySettings.RESOLUTION * pen.widthF() / 2 - initv)
-            outlines = outlines2
-            pc = Pyclipper()
-            for o in outlines:
-                pc.AddPath(o, PT_SUBJECT, True)
-            outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
             #print ("->", len(outlines))
+            outlines = getattr(path, 'rendered_outlines', None)
+            if outlines is None:
+                path.rendered_outlines = outlines = path.render_as_outlines()
             for o in outlines:
-                owner.addPolygons(brush, [PtsFromInts(ints) for ints in outlines], GeometrySettings.simplify_arcs)
-            #print ("After buffer", time.time() - t)
+                owner.addPolygons(brush, outlines, GeometrySettings.simplify_arcs)
+            # print ("After buffer", time.time() - t)
             return
         if GeometrySettings.simplify_arcs:
             path = path.lines_to_arcs()
@@ -143,7 +119,7 @@ class LineDrawingOp(object):
         self.path = path
         self.bounds = bounds
         self.darken = darken
-    def paint(self, qp, transform, drawingArea, is_draft):
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
         if self.darken:
             qp.setCompositionMode(QPainter.CompositionMode_Darken)
         else:
@@ -154,7 +130,7 @@ class LineDrawingOp(object):
             # operation like panning and zooming
             pen = self.pen
             if not isinstance(pen, QPen):
-                pen, is_slow = pen(path, scale)
+                pen, is_slow = pen(self.path, scale)
             else:
                 is_slow = pen.widthF() and not isinstance(self.path, QPointF) and self.path.elementCount() > 1000
             if is_draft and is_slow:
@@ -176,7 +152,7 @@ class FillDrawingOp(object):
         self.path = path
         self.bounds = bounds
         self.darken = darken
-    def paint(self, qp, transform, drawingArea, is_draft):
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
         #if is_draft:
         #    return
         if self.darken:
@@ -198,9 +174,10 @@ class PathViewer(QWidget):
         self.draft_time = None
         self.majorUpdate()
         self.startTimer(50)
-    def majorUpdate(self):
+    def majorUpdate(self, reset_zoom=True):
         with Spinner():
-            self.resetZoom()
+            if reset_zoom:
+                self.resetZoom()
             self.renderDrawing()
             self.repaint()
     def resetZoom(self):
@@ -278,7 +255,7 @@ class PathViewer(QWidget):
         qp.setTransform(transform)
         drawingArea = QRectF(self.rect())
         for op in self.drawingOps:
-            op.paint(qp, transform, drawingArea, self.isDraft())
+            op.paint(qp, transform, drawingArea, self.isDraft(), scale)
         qp.setTransform(QTransform())
 
     def paintOverlays(self, e, qp):

@@ -1,3 +1,4 @@
+import threading
 from geom import *
 import process
 import toolpath
@@ -539,6 +540,10 @@ class UntabbedOperation(Operation):
         Operation.__init__(self, shape, tool, props)
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
+        for i in self.flattened:
+            if getattr(threading.current_thread(), 'cancelled', False):
+                break
+            i.rendered_outlines = i.render_as_outlines()
     def to_gcode(self, gcode, machine_params):
         for path in self.flattened:
             BaseCut2D(machine_params, self.props, self.tool, path).build(gcode)
@@ -628,8 +633,15 @@ class TabbedOperation(Operation):
         self.tabbed_for_path = {}
         if tabs:
             for i in self.flattened:
+                if getattr(threading.current_thread(), 'cancelled', False):
+                    break
+                i.rendered_outlines = i.render_as_outlines()
                 tab_inst = i.usertabs(tabs[i], width=self.tabs_width())
                 self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst)
+                for j in self.tabbed_for_path[i]:
+                    if getattr(threading.current_thread(), 'cancelled', False):
+                        break
+                    j.rendered_outlines = j.render_as_outlines()
     def to_gcode(self, gcode, machine_params):
         tab_depth = self.props.tab_depth
         if tab_depth is None:
@@ -676,6 +688,9 @@ class Contour(TabbedOperation):
         #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
+            if contour_paths is None:
+                TabbedOperation.__init__(self, shape, tool, props, None, tabs=None)
+                return
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened()
         else:
             contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)

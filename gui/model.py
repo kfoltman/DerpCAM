@@ -1,5 +1,6 @@
 import os.path
 import sys
+import threading
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from PyQt5.QtCore import *
@@ -528,7 +529,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         else:
             assert False, "Unknown attribute: " + repr(name)
         if name == 'extra_width' or name == 'trc_rate' or name == 'stepover':
-            self.document.updateCAM(preset=self)
+            self.document.startUpdateCAM(preset=self)
         self.emitDataChanged()
     def returnKeyPressed(self):
         self.document.selectPresetAsDefault(self.inventory_preset.toolbit, self.inventory_preset)
@@ -762,7 +763,8 @@ class OperationTreeItem(CAMTreeItem):
         self.isSelected = False
         self.error = None
         self.warning = None
-        self.updateCAM()
+        self.worker = None
+        self.startUpdateCAM()
     def resetProperties(self):
         self.setCheckState(True)
         self.cutter = None
@@ -867,7 +869,7 @@ class OperationTreeItem(CAMTreeItem):
                         self.document.opMoveItem(self.parent(), self, self.document.current_cutter_cycle, 0)
                         self.cutter = self.document.current_cutter_cycle.cutter
                     self.tool_preset = self.document.default_preset_by_tool.get(self.cutter, None)
-                    self.updateCAM()
+                    self.startUpdateCAM()
                     self.document.refreshToolList()
                 return
         setattr(self, name, value)
@@ -889,7 +891,7 @@ class OperationTreeItem(CAMTreeItem):
                     break
             else:
                 self.tool_preset = None
-        self.updateCAM()
+        self.startUpdateCAM()
         self.emitDataChanged()
     def operationTypeLabel(self):
         if self.operation == OperationType.DRILLED_HOLE:
@@ -924,21 +926,37 @@ class OperationTreeItem(CAMTreeItem):
         self.warning += warning
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
-    def updateCAM(self):
+    def startUpdateCAM(self):
         with view.Spinner():
+            self.updateOrigShape()
+            self.error = None
+            self.warning = None
+            self.cam = None
+            self.renderer = None
+            self.cancelWorker()
+            if not self.cutter:
+                self.error = "Cutter not set"
+                return
+            if self.checkState() == 0:
+                # Operation not enabled
+                return
             self.updateCAMWork()
+    def pollForUpdateCAM(self):
+        if self.worker and not self.worker.is_alive():
+            self.worker.join()
+            self.worker = None
+            self.document.operationsUpdated.emit()
+        return self.worker is not None
+    def waitForUpdateCAM(self):
+        if self.worker:
+            self.worker.join()
+            self.worker = None
+    def cancelWorker(self):
+        if self.worker:
+            self.worker.cancelled = True
+            self.worker.join()
+            self.worker = None
     def updateCAMWork(self):
-        self.updateOrigShape()
-        self.error = None
-        self.warning = None
-        self.cam = None
-        self.renderer = None
-        if not self.cutter:
-            self.error = "Cutter not set"
-            return
-        if self.checkState() == 0:
-            # Operation not enabled
-            return
         try:
             errors = []
             if self.orig_shape:
@@ -974,14 +992,15 @@ class OperationTreeItem(CAMTreeItem):
                     tabs = self.user_tabs
                 else:
                     tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
+                threadFunc = None
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
                     if pda.trc_rate:
-                        self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
                     else:
                         self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
                 elif self.operation == OperationType.INSIDE_CONTOUR:
                     if pda.trc_rate:
-                        self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
                     else:
                         self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
                 elif self.operation == OperationType.POCKET:
@@ -989,7 +1008,7 @@ class OperationTreeItem(CAMTreeItem):
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
                         if item.closed:
                             self.shape.add_island(item.boundary)
-                    self.cam.pocket(self.shape)
+                    threadFunc = lambda: self.cam.pocket(self.shape)
                 elif self.operation == OperationType.ENGRAVE:
                     self.cam.engrave(self.shape)
                 elif self.operation == OperationType.INTERPOLATED_HOLE:
@@ -998,6 +1017,10 @@ class OperationTreeItem(CAMTreeItem):
                     self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
                 else:
                     raise ValueError("Unsupported operation")
+                if threadFunc:
+                    self.worker = threading.Thread(target=threadFunc)
+                    self.worker.cancelled = False
+                    self.worker.start()
             self.error = None
         except Exception as e:
             self.cam = None
@@ -1240,6 +1263,7 @@ class DocumentModel(QObject):
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
     toolListRefreshed = pyqtSignal([])
+    operationsUpdated = pyqtSignal([])
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
@@ -1381,7 +1405,7 @@ class DocumentModel(QObject):
                     operation.cutter = cutter_map[operation.cutter]
                     operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
                     cycle.appendRow(operation)
-        self.updateCAM()
+        self.startUpdateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
         self.undoStack.clear()
@@ -1403,14 +1427,17 @@ class DocumentModel(QObject):
     def operItemChanged(self, item):
         if isinstance(item, OperationTreeItem):
             if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
-                item.updateCAM()
-    def updateCAM(self, preset=None):
-        with view.Spinner():
-            self.make_machine_params()
-            if preset is None:
-                self.forEachOperation(lambda item: item.updateCAM())
-            else:
-                self.forEachOperation(lambda item: item.updateCAM() if item.tool_preset is preset.inventory_preset else None)
+                item.startUpdateCAM()
+    def startUpdateCAM(self, preset=None):
+        self.make_machine_params()
+        if preset is None:
+            self.forEachOperation(lambda item: item.startUpdateCAM())
+        else:
+            self.forEachOperation(lambda item: item.startUpdateCAM() if item.tool_preset is preset.inventory_preset else None)
+    def pollForUpdateCAM(self):
+        return any(self.forEachOperation(lambda item: item.pollForUpdateCAM()))
+    def waitForUpdateCAM(self, preset=None):
+        self.forEachOperation(lambda item: item.waitForUpdateCAM())
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
@@ -1505,7 +1532,7 @@ class DocumentModel(QObject):
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
                 item.cutter = cycle.cutter
                 item.tool_preset = self.default_preset_by_tool.get(item.cutter, None)
-                item.updateCAM()
+                item.startUpdateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
                 rowCount += 1
