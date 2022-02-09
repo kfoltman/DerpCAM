@@ -365,10 +365,15 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
+        self.refreshNeeded = False
+        self.resetZoomNeeded = False
         self.idleTimer = self.startTimer(100)
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
             self.document.pollForUpdateCAM()
+            if self.refreshNeeded:
+                self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
+                self.refreshNeeded = False
             return
         QMainWindow.timerEvent(self, event)
     def millAddTool(self):
@@ -383,9 +388,9 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
     def onOperationsUpdated(self):
-        self.viewer.majorUpdate(reset_zoom=False)
+        self.refreshNeeded = True
     def updateOperations(self):
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
         #self.projectDW.updateFromOperations(self.viewer.operations)
         self.updateSelection()
     def viewerSelectionChanged(self):
@@ -393,7 +398,8 @@ class CAMMainWindow(QMainWindow):
     def shapeTreeSelectionChanged(self):
         self.updateSelection()
         if self.document.setOperSelection(self.projectDW.operSelection()):
-            self.viewer.majorUpdate()
+            # XXXKF implement a more fine-grained refresh
+            self.scheduleMajorRedraw()
     def shapeModelChanged(self, index):
         item = self.document.shapeModel.itemFromIndex(index)
         if type(item) == model.WorkpieceTreeItem:
@@ -405,27 +411,30 @@ class CAMMainWindow(QMainWindow):
         elif type(item) == model.DrawingTreeItem:
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
+    def scheduleMajorRedraw(self):
+        self.refreshNeeded = True
+        self.resetZoomNeeded = True
     def materialChanged(self):
         self.propsDW.updateProperties()
         self.document.startUpdateCAM()
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.startUpdateCAM()
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def toolPresetChanged(self):
         self.propsDW.updateProperties()
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def drawingChanged(self):
         self.document.startUpdateCAM()
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def operChanged(self):
         self.propsDW.updateProperties()
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def operInserted(self):
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def operRemoved(self):
-        self.viewer.majorUpdate()
+        self.scheduleMajorRedraw()
     def operationEditMode(self, mode):
         oldEnabled = self.propsDW.isEnabled()
         self.projectDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
