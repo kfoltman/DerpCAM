@@ -594,7 +594,14 @@ class Pocket(UntabbedOperation):
             step = 0.5 * tool.diameter * tool.stepover
             with self.pyvlock:
                 v = cam.voronoi_centers.VoronoiCenters(polygon, tolerence = step)
-            tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v)
+            tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v, generate=True)
+            generator = tp._get_arcs(100)
+            try:
+                while not is_calculation_cancelled():
+                    progress = max(0, min(1000, next(generator)))
+                    set_calculation_progress(progress, 1000)
+            except StopIteration:
+                pass
             gen_path = []
             x, y = tp.start_point.x, tp.start_point.y
             r = 0
