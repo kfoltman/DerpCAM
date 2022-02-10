@@ -946,7 +946,8 @@ class OperationTreeItem(CAMTreeItem):
             self.worker.join()
             self.worker = None
             self.document.operationsUpdated.emit()
-        return self.worker is not None
+        if self.worker is not None:
+            return self.worker.progress
     def waitForUpdateCAM(self):
         if self.worker:
             self.worker.join()
@@ -1020,6 +1021,7 @@ class OperationTreeItem(CAMTreeItem):
                     raise ValueError("Unsupported operation")
                 if threadFunc:
                     self.worker = threading.Thread(target=threadFunc)
+                    self.worker.progress = (0, 1)
                     self.worker.cancelled = False
                     self.worker.start()
             self.error = None
@@ -1135,6 +1137,8 @@ class DeleteOperationUndoCommand(QUndoCommand):
         if isinstance(self.item, CycleTreeItem) and self.deleted_cutter:
             self.document.project_toolbits[self.item.cutter.name] = self.deleted_cutter
             self.document.refreshToolList()
+        elif isinstance(self.item, OperationTreeItem):
+            self.item.startUpdateCAM()
     def redo(self):
         self.parent.takeRow(self.row)
         if isinstance(self.item, CycleTreeItem):
@@ -1143,6 +1147,8 @@ class DeleteOperationUndoCommand(QUndoCommand):
                 self.deleted_cutter = self.document.project_toolbits[self.item.cutter.name]
                 del self.document.project_toolbits[self.item.cutter.name]
                 self.document.refreshToolList()
+        else:
+            self.item.cancelWorker()
 
 class PropertySetUndoCommand(QUndoCommand):
     def __init__(self, property, subject, old_value, new_value):
@@ -1436,7 +1442,15 @@ class DocumentModel(QObject):
         else:
             self.forEachOperation(lambda item: item.startUpdateCAM() if item.tool_preset is preset.inventory_preset else None)
     def pollForUpdateCAM(self):
-        return any(self.forEachOperation(lambda item: item.pollForUpdateCAM()))
+        results = self.forEachOperation(lambda item: item.pollForUpdateCAM())
+        totaldone = 0
+        totaloverall = 0
+        for i in results:
+            if i is not None:
+                totaldone += i[0]
+                totaloverall += i[1]
+        if totaloverall > 0:
+            return totaldone / totaloverall
     def waitForUpdateCAM(self, preset=None):
         self.forEachOperation(lambda item: item.waitForUpdateCAM())
     def getToolbitList(self, data_type: type):

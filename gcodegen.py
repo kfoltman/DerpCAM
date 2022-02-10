@@ -541,7 +541,7 @@ class UntabbedOperation(Operation):
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
         for i in self.flattened:
-            if getattr(threading.current_thread(), 'cancelled', False):
+            if is_calculation_cancelled():
                 break
             i.rendered_outlines = i.render_as_outlines()
     def to_gcode(self, gcode, machine_params):
@@ -578,13 +578,13 @@ class TabbedOperation(Operation):
         self.tabbed_for_path = {}
         if tabs:
             for i in self.flattened:
-                if getattr(threading.current_thread(), 'cancelled', False):
+                if is_calculation_cancelled():
                     break
                 i.rendered_outlines = i.render_as_outlines()
                 tab_inst = i.usertabs(tabs[i], width=self.tabs_width())
                 self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst)
                 for j in self.tabbed_for_path[i]:
-                    if getattr(threading.current_thread(), 'cancelled', False):
+                    if is_calculation_cancelled():
                         break
                     j.rendered_outlines = j.render_as_outlines()
     def to_gcode(self, gcode, machine_params):

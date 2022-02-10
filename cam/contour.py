@@ -21,7 +21,7 @@ def plain_shapely(shape, diameter, outside, displace, climb):
         paths = [geom.Path([geom.PathPoint(x, y) for x, y in item.coords], True) for item in res.geoms]
     return [ path if path.orientation() == climb else path.reverse() for path in paths]
     
-def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_orientation, climb):
+def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_orientation, climb, progress, tlength):
     import shapely.geometry
     import shapely.ops
     lasti = 0
@@ -38,7 +38,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     segmentation = []
     outlen = 0
     while i <= ilen:
-        if getattr(threading.current_thread(), 'cancelled', False):
+        if geom.is_calculation_cancelled():
             return None
         step2 = 1
         pt = inside.interpolate(i)
@@ -87,6 +87,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
             break
         lasti = i
         i = nexti
+        geom.set_calculation_progress(progress + i, tlength)
     return geom.Path(res, True), segmentation
 
 # Original curve + a 1/4 diameter circle every stepover * diameter.
@@ -116,8 +117,14 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     if not res:
         return None
     inside = [geom.Path(PtsFromInts(path), shape.closed) for path in res]
+    tlength = sum([path.length() for path in inside])
 
-    paths = [pseudotrochoidise(geom, outside, diameter, stepover, circle_size, is_outside ^ climb, climb) for geom in inside]
+    paths = []
+    progress = 0
+    for subpath in inside:
+        paths.append(pseudotrochoidise(subpath, outside, diameter, stepover, circle_size, is_outside ^ climb, climb, progress, tlength))
+        progress += subpath.length()
+    geom.set_calculation_progress(progress, tlength)
     if None in paths:
         return None
     return paths

@@ -1,5 +1,6 @@
 from pyclipper import *
 from math import *
+import threading
 
 class GeometrySettings:
     RESOLUTION = 25.0
@@ -131,7 +132,7 @@ class Path(object):
         self.nodes = nodes
         self.closed = closed
     def __eq__(self, other):
-        return self.nodes == other.nodes and self.closed == other.closed
+        return other is not None and self.nodes == other.nodes and self.closed == other.closed
     def length(self):
         return sum([(dist(start, end) if end.is_point() else end.length()) for start, end in PathSegmentIterator(self)])
     def lengths(self):
@@ -761,3 +762,9 @@ def dxf_polyline_to_points(entity):
         lastbulge = point[4]
         lastx, lasty = x, y
     return points, entity.closed
+
+def is_calculation_cancelled():
+    return getattr(threading.current_thread(), 'cancelled', False)
+
+def set_calculation_progress(amount_done, amount_total):
+    setattr(threading.current_thread(), 'progress', (amount_done, amount_total))

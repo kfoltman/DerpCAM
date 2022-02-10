@@ -228,6 +228,7 @@ class Shape(object):
         islands_transformed = []
         islands_transformed_nonoverlap = []
         islands = self.islands
+        expected_size = min(self.bounds[2] - self.bounds[0], self.bounds[3] - self.bounds[1]) / 2.0
         for island in islands:
             pc = PyclipperOffset()
             pts = PtsToInts(island)
@@ -253,8 +254,9 @@ class Shape(object):
         #for island in tps_islands:
         #    mergeToolpaths(tps, island, tool.diameter)
         while True:
-            if getattr(threading.current_thread(), 'cancelled', False):
+            if is_calculation_cancelled():
                 return None
+            set_calculation_progress(abs(displace_now), expected_size)
             res = self.contour(tool, False, displace_now, subtract=islands_transformed)
             if not res:
                 break
@@ -265,6 +267,7 @@ class Shape(object):
         tps = list(reversed(tps))
         tps = joinClosePaths(tps_islands + tps)
         findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
+        set_calculation_progress(expected_size, expected_size)
         return Toolpaths(tps)
     def face_mill(self, tool, angle, margin, zigzag):
         offset_dist = (0.5 * tool.diameter - margin) * GeometrySettings.RESOLUTION
