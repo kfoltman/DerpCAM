@@ -48,7 +48,7 @@ class OperationsRenderer(object):
                     for depth, toolpath in op.to_preview():
                         alpha = int(255 * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
-                            pen = self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op))
+                            pen = lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
                         if stage == 2:
                             pen = self.penColInt(0, 0, 0, alpha, 0)
                         self.addToolpaths(owner, pen, toolpath, stage, op)
@@ -95,16 +95,21 @@ class OperationsRenderer(object):
             for tp in path.toolpaths:
                 self.addToolpathsTransformed(owner, pen, tp, stage, operation)
             return
-        if pen.widthF():
+        if stage == 1:
             t = time.time()
             # print ("Before buffer")
-            brush = QBrush(pen.color())
+            def pen2brush():
+                if not isinstance(pen, QPen):
+                    pen2, slow = pen(path, owner.scalingFactor())
+                else:
+                    pen2 = pen
+                return QBrush(pen2.color())
             #print ("->", len(outlines))
             outlines = getattr(path, 'rendered_outlines', None)
             if outlines is None:
                 path.rendered_outlines = outlines = path.render_as_outlines()
             for o in outlines:
-                owner.addPolygons(brush, outlines, GeometrySettings.simplify_arcs)
+                owner.addPolygons(pen2brush, outlines, GeometrySettings.simplify_arcs)
             # print ("After buffer", time.time() - t)
             return
         if GeometrySettings.simplify_arcs:
@@ -161,7 +166,10 @@ class FillDrawingOp(object):
             qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
         bounds = transform.mapRect(self.bounds)
         if bounds.intersects(drawingArea):
-            qp.fillPath(self.path, self.brush)
+            if isinstance(self.brush, QBrush):
+                qp.fillPath(self.path, self.brush)
+            else:
+                qp.fillPath(self.path, self.brush())
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
