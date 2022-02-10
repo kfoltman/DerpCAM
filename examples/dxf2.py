@@ -370,7 +370,9 @@ class CAMMainWindow(QMainWindow):
         self.idleTimer = self.startTimer(100)
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
-            self.document.pollForUpdateCAM()
+            progress = self.document.pollForUpdateCAM()
+            if progress is not None and progress > 0:
+                self.viewer.repaint()
             if self.refreshNeeded:
                 self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
                 self.refreshNeeded = False

@@ -37,6 +37,8 @@ class OperationsRenderer(object):
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
         return pen
+    def toolPenFunc(self, toolpath, alpha, op):
+        return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
     def renderToolpaths(self, owner):
         # Toolpaths
         for op in self.operations.operations:
@@ -48,7 +50,7 @@ class OperationsRenderer(object):
                     for depth, toolpath in op.to_preview():
                         alpha = int(255 * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
-                            pen = lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
+                            pen = self.toolPenFunc(toolpath, alpha, op)
                         if stage == 2:
                             pen = self.penColInt(0, 0, 0, alpha, 0)
                         self.addToolpaths(owner, pen, toolpath, stage, op)
