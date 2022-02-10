@@ -571,9 +571,11 @@ class Pocket(UntabbedOperation):
         boundary_offset = PtsFromInts(res[0])
         boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
         polygon = Polygon(boundary)
+        islands_offset = []
         for island in shape.islands:
             for island_offset in process.Shape._offset(PtsToInts(island), True, dist):
                 island_offset_pts = PtsFromInts(island_offset)
+                islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
                 polygon = polygon.difference(Polygon(ii))
         inputs = []
@@ -591,7 +593,7 @@ class Pocket(UntabbedOperation):
         for polygon in inputs:
             step = 0.5 * tool.diameter * tool.stepover
             with self.pyvlock:
-                v = cam.geometry.Voronoi(polygon, tolerence = step)
+                v = cam.voronoi_centers.VoronoiCenters(polygon, tolerence = step)
             tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v)
             gen_path = []
             x, y = tp.start_point.x, tp.start_point.y
@@ -619,6 +621,13 @@ class Pocket(UntabbedOperation):
                     gen_path += [PathPoint(item.start.x, item.start.y), sp, PathArc(sp, ep, CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span), PathPoint(item.end.x, item.end.y)]
             if Path(gen_path, False).length():
                 tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
+            # Add a final pass around the perimeter
+            def ls2path(ls):
+                return Path([PathPoint(x, y) for x, y in ls.coords], True)
+            for i in inputs:
+                tps.append(toolpath.Toolpath(ls2path(i.exterior), tool))
+                for h in i.interiors:
+                    tps.append(toolpath.Toolpath(ls2path(h), tool))
         UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths(tps))
 
 class PocketWithDraft(UntabbedOperation):
