@@ -102,6 +102,7 @@ class DrawingViewer(view.PathViewer):
             qp.setOpacity(1.0)
         progress = self.document.pollForUpdateCAM()
         if progress is not None:
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.fillRect(QRect(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
             qp.fillRect(QRect(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
