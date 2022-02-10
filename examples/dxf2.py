@@ -398,8 +398,7 @@ class CAMMainWindow(QMainWindow):
     def shapeTreeSelectionChanged(self):
         self.updateSelection()
         if self.document.setOperSelection(self.projectDW.operSelection()):
-            # XXXKF implement a more fine-grained refresh
-            self.scheduleMajorRedraw()
+            self.viewer.repaint()
     def shapeModelChanged(self, index):
         item = self.document.shapeModel.itemFromIndex(index)
         if type(item) == model.WorkpieceTreeItem:

@@ -149,7 +149,6 @@ class DrawingViewer(view.PathViewer):
                 else:
                     self.selection = set(objs)
                 self.selectionChanged.emit()
-                self.renderDrawing()
                 self.repaint()
                 self.start_point = e.localPos()
             else:
@@ -157,7 +156,6 @@ class DrawingViewer(view.PathViewer):
                 if self.selection and not (e.modifiers() & Qt.ControlModifier):
                     self.selection = set()
                     self.selectionChanged.emit()
-                    self.renderDrawing()
                     self.repaint()
         else:
             view.PathViewer.mousePressEvent(self, e)
@@ -193,6 +191,5 @@ class DrawingViewer(view.PathViewer):
         view.PathViewer.mouseReleaseEvent(self, e)
     def setSelection(self, selection):
         self.selection = set(selection)
-        self.renderDrawing()
         self.repaint()
 

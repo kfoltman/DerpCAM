@@ -119,7 +119,7 @@ class DrawingItemTreeItem(CAMTreeItem):
             if modeData[1].shape_id == self.shape_id:
                 return self.defaultDrawingPen
             return self.defaultGrayPen
-        return self.selectedItemPenFunc if self.untransformed in path.selection else self.defaultDrawingPen
+        return lambda item, scale: self.selectedItemPenFunc(item, scale) if self.untransformed in path.selection else (self.defaultDrawingPen, False)
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id }
     @classmethod
