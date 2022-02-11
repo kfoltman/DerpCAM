@@ -24,6 +24,10 @@ class DocumentRenderer(object):
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
                 self.lastpt = PathPoint(0, 0)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
+            if owner.mode == DrawingUIMode.MODE_ISLANDS:
+                # This works, but doesn't look particularly good
+                if owner.mode_item.renderer:
+                    owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
@@ -88,8 +92,6 @@ class DrawingViewer(view.PathViewer):
     def paintOverlays(self, e, qp):
         if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
             op = self.mode_item
-            penOutside = QPen(QColor(0, 0, 255), 0)
-            penIslands = QPen(QColor(0, 255, 0), 0)
             p = op.shape.boundary + op.shape.boundary[0:1]
             path = QPainterPath()
             view.addPolylineToPath(path, p)
@@ -98,7 +100,7 @@ class DrawingViewer(view.PathViewer):
                 view.addPolylineToPath(path2, p + p[0:1])
                 path = path.subtracted(path2)
             transform = self.drawingTransform()
-            brush = QBrush(QColor(255, 0, 0), Qt.DiagCrossPattern)
+            brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
             brush.setTransform(transform.inverted()[0])
             qp.setTransform(transform)
             qp.fillPath(path, brush)
@@ -150,6 +152,11 @@ class DrawingViewer(view.PathViewer):
             pos = self.unproject(e.localPos())
             objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
             if self.mode != DrawingUIMode.MODE_NORMAL:
+                if self.mode == DrawingUIMode.MODE_ISLANDS:
+                    objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
+                if self.mode == DrawingUIMode.MODE_ISLANDS and not objs:
+                    self.start_point = e.localPos()
+                    return
                 lpos = e.localPos()
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
                     self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])
@@ -185,6 +192,14 @@ class DrawingViewer(view.PathViewer):
         else:
             view.PathViewer.mousePressEvent(self, e)
     def mouseMoveEvent(self, e):
+        if not self.dragging and self.mode == DrawingUIMode.MODE_ISLANDS:
+            pos = self.unproject(e.localPos())
+            objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
+            if objs:
+                self.setCursor(Qt.PointingHandCursor)
+            else:
+                self.updateCursor()
         if not self.dragging and self.start_point:
             dist = e.localPos() - self.start_point
             if dist.manhattanLength() > QApplication.startDragDistance():
@@ -199,7 +214,9 @@ class DrawingViewer(view.PathViewer):
             pt1 = self.unproject(self.rubberband_rect.bottomLeft())
             pt2 = self.unproject(self.rubberband_rect.topRight())
             objs = self.document.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())
-            if e.modifiers() & Qt.ControlModifier:
+            if self.mode == DrawingUIMode.MODE_ISLANDS:
+                self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs if o.shape_id != self.mode_item.shape_id]))])
+            elif e.modifiers() & Qt.ControlModifier:
                 self.selection ^= set(objs)
             else:
                 self.selection = set(objs)

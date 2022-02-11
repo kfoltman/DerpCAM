@@ -48,7 +48,7 @@ class OperationsRenderer(object):
         return pen
     def toolPenFunc(self, toolpath, alpha, op):
         return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
-    def renderToolpaths(self, owner):
+    def renderToolpaths(self, owner, alpha_scale=1.0):
         # Toolpaths
         for op in self.operations.operations:
             if op.paths:
@@ -57,7 +57,7 @@ class OperationsRenderer(object):
                     if op.props.start_depth <= op.props.depth:
                         continue
                     for depth, toolpath in op.to_preview():
-                        alpha = int(255 * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
+                        alpha = int(255 * alpha_scale * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
                             pen = self.toolPenFunc(toolpath, alpha, op)
                         if stage == 2:
