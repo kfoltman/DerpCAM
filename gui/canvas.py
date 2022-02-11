@@ -24,6 +24,10 @@ class DocumentRenderer(object):
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
                 self.lastpt = PathPoint(0, 0)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
+            if owner.mode == DrawingUIMode.MODE_ISLANDS:
+                # This works, but doesn't look particularly good
+                if owner.mode_item.renderer:
+                    owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
@@ -49,9 +53,17 @@ class DrawingViewer(view.PathViewer):
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
+        self.applyIcon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+        self.applyButton = QPushButton(self.applyIcon, "", self)
+        self.applyButton.setVisible(False)
+        self.applyButton.setFixedSize(30, 30)
+        self.applyButton.setCursor(QCursor(Qt.ArrowCursor))
+        self.applyButton.move(5, 5)
+        self.applyButton.clicked.connect(self.applyClicked)
     def changeMode(self, mode, item):
         self.mode = mode
         self.mode_item = item
+        self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
     def paintGrid(self, e, qp):
@@ -78,18 +90,29 @@ class DrawingViewer(view.PathViewer):
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintOverlays(self, e, qp):
+        if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
+            op = self.mode_item
+            p = op.shape.boundary + op.shape.boundary[0:1]
+            path = QPainterPath()
+            view.addPolylineToPath(path, p)
+            for p in op.shape.islands:
+                path2 = QPainterPath()
+                view.addPolylineToPath(path2, p + p[0:1])
+                path = path.subtracted(path2)
+            transform = self.drawingTransform()
+            brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
+            brush.setTransform(transform.inverted()[0])
+            qp.setTransform(transform)
+            qp.fillPath(path, brush)
+            qp.setTransform(QTransform())
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
-                modeText = "Holding tabs"
+                modeText = "Click on outlines to add/remove preferred locations for holding tabs"
             if self.mode == DrawingUIMode.MODE_ISLANDS:
-                modeText = "Islands"
-            icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+                modeText = "Click on outlines to toggle exclusion of areas from the pocket"
             pen = qp.pen()
-            qp.setPen(QPen(QColor(0, 0, 0), 0))
-            qp.drawRect(3, 3, 34, 34)
-            icon.paint(qp, 5, 5, 30, 30, Qt.AlignCenter)
             qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.drawText(QRect(40, 5, 200, 35), Qt.AlignVCenter, "Mode: " + modeText)
+            qp.drawText(QRect(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
             if self.mode == DrawingUIMode.MODE_TABS:
                 qp.setPen(QPen(QColor(255, 0, 0), 0))
                 for tab in self.mode_item.user_tabs:
@@ -119,6 +142,8 @@ class DrawingViewer(view.PathViewer):
         self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.majorUpdate()
+    def applyClicked(self):
+        self.exitEditMode()
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
@@ -127,10 +152,12 @@ class DrawingViewer(view.PathViewer):
             pos = self.unproject(e.localPos())
             objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
             if self.mode != DrawingUIMode.MODE_NORMAL:
-                lpos = e.localPos()
-                if lpos.x() >= 5 and lpos.x() < 35 and lpos.y() >= 5 and lpos.y() < 35:
-                    self.exitEditMode()
+                if self.mode == DrawingUIMode.MODE_ISLANDS:
+                    objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
+                if self.mode == DrawingUIMode.MODE_ISLANDS and not objs:
+                    self.start_point = e.localPos()
                     return
+                lpos = e.localPos()
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
                     self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])
                     self.renderDrawing()
@@ -165,6 +192,14 @@ class DrawingViewer(view.PathViewer):
         else:
             view.PathViewer.mousePressEvent(self, e)
     def mouseMoveEvent(self, e):
+        if not self.dragging and self.mode == DrawingUIMode.MODE_ISLANDS:
+            pos = self.unproject(e.localPos())
+            objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
+            if objs:
+                self.setCursor(Qt.PointingHandCursor)
+            else:
+                self.updateCursor()
         if not self.dragging and self.start_point:
             dist = e.localPos() - self.start_point
             if dist.manhattanLength() > QApplication.startDragDistance():
@@ -179,7 +214,9 @@ class DrawingViewer(view.PathViewer):
             pt1 = self.unproject(self.rubberband_rect.bottomLeft())
             pt2 = self.unproject(self.rubberband_rect.topRight())
             objs = self.document.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())
-            if e.modifiers() & Qt.ControlModifier:
+            if self.mode == DrawingUIMode.MODE_ISLANDS:
+                self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs if o.shape_id != self.mode_item.shape_id]))])
+            elif e.modifiers() & Qt.ControlModifier:
                 self.selection ^= set(objs)
             else:
                 self.selection = set(objs)

@@ -584,6 +584,7 @@ class OperationType(EnumClass):
     ENGRAVE = 4
     INTERPOLATED_HOLE = 5
     DRILLED_HOLE = 6
+    OUTSIDE_PEEL = 7
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -591,6 +592,7 @@ class OperationType(EnumClass):
         (ENGRAVE, "Engrave"),
         (INTERPOLATED_HOLE, "H-Hole"),
         (DRILLED_HOLE, "Drill"),
+        (OUTSIDE_PEEL, "Outside peel"),
     ]
 
 class CutterAdapter(object):
@@ -706,7 +708,7 @@ class PresetDerivedAttributes(object):
             elif self.hfeed < 0.1 or self.hfeed > 10000:
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
-                if self.operation.operation == OperationType.POCKET:
+                if self.operation.operation == OperationType.POCKET or self.operation.operation == OperationType.OUTSIDE_PEEL:
                     if self.stepover is None:
                         errors.append("Horizontal stepover is not set")
                     else:
@@ -744,7 +746,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f", unit="%", min=0, max=100, allow_none=True)
-    prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands())
+    prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
@@ -791,9 +793,9 @@ class OperationTreeItem(CAMTreeItem):
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
-        if self.operation == OperationType.POCKET and name in ['tab_height', 'tab_count', 'extra_width']:
+        if self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL) and name in ['tab_height', 'tab_count', 'extra_width']:
             return False
-        if self.operation != OperationType.POCKET and name == 'islands':
+        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL) and name == 'islands':
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name == 'user_tabs':
             return False
@@ -813,10 +815,10 @@ class OperationTreeItem(CAMTreeItem):
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
-                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem):
                 if self.orig_shape.closed:
-                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.ENGRAVE]
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE]
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
@@ -995,6 +997,13 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
                 threadFunc = None
+
+                if self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
+                    for island in self.islands:
+                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                        if item.closed:
+                            self.shape.add_island(item.boundary)
+
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
                     if pda.trc_rate:
                         threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
@@ -1006,11 +1015,9 @@ class OperationTreeItem(CAMTreeItem):
                     else:
                         self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
                 elif self.operation == OperationType.POCKET:
-                    for island in self.islands:
-                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
-                            self.shape.add_island(item.boundary)
                     threadFunc = lambda: self.cam.pocket(self.shape)
+                elif self.operation == OperationType.OUTSIDE_PEEL:
+                    threadFunc = lambda: self.cam.outside_peel(self.shape)
                 elif self.operation == OperationType.ENGRAVE:
                     self.cam.engrave(self.shape)
                 elif self.operation == OperationType.INTERPOLATED_HOLE:
