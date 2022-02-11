@@ -13,6 +13,15 @@ class Spinner(object):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         QGuiApplication.restoreOverrideCursor()
 
+def addPolylineToPath(path, polyline):
+    path.moveTo(polyline[0].x, polyline[0].y)
+    for point in polyline[1:]:
+        if point.is_point():
+            path.lineTo(point.x, point.y)
+        else:
+            arc = point
+            path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+
 class OperationsRenderer(object):
     def __init__(self, operations):
         self.operations = operations
@@ -232,13 +241,7 @@ class PathViewer(QWidget):
                 x, y = polyline[0].x, polyline[0].y
                 self.drawingOps.append(LineDrawingOp(pen, QPointF(x, y), QRectF(x, y, 1, 1), darken))
             else:
-                path.moveTo(polyline[0].x, polyline[0].y)
-                for point in polyline[1:]:
-                    if point.is_point():
-                        path.lineTo(point.x, point.y)
-                    else:
-                        arc = point
-                        path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+                addPolylineToPath(path, polyline)
                 if polyline[0] == polyline[-1].seg_end():
                     self.drawingOps.append(LineDrawingOp(pen, path, path.boundingRect(), darken))
                 else:
@@ -258,10 +261,14 @@ class PathViewer(QWidget):
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
 
-    def paintDrawingOps(self, e, qp):
+    def drawingTransform(self):
         scale = self.scalingFactor()
         zeropt = self.project(QPointF())
-        transform = QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
+        return QTransform().translate(zeropt.x(), zeropt.y()).scale(scale, -scale)
+
+    def paintDrawingOps(self, e, qp):
+        scale = self.scalingFactor()
+        transform = self.drawingTransform()
         qp.setTransform(transform)
         drawingArea = QRectF(self.rect())
         for op in self.drawingOps:

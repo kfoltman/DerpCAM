@@ -183,6 +183,8 @@ class Toolpath(object):
         initv = min(GeometrySettings.RESOLUTION * self.tool.diameter / 2, 3)
         outlines = pc.Execute(initv)
 
+        if is_calculation_cancelled():
+            return []
         pc = Pyclipper()
         for o in outlines:
             pc.AddPath(o, PT_SUBJECT, True)
@@ -190,6 +192,8 @@ class Toolpath(object):
         #print (len(outlines))
         outlines2 = []
         for o in outlines:
+            if is_calculation_cancelled():
+                return []
             pc = PyclipperOffset()
             pc.AddPath(o, JT_ROUND, ET_CLOSEDLINE)
             outlines2 += pc.Execute(GeometrySettings.RESOLUTION * self.tool.diameter / 2 - initv)

@@ -78,6 +78,23 @@ class DrawingViewer(view.PathViewer):
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintOverlays(self, e, qp):
+        if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
+            op = self.mode_item
+            penOutside = QPen(QColor(0, 0, 255), 0)
+            penIslands = QPen(QColor(0, 255, 0), 0)
+            p = op.shape.boundary + op.shape.boundary[0:1]
+            path = QPainterPath()
+            view.addPolylineToPath(path, p)
+            for p in op.shape.islands:
+                path2 = QPainterPath()
+                view.addPolylineToPath(path2, p + p[0:1])
+                path = path.subtracted(path2)
+            transform = self.drawingTransform()
+            brush = QBrush(QColor(255, 0, 0), Qt.DiagCrossPattern)
+            brush.setTransform(transform.inverted()[0])
+            qp.setTransform(transform)
+            qp.fillPath(path, brush)
+            qp.setTransform(QTransform())
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
                 modeText = "Holding tabs"
