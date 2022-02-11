@@ -49,9 +49,17 @@ class DrawingViewer(view.PathViewer):
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
+        self.applyIcon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+        self.applyButton = QPushButton(self.applyIcon, "", self)
+        self.applyButton.setVisible(False)
+        self.applyButton.setFixedSize(30, 30)
+        self.applyButton.setCursor(QCursor(Qt.ArrowCursor))
+        self.applyButton.move(5, 5)
+        self.applyButton.clicked.connect(self.applyClicked)
     def changeMode(self, mode, item):
         self.mode = mode
         self.mode_item = item
+        self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
     def paintGrid(self, e, qp):
@@ -97,16 +105,12 @@ class DrawingViewer(view.PathViewer):
             qp.setTransform(QTransform())
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
-                modeText = "Holding tabs"
+                modeText = "Click on outlines to add/remove preferred locations for holding tabs"
             if self.mode == DrawingUIMode.MODE_ISLANDS:
-                modeText = "Islands"
-            icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+                modeText = "Click on outlines to toggle exclusion of areas from the pocket"
             pen = qp.pen()
-            qp.setPen(QPen(QColor(0, 0, 0), 0))
-            qp.drawRect(3, 3, 34, 34)
-            icon.paint(qp, 5, 5, 30, 30, Qt.AlignCenter)
             qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.drawText(QRect(40, 5, 200, 35), Qt.AlignVCenter, "Mode: " + modeText)
+            qp.drawText(QRect(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
             if self.mode == DrawingUIMode.MODE_TABS:
                 qp.setPen(QPen(QColor(255, 0, 0), 0))
                 for tab in self.mode_item.user_tabs:
@@ -136,6 +140,8 @@ class DrawingViewer(view.PathViewer):
         self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.majorUpdate()
+    def applyClicked(self):
+        self.exitEditMode()
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
@@ -145,9 +151,6 @@ class DrawingViewer(view.PathViewer):
             objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
             if self.mode != DrawingUIMode.MODE_NORMAL:
                 lpos = e.localPos()
-                if lpos.x() >= 5 and lpos.x() < 35 and lpos.y() >= 5 and lpos.y() < 35:
-                    self.exitEditMode()
-                    return
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
                     self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])
                     self.renderDrawing()
