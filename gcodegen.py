@@ -570,6 +570,10 @@ class PocketWithDraft(UntabbedOperation):
     def to_gcode(self, gcode, machine_params):
         Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.pocket_contour(tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
+class OutsidePeel(UntabbedOperation):
+    def __init__(self, shape, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, shape.outside_peel(tool, displace=props.margin))
+
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths, tabs):
         Operation.__init__(self, shape, tool, props)
@@ -915,6 +919,8 @@ class Operations(object):
         self.add(Pocket(shape, self.tool, props or self.props))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
+    def outside_peel(self, shape, props=None):
+        self.add(OutsidePeel(shape, self.tool, props or self.props))
     def face_mill(self, shape, angle, margin, zigzag, props=None):
         self.add(FaceMill(shape, angle, margin, zigzag, self.tool, props or self.props))
     def peck_drill(self, x, y, props=None):

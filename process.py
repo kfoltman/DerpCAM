@@ -269,6 +269,51 @@ class Shape(object):
         findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
         set_calculation_progress(expected_size, expected_size)
         return Toolpaths(tps)
+    def outside_peel(self, tool, displace=0):
+        if not self.closed:
+            raise ValueError("Cannot side mill open polylines")
+        tps = []
+        tps_islands = []
+        boundary = IntPath(self.boundary)
+        boundary_transformed = [ IntPath(i, True) for i in Shape._offset(boundary.int_points, True, tool.diameter * 0.5 * GeometrySettings.RESOLUTION) ]
+        islands_transformed = []
+        islands_transformed_nonoverlap = []
+        islands = self.islands
+        expected_size = min(self.bounds[2] - self.bounds[0], self.bounds[3] - self.bounds[1]) / 2.0
+        for island in islands:
+            pc = PyclipperOffset()
+            pts = PtsToInts(island)
+            if not Orientation(pts):
+                pts = list(reversed(pts))
+            pc.AddPath(pts, JT_ROUND, ET_CLOSEDPOLYGON)
+            res = pc.Execute((tool.diameter * 0.5 + displace) * GeometrySettings.RESOLUTION)
+            if not res:
+                return None
+            res = [IntPath(it, True) for it in res]
+            islands_transformed += res
+            islands_transformed_nonoverlap += [it for it in res if not run_clipper_simple(CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
+        if islands_transformed_nonoverlap:
+            islands_transformed_nonoverlap = Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+        for path in islands_transformed_nonoverlap:
+            for ints in Shape._intersection(path, *boundary_transformed):
+                # diff with other islands
+                tps_islands += [Toolpath(Path(ints, True), tool)]
+        displace_now = displace
+        stepover = tool.stepover * tool.diameter
+        while True:
+            if is_calculation_cancelled():
+                return None
+            set_calculation_progress(abs(displace_now), expected_size)
+            res = self.contour(tool, False, displace_now, subtract=islands_transformed)
+            if not res:
+                break
+            displace_now += stepover
+            mergeToolpaths(tps, res, tool.diameter)
+        if len(tps) == 0:
+            raise ValueError("Empty contour")
+        tps = joinClosePaths(tps + tps_islands)
+        set_calculation_progress(expected_size, expected_size)
+        return Toolpaths(tps)
     def face_mill(self, tool, angle, margin, zigzag):
         offset_dist = (0.5 * tool.diameter - margin) * GeometrySettings.RESOLUTION
         boundary = PtsToInts(self.boundary)

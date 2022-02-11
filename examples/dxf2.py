@@ -111,6 +111,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
             elif item.operation == OperationType.POCKET:
                 menu.addAction("Islands").triggered.connect(self.operationIslands)
+            elif item.operation == OperationType.OUTSIDE_PEEL:
+                menu.addAction("Contours").triggered.connect(self.operationIslands)
             else:
                 return
         elif isinstance(item, model.CycleTreeItem):
@@ -351,11 +353,12 @@ class CAMMainWindow(QMainWindow):
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
             None,
-            ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape from the outside (part)"),
-            ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape from the inside (cutout)"),
+            ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape as a slotting cut on the outside (part)"),
+            ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape as a slotting cut the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
+            ("Out&side peel", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling on the outside of the part"),
             None,
             ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
         ])
@@ -522,6 +525,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
     def millPocket(self):
         self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
+    def millOutsidePeel(self):
+        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_PEEL)
     def millEngrave(self):
         self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
     def millInterpolatedHole(self):
