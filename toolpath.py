@@ -172,16 +172,21 @@ class Toolpath(object):
         return Tab(spos, epos, helical_entry)
     def render_as_outlines(self):
         points = CircleFitter.interpolate_arcs(self.path.nodes, False, 1)
-        ints = PtsToInts(points)
+        intsFull = PtsToInts(points)
         if self.path.closed:
-            ints += [ints[0]]
-        ints += ints[::-1]
-        #ints = CleanPolygon(ints)
-        pc = PyclipperOffset()
-        pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
-        #outlines = pc.Execute(res * pen.widthF() / 2)
-        initv = min(GeometrySettings.RESOLUTION * self.tool.diameter / 2, 3)
-        outlines = pc.Execute(initv)
+            intsFull += [intsFull[0]]
+        outlines = []
+        step = 50
+        for i in range(0, len(intsFull), step):
+            ints = intsFull[i : i + step + 1]
+            ints += ints[::-1]
+            pc = PyclipperOffset()
+            pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
+            #outlines = pc.Execute(res * pen.widthF() / 2)
+            initv = min(GeometrySettings.RESOLUTION * self.tool.diameter / 2, 3)
+            res = pc.Execute(initv)
+            if res:
+                outlines += res
 
         if is_calculation_cancelled():
             return []
