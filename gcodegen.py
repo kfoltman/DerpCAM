@@ -3,6 +3,7 @@ from geom import *
 import process
 import toolpath
 import cam.contour
+import cam.pocket
 
 # VERY experimental feature
 debug_simplify_arcs = False
@@ -556,96 +557,23 @@ class Engrave(UntabbedOperation):
 
 class FaceMill(UntabbedOperation):
     def __init__(self, shape, angle, margin, zigzag, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.face_mill(tool, angle, margin, zigzag))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.axis_parallel(shape, tool, angle, margin, zigzag))
 
 class Pocket(UntabbedOperation):
-    pyvlock = threading.RLock()
     def __init__(self, shape, tool, props):
-        from shapely.geometry import LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
-        from shapely.ops import linemerge, nearest_points
-        import cam.geometry
-        dist = (0.5 * tool.diameter + props.margin) * GeometrySettings.RESOLUTION
-        res = process.Shape._offset(PtsToInts(shape.boundary), True, -dist)
-        if len(res) != 1:
-            raise ValueError("Empty or multiple subpockets not supported yet")
-        boundary_offset = PtsFromInts(res[0])
-        boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
-        polygon = Polygon(boundary)
-        islands_offset = []
-        for island in shape.islands:
-            island_offsets = process.Shape._offset(PtsToInts(island), True, dist)
-            island_offsets = SimplifyPolygons(island_offsets)
-            for island_offset in island_offsets:
-                island_offset_pts = PtsFromInts(island_offset)
-                islands_offset.append(island_offset_pts)
-                ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
-                polygon = polygon.difference(Polygon(ii))
-        inputs = []
-        if isinstance(polygon, Polygon):
-            inputs.append(polygon)
-        elif isinstance(polygon, MultiPolygon):
-            inputs += polygon.geoms
-        elif isinstance(polygon, GeometryCollection):
-            for i in polygon.geoms:
-                if isinstance(i, Polygon):
-                    inputs.append(i)
-                elif isinstance(i, MultiPolygon):
-                    inputs += i.geoms
-        tps = []
-        for polygon in inputs:
-            step = 0.5 * tool.diameter * tool.stepover
-            with self.pyvlock:
-                v = cam.voronoi_centers.VoronoiCenters(polygon, tolerence = step)
-            tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v, generate=True)
-            generator = tp._get_arcs(100)
-            try:
-                while not is_calculation_cancelled():
-                    progress = max(0, min(1000, next(generator)))
-                    set_calculation_progress(progress, 1000)
-            except StopIteration:
-                pass
-            gen_path = []
-            x, y = tp.start_point.x, tp.start_point.y
-            r = 0
-            rt = tp.start_radius
-            while r < rt:
-                r = min(rt, r + 0.5 * tool.diameter * tool.stepover)
-                gen_path += [PathPoint(x + r, y), PathArc(PathPoint(x + r, y), PathPoint(x + r, y), CandidateCircle(x, y, r), int(2 * pi * r), 0, 2 * pi)]
-            for item in tp.joined_path_data:
-                if isinstance(item, cam.geometry.LineData):
-                    if not item.safe:
-                        if Path(gen_path, False).length():
-                            tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
-                        gen_path = []
-                    else:
-                        gen_path += [PathPoint(x, y) for x, y in item.path.coords]
-                elif isinstance(item, cam.geometry.ArcData):
-                    steps = max(1, ceil(item.radius * abs(item.span_angle)))
-                    cc = CandidateCircle(item.origin.x, item.origin.y, item.radius)
-                    sa = pi / 2 - item.start_angle
-                    span = -item.span_angle
-                    sp = cc.at_angle(sa)
-                    ep = cc.at_angle(sa + span)
-                    # Fix slight inaccuracies with line segments
-                    gen_path += [PathPoint(item.start.x, item.start.y), sp, PathArc(sp, ep, CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span), PathPoint(item.end.x, item.end.y)]
-            if Path(gen_path, False).length():
-                tps.append(toolpath.Toolpath(Path(gen_path, False), tool))
-            # Add a final pass around the perimeter
-            def ls2path(ls):
-                return Path([PathPoint(x, y) for x, y in ls.coords], True)
-            for i in inputs:
-                tps.append(toolpath.Toolpath(ls2path(i.exterior), tool))
-                for h in i.interiors:
-                    tps.append(toolpath.Toolpath(ls2path(h), tool))
-        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths(tps))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
+
+class HSMPocket(UntabbedOperation):
+    def __init__(self, shape, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, displace=props.margin))
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
     def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.pocket_contour(tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
+        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: cam.pocket.contour_parallel(shape, tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class OutsidePeel(UntabbedOperation):
     def __init__(self, shape, tool, props):
@@ -868,7 +796,7 @@ class HelicalDrill(UntabbedOperation):
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
         shape = process.Shape.circle(x, y, r=0.5*d)
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool))
         self.x = x
         self.y = y
         self.d = d
@@ -994,6 +922,8 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, props or self.props))
+    def pocket_hsm(self, shape, props=None):
+        self.add(HSMPocket(shape, self.tool, props or self.props))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
