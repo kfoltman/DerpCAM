@@ -36,7 +36,7 @@ class PreferencesDialog(QDialog):
     def initUI(self):
         self.form = QFormLayout(self)
         self.resolutionSpin = QSpinBox()
-        self.resolutionSpin.setRange(10, 100)
+        self.resolutionSpin.setRange(10, 200)
         self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs")
         self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.gridSpin = QSpinBox()
