@@ -28,9 +28,9 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
 def calculate_tool_margin(shape, tool, displace):
     boundary = geom.IntPath(shape.boundary)
     boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
+    islands = process.Shape._union(*[geom.IntPath(i) for i in shape.islands])
     islands_transformed = []
     islands_transformed_nonoverlap = []
-    islands = shape.islands
     for island in islands:
         pc = pyclipper.PyclipperOffset()
         pts = geom.PtsToInts(island)
