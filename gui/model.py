@@ -696,7 +696,7 @@ class PresetDerivedAttributes(object):
             self.extra_width = overrides(operation.extra_width, (100.0 * preset.extra_width if preset and preset.extra_width is not None else 0))
             self.trc_rate = overrides(operation.trc_rate, (100.0 * preset.trc_rate if preset and preset.trc_rate is not None else 0))
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
-            self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.HSM_PEEL)
+            self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.CONTOUR_PARALLEL)
             self.axis_angle = overrides(operation.axis_angle, preset.axis_angle if preset else None, 0)
             self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
