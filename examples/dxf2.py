@@ -594,8 +594,10 @@ class CAMMainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, None, str(e))
             return
-        self.document.startUpdateCAM()
-        self.document.waitForUpdateCAM()
+        with view.Spinner():
+            self.document.startUpdateCAM()
+            if not self.document.waitForUpdateCAM():
+                return
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
         if self.document.drawingFilename:
             path = os.path.splitext(self.document.drawingFilename)[0] + ".ngc"

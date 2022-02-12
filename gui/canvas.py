@@ -123,14 +123,15 @@ class DrawingViewer(view.PathViewer):
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
             qp.setOpacity(1.0)
-        progress = self.document.pollForUpdateCAM()
-        if progress is not None:
-            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.fillRect(QRect(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
-            qp.fillRect(QRect(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
-            qp.drawRect(QRect(38, 35, 242, 55))
-            qp.drawText(QRect(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
+        if not self.document.progress_dialog_displayed:
+            progress = self.document.pollForUpdateCAM()
+            if progress is not None:
+                qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+                qp.setPen(QPen(QColor(128, 0, 0), 0))
+                qp.fillRect(QRect(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
+                qp.fillRect(QRect(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
+                qp.drawRect(QRect(38, 35, 242, 55))
+                qp.drawText(QRect(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
     def keyPressEvent(self, e):
         if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
             self.exitEditMode()

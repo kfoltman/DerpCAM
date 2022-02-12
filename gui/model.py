@@ -1,6 +1,7 @@
 import os.path
 import sys
 import threading
+import time
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from PyQt5.QtCore import *
@@ -1310,6 +1311,7 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.default_preset_by_tool = {}
+        self.progress_dialog_displayed = False
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
@@ -1469,6 +1471,8 @@ class DocumentModel(QObject):
             self.forEachOperation(lambda item: item.startUpdateCAM())
         else:
             self.forEachOperation(lambda item: item.startUpdateCAM() if item.tool_preset is preset.inventory_preset else None)
+    def cancelAllWorkers(self):
+        self.forEachOperation(lambda item: item.cancelWorker())
     def pollForUpdateCAM(self):
         results = self.forEachOperation(lambda item: item.pollForUpdateCAM())
         totaldone = 0
@@ -1479,8 +1483,30 @@ class DocumentModel(QObject):
                 totaloverall += i[1]
         if totaloverall > 0:
             return totaldone / totaloverall
-    def waitForUpdateCAM(self, preset=None):
-        self.forEachOperation(lambda item: item.waitForUpdateCAM())
+    def waitForUpdateCAM(self):
+        if self.pollForUpdateCAM() is None:
+            return
+        try:
+            self.progress_dialog_displayed = True
+            progress = QProgressDialog()
+            progress.show()
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setLabelText("Calculating toolpaths")
+            cancelled = False
+            while True:
+                if progress.wasCanceled():
+                    self.cancelAllWorkers()
+                    cancelled = True
+                    break
+                pollValue = self.pollForUpdateCAM()
+                if pollValue is None:
+                    break
+                progress.setValue(int(pollValue * 100))
+                QGuiApplication.sync()
+                time.sleep(0.25)
+        finally:
+            self.progress_dialog_displayed = False
+        return not cancelled
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
