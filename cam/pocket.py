@@ -25,17 +25,12 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
         tps = [toolpath.Toolpath(geom.Path(geom.PtsFromInts(path), shape.closed), tool) for path in res]
     return toolpath.Toolpaths(tps)
 
-def contour_parallel(shape, tool, displace=0):
-    if not shape.closed:
-        raise ValueError("Cannot mill pockets of open polylines")
-    tps = []
-    tps_islands = []
+def calculate_tool_margin(shape, tool, displace):
     boundary = geom.IntPath(shape.boundary)
-    boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, -tool.diameter * 0.5 * geom.GeometrySettings.RESOLUTION) ]
+    boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
     islands_transformed = []
     islands_transformed_nonoverlap = []
     islands = shape.islands
-    expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
     for island in islands:
         pc = pyclipper.PyclipperOffset()
         pts = geom.PtsToInts(island)
@@ -50,6 +45,15 @@ def contour_parallel(shape, tool, displace=0):
         islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
     if islands_transformed_nonoverlap:
         islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+    return boundary_transformed, islands_transformed, islands_transformed_nonoverlap
+
+def contour_parallel(shape, tool, displace=0):
+    if not shape.closed:
+        raise ValueError("Cannot mill pockets of open polylines")
+    expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
+    tps = []
+    tps_islands = []
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
     for path in islands_transformed_nonoverlap:
         for ints in process.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
@@ -79,13 +83,9 @@ def contour_parallel(shape, tool, displace=0):
 
 def axis_parallel(shape, tool, angle, margin, zigzag):
     offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
-    boundary = geom.PtsToInts(shape.boundary)
-    res = process.Shape._offset(boundary, shape.closed, -offset_dist)
-    if not res:
-        return None
-    boundary_paths = [geom.IntPath(bp, True) for bp in res]
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
 
-    coords = sum(res, [])
+    coords = sum([i.int_points for i in boundary_transformed], [])
     xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
     ycoords = [p[1] / geom.GeometrySettings.RESOLUTION for p in coords]
     sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
@@ -103,9 +103,11 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
         if zigzag and (i & 1):
             p2, p1 = p1, p2
         path = geom.IntPath([p1, p2])
-        tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], boundary_paths, [path])
-        for path2 in pyclipper.OpenPathsFromPolyTree(tree):
-            tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(path2), False), tool))
+        tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], boundary_transformed, [path])
+        treepaths = pyclipper.OpenPathsFromPolyTree(tree)
+        tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, [], islands_transformed, [geom.IntPath(path2, True) for path2 in treepaths])
+        for path3 in pyclipper.OpenPathsFromPolyTree(tree2):
+            tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(path3), False), tool))
         if i == nsteps - 1:
             frac = fsteps - nsteps
             p = (p[0] + frac * stepover * math.cos(angle + math.pi / 2), p[1] + frac * stepover * math.sin(angle + math.pi / 2))
@@ -115,12 +117,12 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
         raise ValueError("Milled area is empty")
     tps = process.joinClosePaths(tps)
     # Add a final pass around the perimeter
-    def ls2path(ls):
-        return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
-    for i in boundary_paths:
-        tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(i.int_points), True), tool))
-        #for h in i.interiors:
-        #    tps.append(toolpath.Toolpath(ls2path(h), tool))
+    for b in boundary_transformed:
+        for d in process.Shape._difference(b, *islands_transformed, return_ints=True):
+            tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(d.int_points), True), tool))
+    for h in islands_transformed_nonoverlap:
+        for ints in process.Shape._intersection(h, *boundary_transformed):
+            tps.append(toolpath.Toolpath(geom.Path(ints, True), tool))
     return toolpath.Toolpaths(tps)
 
 pyvlock = threading.RLock()
