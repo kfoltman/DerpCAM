@@ -573,7 +573,9 @@ class Pocket(UntabbedOperation):
         polygon = Polygon(boundary)
         islands_offset = []
         for island in shape.islands:
-            for island_offset in process.Shape._offset(PtsToInts(island), True, dist):
+            island_offsets = process.Shape._offset(PtsToInts(island), True, dist)
+            island_offsets = SimplifyPolygons(island_offsets)
+            for island_offset in island_offsets:
                 island_offset_pts = PtsFromInts(island_offset)
                 islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
