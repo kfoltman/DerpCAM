@@ -463,6 +463,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.1f", unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.1f", unit="%", min=0, max=100, allow_none=True)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
+    prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
     def __init__(self, document, preset):
         self.inventory_preset = preset
@@ -493,7 +494,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle]
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm]
@@ -529,7 +530,7 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
-        if name == 'extra_width' or name == 'trc_rate' or name == 'stepover' or name == 'pocket_strategy':
+        if name == 'extra_width' or name == 'trc_rate' or name == 'stepover' or name == 'pocket_strategy' or name == 'axis_angle':
             self.document.startUpdateCAM(preset=self)
         self.emitDataChanged()
     def returnKeyPressed(self):
@@ -696,7 +697,8 @@ class PresetDerivedAttributes(object):
             self.trc_rate = overrides(operation.trc_rate, (100.0 * preset.trc_rate if preset and preset.trc_rate is not None else 0))
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
             self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.HSM_PEEL)
-            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy)
+            self.axis_angle = overrides(operation.axis_angle, preset.axis_angle if preset else None, 0)
+            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
             self.dirty = operation.vfeed or operation.doc
     def validate(self, errors):
@@ -724,7 +726,7 @@ class PresetDerivedAttributes(object):
         if isinstance(self.operation.cutter, inventory.EndMillCutter):
             return inventory.EndMillPreset.new(None, name, self.operation.cutter, 
                 self.rpm, self.hfeed, self.vfeed, self.doc,
-                percent(self.stepover), self.direction, percent(self.extra_width), percent(self.trc_rate), self.pocket_strategy)
+                percent(self.stepover), self.direction, percent(self.extra_width), percent(self.trc_rate), self.pocket_strategy, self.axis_angle)
         if isinstance(self.operation.cutter, inventory.DrillBitCutter):
             return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
     def resetPresetDerivedValues(self, target):
@@ -736,6 +738,7 @@ class PresetDerivedAttributes(object):
         target.extra_width = None
         target.trc_rate = None
         target.pocket_strategy = None
+        target.axis_angle = None
         target.emitDataChanged()
 
 class OperationTreeItem(CAMTreeItem):
@@ -750,7 +753,6 @@ class OperationTreeItem(CAMTreeItem):
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
 
-    prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f", unit="%", min=1, max=100, allow_none=True)
@@ -758,6 +760,8 @@ class OperationTreeItem(CAMTreeItem):
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f", unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f", unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
+    prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
+    prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -791,6 +795,7 @@ class OperationTreeItem(CAMTreeItem):
         self.extra_width = None
         self.direction = None
         self.pocket_strategy = None
+        self.axis_angle = None
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
@@ -803,6 +808,8 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL) and name == 'islands':
             return False
         if self.operation != OperationType.POCKET and name == 'pocket_strategy':
+            return False
+        if (self.operation != OperationType.POCKET or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name == 'user_tabs':
             return False
@@ -856,7 +863,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_extra_width,
             self.prop_islands,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
-            self.prop_trc_rate, self.prop_direction, self.prop_pocket_strategy]
+            self.prop_trc_rate, self.prop_direction, self.prop_pocket_strategy, self.prop_axis_angle]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
@@ -1025,9 +1032,9 @@ class OperationTreeItem(CAMTreeItem):
                     if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                         threadFunc = lambda: self.cam.pocket(self.shape)
                     elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL:
-                        threadFunc = lambda: self.cam.face_mill(self.shape, 0, 0, False)
+                        threadFunc = lambda: self.cam.face_mill(self.shape, pda.axis_angle * pi / 180, 0, False)
                     elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
-                        threadFunc = lambda: self.cam.face_mill(self.shape, 0, 0, True)
+                        threadFunc = lambda: self.cam.face_mill(self.shape, pda.axis_angle * pi / 180, 0, True)
                     elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
                         threadFunc = lambda: self.cam.pocket_hsm(self.shape)
                 elif self.operation == OperationType.OUTSIDE_PEEL:
@@ -1355,7 +1362,7 @@ class DocumentModel(QObject):
                 tool['hfeed'], tool['vfeed'], tool['rpm'], tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None)
+                tool.get('direction', 0), 0, 0, None, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset

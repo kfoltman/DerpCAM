@@ -176,9 +176,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -190,6 +190,7 @@ class EndMillPreset(PresetBase):
         res.extra_width = extra_width
         res.trc_rate = trc_rate
         res.pocket_strategy = pocket_strategy
+        res.axis_angle = axis_angle
         return res
     def description_only(self):
         res = []
