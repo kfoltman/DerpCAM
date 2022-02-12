@@ -3,6 +3,7 @@ from geom import *
 import process
 import toolpath
 import cam.contour
+import cam.pocket
 
 # VERY experimental feature
 debug_simplify_arcs = False
@@ -556,19 +557,19 @@ class Engrave(UntabbedOperation):
 
 class FaceMill(UntabbedOperation):
     def __init__(self, shape, angle, margin, zigzag, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.face_mill(tool, angle, margin, zigzag))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.axis_parallel(shape, tool, angle, margin, zigzag))
 
 class Pocket(UntabbedOperation):
     def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
     def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.pocket_contour(tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
+        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: cam.pocket.contour_parallel(shape, tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class OutsidePeel(UntabbedOperation):
     def __init__(self, shape, tool, props):
@@ -791,7 +792,7 @@ class HelicalDrill(UntabbedOperation):
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
         shape = process.Shape.circle(x, y, r=0.5*d)
-        UntabbedOperation.__init__(self, shape, tool, props, shape.pocket_contour(tool))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool))
         self.x = x
         self.y = y
         self.d = d

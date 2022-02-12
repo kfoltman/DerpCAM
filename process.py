@@ -196,79 +196,6 @@ class Shape(object):
         pc = PyclipperOffset()
         pc.AddPath(points, JT_ROUND, ET_CLOSEDPOLYGON if closed else ET_OPENROUND)
         return pc.Execute(dist)
-    def contour(self, tool, outside=True, displace=0, subtract=None):
-        dist = (0.5 * tool.diameter + displace) * GeometrySettings.RESOLUTION
-        boundary = PtsToInts(self.boundary)
-        res = Shape._offset(boundary, self.closed, dist if outside else -dist)
-        if not res:
-            return None
-
-        if subtract:
-            res2 = []
-            for i in res:
-                exp_orient = Orientation(i)
-                d = Shape._difference(IntPath(i, True), *subtract, return_ints=True)
-                if d:
-                    res2 += [j for j in d if Orientation(j.int_points) == exp_orient]
-            if not res2:
-                return None
-            res2 = [SameOrientation(i.int_points, outside ^ tool.climb) for i in res2]
-            tps = [Toolpath(Path(PtsFromInts(path), self.closed), tool) for path in res2]
-        else:
-            res = [SameOrientation(i, outside ^ tool.climb) for i in res]
-            tps = [Toolpath(Path(PtsFromInts(path), self.closed), tool) for path in res]
-        return Toolpaths(tps)
-    def pocket_contour(self, tool, displace=0):
-        if not self.closed:
-            raise ValueError("Cannot mill pockets of open polylines")
-        tps = []
-        tps_islands = []
-        boundary = IntPath(self.boundary)
-        boundary_transformed = [ IntPath(i, True) for i in Shape._offset(boundary.int_points, True, -tool.diameter * 0.5 * GeometrySettings.RESOLUTION) ]
-        islands_transformed = []
-        islands_transformed_nonoverlap = []
-        islands = self.islands
-        expected_size = min(self.bounds[2] - self.bounds[0], self.bounds[3] - self.bounds[1]) / 2.0
-        for island in islands:
-            pc = PyclipperOffset()
-            pts = PtsToInts(island)
-            if not Orientation(pts):
-                pts = list(reversed(pts))
-            pc.AddPath(pts, JT_ROUND, ET_CLOSEDPOLYGON)
-            res = pc.Execute((tool.diameter * 0.5 + displace) * GeometrySettings.RESOLUTION)
-            if not res:
-                return None
-            res = [IntPath(it, True) for it in res]
-            islands_transformed += res
-            islands_transformed_nonoverlap += [it for it in res if not run_clipper_simple(CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
-        if islands_transformed_nonoverlap:
-            islands_transformed_nonoverlap = Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
-        for path in islands_transformed_nonoverlap:
-            for ints in Shape._intersection(path, *boundary_transformed):
-                # diff with other islands
-                tps_islands += [Toolpath(Path(ints, True), tool)]
-        displace_now = displace
-        stepover = tool.stepover * tool.diameter
-        # No idea why this was here given the joinClosePaths call later on is
-        # already merging the island paths.
-        #for island in tps_islands:
-        #    mergeToolpaths(tps, island, tool.diameter)
-        while True:
-            if is_calculation_cancelled():
-                return None
-            set_calculation_progress(abs(displace_now), expected_size)
-            res = self.contour(tool, False, displace_now, subtract=islands_transformed)
-            if not res:
-                break
-            displace_now += stepover
-            mergeToolpaths(tps, res, tool.diameter)
-        if len(tps) == 0:
-            raise ValueError("Empty contour")
-        tps = list(reversed(tps))
-        tps = joinClosePaths(tps_islands + tps)
-        findHelicalEntryPoints(tps, tool, self.boundary, self.islands, displace)
-        set_calculation_progress(expected_size, expected_size)
-        return Toolpaths(tps)
     def outside_peel(self, tool, displace=0):
         if not self.closed:
             raise ValueError("Cannot side mill open polylines")
@@ -313,44 +240,6 @@ class Shape(object):
             raise ValueError("Empty contour")
         tps = joinClosePaths(tps + tps_islands)
         set_calculation_progress(expected_size, expected_size)
-        return Toolpaths(tps)
-    def face_mill(self, tool, angle, margin, zigzag):
-        offset_dist = (0.5 * tool.diameter - margin) * GeometrySettings.RESOLUTION
-        boundary = PtsToInts(self.boundary)
-        res = Shape._offset(boundary, self.closed, -offset_dist)
-        if not res:
-            return None
-        boundary_paths = [IntPath(bp, True) for bp in res]
-
-        coords = sum(res, [])
-        xcoords = [p[0] / GeometrySettings.RESOLUTION for p in coords]
-        ycoords = [p[1] / GeometrySettings.RESOLUTION for p in coords]
-        sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
-
-        stepover = tool.diameter * tool.stepover
-        tps = []
-        maxlen = dist(PathPoint(sx, sy), PathPoint(ex, ey))
-        #p = (ex + tool.diameter / 2 * cos(angle + pi / 2), sy + tool.diameter / 2 * sin(angle + pi / 2))
-        p = (ex, sy + 1 / GeometrySettings.RESOLUTION)
-        fsteps = maxlen / stepover
-        nsteps = int(ceil(fsteps))
-        for i in range(nsteps):
-            p1 = PathPoint(p[0] - maxlen * cos(angle), p[1] - maxlen * sin(angle))
-            p2 = PathPoint(p[0] + maxlen * cos(angle), p[1] + maxlen * sin(angle))
-            if zigzag and (i & 1):
-                p2, p1 = p1, p2
-            path = IntPath([p1, p2])
-            tree = run_clipper_advanced(CT_INTERSECTION, [], boundary_paths, [path])
-            for path2 in OpenPathsFromPolyTree(tree):
-                tps.append(Toolpath(Path(PtsFromInts(path2), False), tool))
-            if i == nsteps - 1:
-                frac = fsteps - nsteps
-                p = (p[0] + frac * stepover * cos(angle + pi / 2), p[1] + frac * stepover * sin(angle + pi / 2))
-            else:
-                p = (p[0] + stepover * cos(angle + pi / 2), p[1] + stepover * sin(angle + pi / 2))
-        if not tps:
-            raise ValueError("Milled area is empty")
-        tps = joinClosePaths(tps)
         return Toolpaths(tps)
     def warp(self, transform):
         def interpolate(pts):

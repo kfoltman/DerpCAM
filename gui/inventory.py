@@ -156,6 +156,18 @@ class MillDirection(EnumClass):
         (CLIMB, "Climb", True),
     ]
 
+class PocketStrategy(EnumClass):
+    CONTOUR_PARALLEL = 1
+    AXIS_PARALLEL = 2
+    AXIS_PARALLEL_ZIGZAG = 3
+    # HSM_PEEL = 4
+    descriptions = [
+        (CONTOUR_PARALLEL, "Contour-parallel"),
+        (AXIS_PARALLEL, "Axis-parallel (broken)"),
+        (AXIS_PARALLEL_ZIGZAG, "Axis-parallel w/zig-zag (broken)"),
+        # (HSM_PEEL, "Arc peel (HSM)"),
+    ]
+
 class PresetBase(Serializable):
     def description(self):
         if self.name:
@@ -164,9 +176,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy=PocketStrategy.CONTOUR_PARALLEL):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -177,6 +189,7 @@ class EndMillPreset(PresetBase):
         res.direction = direction
         res.extra_width = extra_width
         res.trc_rate = trc_rate
+        res.pocket_strategy = pocket_strategy
         return res
     def description_only(self):
         res = []
