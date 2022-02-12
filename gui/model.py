@@ -1331,6 +1331,7 @@ class DocumentModel(QObject):
         self.default_preset_by_tool = {}
         self.refreshToolList()
         self.drawing.reset()
+        self.drawing.removeRows(0, self.drawing.rowCount())
         self.operModel.removeRows(0, self.operModel.rowCount())
     def refreshToolList(self):
         self.tool_list.reset()
