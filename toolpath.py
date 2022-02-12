@@ -94,7 +94,7 @@ class Toolpath(object):
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(LineOptimizer.simplify(self.path.nodes), self.path.closed, self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.optimize_lines_cache
 
     def subpath(self, start, end, is_tab=False, helical_entry=None):
