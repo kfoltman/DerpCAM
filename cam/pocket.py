@@ -28,23 +28,26 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
 def calculate_tool_margin(shape, tool, displace):
     boundary = geom.IntPath(shape.boundary)
     boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
-    islands = process.Shape._union(*[geom.IntPath(i) for i in shape.islands])
     islands_transformed = []
     islands_transformed_nonoverlap = []
-    for island in islands:
-        pc = pyclipper.PyclipperOffset()
-        pts = geom.PtsToInts(island)
-        if not pyclipper.Orientation(pts):
-            pts = list(reversed(pts))
-        pc.AddPath(pts, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-        res = pc.Execute((tool.diameter * 0.5 + displace) * geom.GeometrySettings.RESOLUTION)
-        if not res:
-            return None
-        res = [geom.IntPath(it, True) for it in res]
-        islands_transformed += res
-        islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
-    if islands_transformed_nonoverlap:
-        islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+    if shape.islands:
+        islands = process.Shape._union(*[geom.IntPath(i) for i in shape.islands])
+        for island in islands:
+            pc = pyclipper.PyclipperOffset()
+            pts = geom.PtsToInts(island)
+            if not pyclipper.Orientation(pts):
+                pts = list(reversed(pts))
+            pc.AddPath(pts, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
+            res = pc.Execute((tool.diameter * 0.5 + displace) * geom.GeometrySettings.RESOLUTION)
+            if not res:
+                return None
+            res = [geom.IntPath(it, True) for it in res]
+            islands_transformed += res
+            islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
+        if islands_transformed_nonoverlap:
+            islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+    else:
+        islands = []
     return boundary_transformed, islands_transformed, islands_transformed_nonoverlap
 
 def contour_parallel(shape, tool, displace=0):
