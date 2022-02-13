@@ -170,7 +170,7 @@ def hsm_peel(shape, tool, displace=0):
         generator = tp._get_arcs(100)
         try:
             while not geom.is_calculation_cancelled():
-                progress = max(0, min(1000, next(generator)))
+                progress = max(0, min(1000, 1000 * next(generator)))
                 geom.set_calculation_progress(progress, 1000)
         except StopIteration:
             pass
