@@ -753,6 +753,8 @@ class OperationTreeItem(CAMTreeItem):
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
+    prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
+    prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
@@ -761,8 +763,6 @@ class OperationTreeItem(CAMTreeItem):
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f", unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f", unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True)
-    prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
-    prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -862,9 +862,10 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_offset,
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
             self.prop_extra_width,
-            self.prop_islands,
+            self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
+            self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
-            self.prop_trc_rate, self.prop_direction, self.prop_pocket_strategy, self.prop_axis_angle]
+            self.prop_trc_rate]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
