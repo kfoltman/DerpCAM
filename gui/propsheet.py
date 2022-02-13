@@ -128,12 +128,14 @@ class EnumEditableProperty(EditableProperty):
             id, description = data[0 : 2]
             if value == id or value == description:
                 return id
-        if self.allow_none and value == self.none_value:
+        if self.allow_none and (value is None or value == self.none_value):
             return None
         raise ValueError("Incorrect value: %s" % (value))
     def createEditor(self, parent, item, objects):
         widget = QListWidget(parent)
         widget.setMinimumSize(200, 100)
+        if self.allow_none:
+            widget.addItem(self.none_value)
         for data in self.enum_class.descriptions:
             id, description = data[0 : 2]
             if item.valid_values is not None:
@@ -143,15 +145,23 @@ class EnumEditableProperty(EditableProperty):
         widget.itemPressed.connect(lambda: self.destroyEditor(widget))
         return widget
     def getEditorData(self, editor):
+        if self.allow_none and editor.currentRow() == 0:
+            return None
         return editor.currentItem().data(Qt.DisplayRole)
     def setEditorData(self, editor, value):
+        if value is None and self.allow_none:
+            editor.setCurrentRow(0)
+            return
         if type(value) is int:
-            for row, item in enumerate(self.enum_class.descriptions):
+            for row, item in enumerate(self.enum_class.descriptions, start=1 if self.allow_none else 0):
                 if item[0] == value:
                     editor.setCurrentRow(row)
                     return
         if type(value) is str:
-            for row, item in enumerate(self.enum_class.descriptions):
+            if self.allow_none and value == self.none_value:
+                editor.setCurrentRow(0)
+                return
+            for row, item in enumerate(self.enum_class.descriptions, start=1 if self.allow_none else 0):
                 if str(item[0]) == value or item[1] == value:
                     editor.setCurrentRow(row)
                     return
