@@ -163,8 +163,8 @@ class PocketStrategy(EnumClass):
     HSM_PEEL = 4
     descriptions = [
         (CONTOUR_PARALLEL, "Contour-parallel"),
-        (AXIS_PARALLEL, "Axis-parallel (broken)"),
-        (AXIS_PARALLEL_ZIGZAG, "Axis-parallel w/zig-zag (broken)"),
+        (AXIS_PARALLEL, "Axis-parallel (v. slow)"),
+        (AXIS_PARALLEL_ZIGZAG, "Axis-parallel w/zig-zag"),
         (HSM_PEEL, "Arc peel (HSM)"),
     ]
 

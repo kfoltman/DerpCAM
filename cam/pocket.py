@@ -30,6 +30,7 @@ def calculate_tool_margin(shape, tool, displace):
     boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
     islands_transformed = []
     islands_transformed_nonoverlap = []
+    boundary_transformed_nonoverlap = boundary_transformed
     if shape.islands:
         islands = process.Shape._union(*[geom.IntPath(i).force_orientation(True) for i in shape.islands])
         for island in islands:
@@ -46,7 +47,14 @@ def calculate_tool_margin(shape, tool, displace):
             islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
         if islands_transformed_nonoverlap:
             islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
-    return boundary_transformed, islands_transformed, islands_transformed_nonoverlap
+        tree = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE,
+            subject_polys=[i for i in boundary_transformed],
+            clipper_polys=[i for i in islands_transformed])
+        if tree:
+            boundary_transformed_nonoverlap = [geom.IntPath(i, True) for i in pyclipper.ClosedPathsFromPolyTree(tree)]
+        else:
+            boundary_transformed_nonoverlap = []
+    return boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap
 
 def contour_parallel(shape, tool, displace=0):
     if not shape.closed:
@@ -54,7 +62,7 @@ def contour_parallel(shape, tool, displace=0):
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
     tps = []
     tps_islands = []
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
     for path in islands_transformed_nonoverlap:
         for ints in process.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
@@ -114,6 +122,27 @@ class AxisParallelRow(object):
             print ("Connectors", self.connectors)
             print ("End")
 
+def get_areas(rows, tool):
+    tps = []
+    for row in rows:
+        for area in row.areas:
+            tps.append(toolpath.Toolpath(area, tool))
+    return tps
+
+def get_slices(rows, tool):
+    tps = []
+    for row in rows:
+        for slice in row.slices:
+            tps.append(toolpath.Toolpath(slice, tool))
+    return tps
+
+def get_connectors(rows, tool):
+    tps = []
+    for row in rows:
+        for conn in row.connectors:
+            tps.append(toolpath.Toolpath(conn, tool))
+    return tps
+
 def process_rows(rows, tool):
     tps = []
     finished = False
@@ -144,16 +173,14 @@ def process_rows(rows, tool):
             tps.append(toolpath.Toolpath(geom.Path(sum([i.nodes for i in path], []), False), tool))
     return tps
 
-
 def axis_parallel(shape, tool, angle, margin, zigzag):
     offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
 
     coords = sum([i.int_points for i in boundary_transformed], [])
     xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
     ycoords = [p[1] / geom.GeometrySettings.RESOLUTION for p in coords]
     sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
-
     stepover = tool.diameter * tool.stepover
     tps = []
     maxlen = geom.dist(geom.PathPoint(sx, sy), geom.PathPoint(ex, ey))
@@ -166,13 +193,19 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
     my = maxlen * math.sin(angle)
     dx = stepover * math.cos(angle + math.pi / 2)
     dy = stepover * math.sin(angle + math.pi / 2)
+    # Clipper bug workaround! A difference of a horizontal line and a contour that is *above* the line will be null,
+    # instead of the whole line.
+    subtract_hack = [geom.IntPath([geom.PathPoint(sx, sy - 1), geom.PathPoint(sx + 1, sy - 1), geom.PathPoint(sx, sy - 2)], False)]
     for i in range(nsteps):
         p1 = geom.PathPoint(p[0] - mx, p[1] - my)
         p2 = geom.PathPoint(p[0] + mx, p[1] + my)
         path = geom.IntPath([p2, p1]) if zigzag and (i & 1) else geom.IntPath([p1, p2])
         tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], boundary_transformed, [path])
-        treepaths = pyclipper.OpenPathsFromPolyTree(tree)
-        tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, [], islands_transformed, [geom.IntPath(path2, True) for path2 in treepaths])
+        if islands_transformed:
+            treepaths = pyclipper.OpenPathsFromPolyTree(tree)
+            tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, subtract_hack, islands_transformed, [geom.IntPath(path2, True) for path2 in treepaths])
+        else:
+            tree2 = tree
         row = AxisParallelRow()
         for path3 in pyclipper.OpenPathsFromPolyTree(tree2):
             row.add_slice(geom.Path(geom.PtsFromInts(path3), False))
@@ -181,20 +214,29 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
         p3 = geom.PathPoint(p[0] - mx, p[1] - my)
         p4 = geom.PathPoint(p[0] + mx, p[1] + my)
         slice = geom.IntPath([p1, p2, p4, p3])
-        tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [slice], boundary_transformed, [])
-        treepaths = pyclipper.ClosedPathsFromPolyTree(tree)
-        tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, [geom.IntPath(path2, True) for path2 in treepaths], islands_transformed, [])
-        for path3 in pyclipper.ClosedPathsFromPolyTree(tree2):
-            row.add_area(geom.Path(geom.PtsFromInts(path3), True))
-            #tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(path3), True), tool))
-        tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], boundary_transformed + islands_transformed_nonoverlap)
-        for path3 in pyclipper.OpenPathsFromPolyTree(tree):
-            row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
+
+        if False: # use for debugging
+            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [slice], boundary_transformed, [])
+            treepaths = pyclipper.ClosedPathsFromPolyTree(tree)
+            if islands_transformed:
+                tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, [geom.IntPath(path2, True) for path2 in treepaths], islands_transformed, [])
+            else:
+                tree2 = tree
+            for path3 in pyclipper.ClosedPathsFromPolyTree(tree2):
+                row.add_area(geom.Path(geom.PtsFromInts(path3), True))
+        #tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed + islands_transformed_nonoverlap])
+        if zigzag:
+            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed_nonoverlap] +
+                [geom.IntPath(pyclipper.ReversePath(path.int_points + path.int_points[0:1]), True) for path in islands_transformed_nonoverlap])
+            for path3 in pyclipper.OpenPathsFromPolyTree(tree):
+                row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
         rows.append(row)
+    #return toolpath.Toolpaths(get_slices(rows, tool))
+    #return toolpath.Toolpaths(get_areas(rows, tool))
+    #return toolpath.Toolpaths(get_connectors(rows, tool))
     tps = process_rows(rows, tool)
     if not tps:
         raise ValueError("Milled area is empty")
-    #tps = process.joinClosePaths(tps)
     # Add a final pass around the perimeter
     for b in boundary_transformed:
         for d in process.Shape._difference(b, *islands_transformed, return_ints=True):
