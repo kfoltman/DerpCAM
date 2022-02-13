@@ -54,7 +54,7 @@ class PathPoint(PathNode):
         self.x = x
         self.y = y
     def __repr__(self):
-        return f"PathPoint({self.x},{self.y})"
+        return f"PathPoint({self.x:0.3f},{self.y:0.3f})"
     def seg_start(self):
         return self
     def seg_end(self):
@@ -305,6 +305,8 @@ class Path(object):
         return self.nodes[0]
     def seg_end(self):
         return self.nodes[0] if self.closed else self.nodes[-1].seg_end()
+    def __repr__(self):
+        return f"Path({','.join(repr(node) for node in self.nodes)}, {repr(self.closed)})"
 
 class PathSegmentIterator(object):
     def __init__(self, path):
