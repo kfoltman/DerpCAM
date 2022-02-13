@@ -239,7 +239,7 @@ def hsm_peel(shape, tool, displace=0):
                 inputs += i.geoms
     tps = []
     for polygon in inputs:
-        step = 0.5 * tool.diameter * tool.stepover
+        step = tool.diameter * tool.stepover
         with pyvlock:
             v = cam.voronoi_centers.VoronoiCenters(polygon, tolerence = step)
         tp = cam.geometry.ToolPath(polygon, step, cam.geometry.ArcDir.CW, voronoi=v, generate=True)
@@ -255,7 +255,7 @@ def hsm_peel(shape, tool, displace=0):
         r = 0
         rt = tp.start_radius
         while r < rt:
-            r = min(rt, r + 0.5 * tool.diameter * tool.stepover)
+            r = min(rt, r + tool.diameter * tool.stepover)
             gen_path += [geom.PathPoint(x + r, y), geom.PathArc(geom.PathPoint(x + r, y), geom.PathPoint(x + r, y), geom.CandidateCircle(x, y, r), int(2 * math.pi * r), 0, 2 * math.pi)]
         for item in tp.joined_path_data:
             if isinstance(item, cam.geometry.LineData):
@@ -275,7 +275,12 @@ def hsm_peel(shape, tool, displace=0):
                 # Fix slight inaccuracies with line segments
                 gen_path += [geom.PathPoint(item.start.x, item.start.y), sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span), geom.PathPoint(item.end.x, item.end.y)]
         if geom.Path(gen_path, False).length():
-            tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
+            if tool.diameter * (1 + tool.stepover) < 2 * tp.start_radius:
+                tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
+                tpo.helical_entry = process.HelicalEntry(tp.start_point, tool.diameter * tool.stepover)
+            else:
+                tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
+            tps.append(tpo)
         # Add a final pass around the perimeter
         def ls2path(ls):
             return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
