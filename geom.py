@@ -743,9 +743,22 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
 def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[]):
     pc = Pyclipper()
     if operation == CT_DIFFERENCE and subject_paths and not subject_polys:
-        import traceback
-        print ("Warning: CT_DIFFERENCE may trigger a Clipper bug affecting horizontal lines and no workaround geometry has been passed!")
-        traceback.print_stack()
+        lowest_y = None
+        for i in subject_paths:
+            p = i.int_points
+            i = 0
+            j = len(p) - 1
+            while i + 1 < len(p) and p[0] == p[i + 1]:
+                i += 1
+            while j - 1 > i and p[j] == p[-1]:
+                j -= 1
+            if j == i + 1 and p[i][1] == p[j][1]:
+                if lowest_y is None or p[i][1] < lowest_y:
+                    lowest_y = p[i][1]
+        if lowest_y is not None:
+            import traceback
+            print ("Warning: CT_DIFFERENCE may trigger a Clipper bug affecting horizontal lines and no workaround geometry has been passed!")
+            traceback.print_stack()
     for path in subject_polys:
         pc.AddPath(path.int_points, PT_SUBJECT, True)
     for path in subject_paths:
