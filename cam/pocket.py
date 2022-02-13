@@ -31,7 +31,7 @@ def calculate_tool_margin(shape, tool, displace):
     islands_transformed = []
     islands_transformed_nonoverlap = []
     if shape.islands:
-        islands = process.Shape._union(*[geom.IntPath(i) for i in shape.islands])
+        islands = process.Shape._union(*[geom.IntPath(i).force_orientation(True) for i in shape.islands])
         for island in islands:
             pc = pyclipper.PyclipperOffset()
             pts = geom.PtsToInts(island)
