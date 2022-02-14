@@ -870,10 +870,18 @@ class OperationTreeItem(CAMTreeItem):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
                 from . import cutter_mgr
-                dlg = cutter_mgr.AddPresetDialog()
+                pda = PresetDerivedAttributes(self)
+                preset = pda.toPreset("")
+                if isinstance(self.cutter, inventory.EndMillCutter):
+                    dlgclass = cutter_mgr.CreateEditEndMillPresetDialog
+                elif isinstance(self.cutter, inventory.DrillBitCutter):
+                    dlgclass = cutter_mgr.CreateEditDrillBitPresetDialog
+                else:
+                    return
+                dlg = dlgclass(title="Create a preset from operation attributes", preset=preset)
                 if dlg.exec_():
-                    pda = PresetDerivedAttributes(self)
-                    self.tool_preset = pda.toPreset(dlg.presetName)
+                    self.tool_preset = dlg.result
+                    self.tool_preset.toolbit = self.cutter
                     self.cutter.presets.append(self.tool_preset)
                     pda.resetPresetDerivedValues(self)
                     self.document.refreshToolList()

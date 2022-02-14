@@ -445,6 +445,8 @@ class BaseCreateEditDialog(QDialog):
                 self.prop_controls[p] = editor
             elif isinstance(p, EnumEditableProperty):
                 widget = QComboBox()
+                if p.allow_none:
+                    widget.addItem(p.none_value, QVariant(None))
                 for data in p.enum_class.descriptions:
                     widget.addItem(data[1], QVariant(data[0]))
                 self.form.addRow(p.name, widget)
