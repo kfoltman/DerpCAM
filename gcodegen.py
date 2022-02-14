@@ -799,11 +799,16 @@ class HelicalDrill(UntabbedOperation):
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
-        shape = process.Shape.circle(x, y, r=0.5*d)
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool))
         self.x = x
         self.y = y
         self.d = d
+        self.tool = tool
+        coords = []
+        for cd in self.diameters():
+            coords += process.Shape.circle(x, y, r=0.5*(cd - tool.diameter)).boundary
+        tp = toolpath.Toolpath(Path(coords, False), tool)
+        shape = process.Shape.circle(x, y, r=0.5*self.d)
+        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths([tp]))
 
     def diameters(self):
         if self.d < self.min_dia:
