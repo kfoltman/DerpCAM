@@ -249,7 +249,6 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
 pyvlock = threading.RLock()
 
 def hsm_peel(shape, tool, zigzag, displace=0):
-    raise ValueError("testing")
     from shapely.geometry import LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
     from shapely.ops import linemerge, nearest_points
     import cam.geometry
