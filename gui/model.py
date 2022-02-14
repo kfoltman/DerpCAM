@@ -742,6 +742,19 @@ class PresetDerivedAttributes(object):
         target.axis_angle = None
         target.emitDataChanged()
 
+class WorkerThread(threading.Thread):
+    def __init__(self, workerFunc):
+        self.worker_func = workerFunc
+        self.exception = None
+        threading.Thread.__init__(self, target=self.threadMain)
+    def threadMain(self):
+        try:
+            self.worker_func()
+        except Exception as e:
+            self.exception = e
+            import traceback
+            traceback.print_exc()
+
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
@@ -970,15 +983,12 @@ class OperationTreeItem(CAMTreeItem):
     def pollForUpdateCAM(self):
         if self.worker and not self.worker.is_alive():
             self.worker.join()
+            if self.error is None and self.worker.exception is not None:
+                self.error = str(self.worker.exception)
             self.worker = None
             self.document.operationsUpdated.emit()
         if self.worker is not None:
             return self.worker.progress
-    def waitForUpdateCAM(self):
-        if self.worker:
-            self.worker.join()
-            self.worker = None
-            self.document.operationsUpdated.emit()
     def cancelWorker(self):
         if self.worker:
             self.worker.cancelled = True
@@ -1060,7 +1070,7 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     raise ValueError("Unsupported operation")
                 if threadFunc:
-                    self.worker = threading.Thread(target=threadFunc)
+                    self.worker = WorkerThread(threadFunc)
                     self.worker.progress = (0, 1)
                     self.worker.cancelled = False
                     self.worker.start()
