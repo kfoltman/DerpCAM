@@ -1047,6 +1047,8 @@ class OperationTreeItem(CAMTreeItem):
                         threadFunc = lambda: self.cam.face_mill(self.shape, pda.axis_angle * pi / 180, 0, True)
                     elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
                         threadFunc = lambda: self.cam.pocket_hsm(self.shape)
+                    elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
+                        threadFunc = lambda: self.cam.pocket_hsm_zigzag(self.shape)
                 elif self.operation == OperationType.OUTSIDE_PEEL:
                     threadFunc = lambda: self.cam.outside_peel(self.shape)
                 elif self.operation == OperationType.ENGRAVE:

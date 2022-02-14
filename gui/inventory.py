@@ -161,11 +161,13 @@ class PocketStrategy(EnumClass):
     AXIS_PARALLEL = 2
     AXIS_PARALLEL_ZIGZAG = 3
     HSM_PEEL = 4
+    HSM_PEEL_ZIGZAG = 5
     descriptions = [
         (CONTOUR_PARALLEL, "Contour-parallel"),
         (AXIS_PARALLEL, "Axis-parallel (v. slow)"),
         (AXIS_PARALLEL_ZIGZAG, "Axis-parallel w/zig-zag"),
         (HSM_PEEL, "Arc peel (HSM)"),
+        (HSM_PEEL_ZIGZAG, "Arc peel w/zig-zag (HSM)"),
     ]
 
 class PresetBase(Serializable):

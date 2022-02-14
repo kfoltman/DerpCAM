@@ -133,7 +133,7 @@ class EnumEditableProperty(EditableProperty):
         raise ValueError("Incorrect value: %s" % (value))
     def createEditor(self, parent, item, objects):
         widget = QListWidget(parent)
-        widget.setMinimumSize(200, 100)
+        widget.setMinimumSize(200, 150)
         if self.allow_none:
             widget.addItem(self.none_value)
         for data in self.enum_class.descriptions:

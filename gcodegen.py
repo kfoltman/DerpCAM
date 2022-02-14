@@ -565,7 +565,11 @@ class Pocket(UntabbedOperation):
 
 class HSMPocket(UntabbedOperation):
     def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, False, displace=props.margin))
+
+class HSMPocketZigZag(UntabbedOperation):
+    def __init__(self, shape, tool, props):
+        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, True, displace=props.margin))
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
@@ -924,6 +928,8 @@ class Operations(object):
         self.add(Pocket(shape, self.tool, props or self.props))
     def pocket_hsm(self, shape, props=None):
         self.add(HSMPocket(shape, self.tool, props or self.props))
+    def pocket_hsm_zigzag(self, shape, props=None):
+        self.add(HSMPocketZigZag(shape, self.tool, props or self.props))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
