@@ -18,16 +18,16 @@ class DocumentRenderer(object):
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
         with view.Spinner():
+            if False and owner.mode == DrawingUIMode.MODE_ISLANDS:
+                # This works, but doesn't look particularly good
+                if owner.mode_item.renderer:
+                    owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
             modeData = (owner.mode, owner.mode_item)
             self.document.drawing.renderTo(owner, modeData)
             if owner.mode == DrawingUIMode.MODE_NORMAL:
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
                 self.lastpt = PathPoint(0, 0)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
-            if owner.mode == DrawingUIMode.MODE_ISLANDS:
-                # This works, but doesn't look particularly good
-                if owner.mode_item.renderer:
-                    owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 

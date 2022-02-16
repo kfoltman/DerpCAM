@@ -98,7 +98,7 @@ class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
     defaultDrawingPen = QPen(QColor(0, 0, 0, 255), 0)
     selectedItemDrawingPen = QPen(QColor(0, 64, 128, 255), 2)
-    selectedItemDrawingPen2 = QPen(QColor(0, 64, 128, 255), 1)
+    selectedItemDrawingPen2 = QPen(QColor(0, 64, 128, 255), 2)
     next_drawing_item_id = 1
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -109,12 +109,16 @@ class DrawingItemTreeItem(CAMTreeItem):
     def selectedItemPenFunc(self, item, scale):
         # avoid draft behaviour of thick lines
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
+    def selectedItemPen2Func(self, item, scale):
+        return QPen(self.selectedItemDrawingPen2.color(), self.selectedItemDrawingPen2.widthF() / scale), False
     def penForPath(self, path, modeData):
         if modeData[0] == canvas.DrawingUIMode.MODE_ISLANDS:
             if modeData[1].shape_id == self.shape_id:
                 return self.defaultDrawingPen
             if self.shape_id in modeData[1].islands:
-                return self.selectedItemDrawingPen2
+                return self.selectedItemPen2Func
+            if inside_bounds(self.bounds, modeData[1].orig_shape.bounds):
+                return self.defaultDrawingPen
             return self.defaultGrayPen
         if modeData[0] == canvas.DrawingUIMode.MODE_TABS:
             if modeData[1].shape_id == self.shape_id:
