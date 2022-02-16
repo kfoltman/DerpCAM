@@ -1041,7 +1041,8 @@ class OperationTreeItem(CAMTreeItem):
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
                         if item.closed:
                             self.shape.add_island(item.boundary)
-
+                if self.document.checkUpdateSuspended(self):
+                    return
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
                     if pda.trc_rate:
                         threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
@@ -1337,6 +1338,8 @@ class DocumentModel(QObject):
         self.project_toolbits = {}
         self.default_preset_by_tool = {}
         self.progress_dialog_displayed = False
+        self.update_suspended = None
+        self.update_suspended_dirty = False
         self.tool_list = ToolListTreeItem(self)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
@@ -1588,6 +1591,19 @@ class DocumentModel(QObject):
     def selectCycle(self, cycle):
         self.current_cutter_cycle = cycle
         self.cutterSelected.emit(self.current_cutter_cycle)
+    def checkUpdateSuspended(self, item):
+        if self.update_suspended is item:
+            self.update_suspended_dirty = True
+            return True
+        return False
+    def setUpdateSuspended(self, item):
+        if self.update_suspended is item:
+            return
+        was_suspended = self.update_suspended if self.update_suspended_dirty else None
+        self.update_suspended = item
+        self.update_suspended_dirty = False
+        if was_suspended is not None:
+            was_suspended.startUpdateCAM()
     def opAddCutter(self, cutter: inventory.CutterBase):
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))

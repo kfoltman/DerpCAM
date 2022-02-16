@@ -63,6 +63,10 @@ class DrawingViewer(view.PathViewer):
     def changeMode(self, mode, item):
         self.mode = mode
         self.mode_item = item
+        if self.mode != DrawingUIMode.MODE_NORMAL:
+            self.document.setUpdateSuspended(item)
+        else:
+            self.document.setUpdateSuspended(None)
         self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
