@@ -361,6 +361,11 @@ def inside_bounds(b1, b2):
     sx2, sy2, ex2, ey2 = b2
     return sx1 >= sx2 and ex1 <= ex2 and sy1 >= sy2 and ey1 <= ey2
 
+def bounds_overlap(b1, b2):
+    sx1, sy1, ex1, ey1 = b1
+    sx2, sy2, ex2, ey2 = b2
+    return ex1 >= sx2 and sx1 <= ex2 and ey1 >= sy2 and sy1 <= ey2
+
 def point_inside_bounds(b, p):
     sx, sy, ex, ey = b
     return p.x >= sx and p.x <= ex and p.y >= sy and p.y <= ey
