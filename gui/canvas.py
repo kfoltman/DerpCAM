@@ -3,6 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from geom import *
 import view
+import toolpath
 from gui import settings
 
 class DrawingUIMode(object):
@@ -37,6 +38,43 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
         self.owner = owner
     def isHighlighted(self, operation):
         return self.owner.isSelected
+    def renderToolpaths(self, owner, alpha_scale=1.0):
+        view.OperationsRenderer.renderToolpaths(self, owner, alpha_scale)
+        if owner.mode == DrawingUIMode.MODE_NORMAL:
+            self.renderArrows(owner)
+    def renderArrows(self, owner):
+        pen = QPen(QColor(0, 0, 0), 0)
+        self.owner.document.forEachOperation(lambda item: [self.renderArrowsForPath(owner, pen, path) for operation in item.renderer.operations.operations if item.renderer.operations for path in operation.flattened ] if item.renderer else None)
+    def renderArrowsForPath(self, owner, pen, path):
+        if isinstance(path, toolpath.Toolpaths):
+            for tp in path.toolpaths:
+                self.paintArrowsForPath(e, qp, tp)
+            return
+        tlength = path.tlength
+        pos = 0
+        spacing = 10
+        max_arrows = 1000
+        if tlength / spacing > max_arrows:
+            spacing = tlength / max_arrows
+        while pos < tlength:
+            dp = max(2 / GeometrySettings.RESOLUTION, 0.05)
+            subpath = path.path.subpath(max(0, pos - dp), min(pos + dp, tlength))
+            p1 = subpath.seg_start()
+            p2 = subpath.seg_end()
+            angle = atan2(p2.y - p1.y, p2.x - p1.x)
+            midpoint = subpath.point_at(pos - max(0, pos - dp))
+            d = 0.5
+            d2 = 1
+            da = pi / 2
+            da2 = 0
+            nodes = [
+                PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
+                PathPoint(midpoint.x + d * cos(angle + da), midpoint.y + d * sin(angle + da)),
+                PathPoint(midpoint.x + d * cos(angle - da), midpoint.y + d * sin(angle - da)),
+                PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
+            ]
+            owner.addPolygons(QBrush(QColor(0, 0, 0)), [nodes], False, darken=False)
+            pos += spacing
 
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
@@ -93,22 +131,24 @@ class DrawingViewer(view.PathViewer):
         qp.setPen(QPen(QColor(144, 144, 144), 0))
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
+    def paintIslandsEditor(self, e, qp):
+        op = self.mode_item
+        p = op.shape.boundary + op.shape.boundary[0:1]
+        path = QPainterPath()
+        view.addPolylineToPath(path, p)
+        for p in op.shape.islands:
+            path2 = QPainterPath()
+            view.addPolylineToPath(path2, p + p[0:1])
+            path = path.subtracted(path2)
+        transform = self.drawingTransform()
+        brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
+        brush.setTransform(transform.inverted()[0])
+        qp.setTransform(transform)
+        qp.fillPath(path, brush)
+        qp.setTransform(QTransform())
     def paintOverlays(self, e, qp):
         if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
-            op = self.mode_item
-            p = op.shape.boundary + op.shape.boundary[0:1]
-            path = QPainterPath()
-            view.addPolylineToPath(path, p)
-            for p in op.shape.islands:
-                path2 = QPainterPath()
-                view.addPolylineToPath(path2, p + p[0:1])
-                path = path.subtracted(path2)
-            transform = self.drawingTransform()
-            brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
-            brush.setTransform(transform.inverted()[0])
-            qp.setTransform(transform)
-            qp.fillPath(path, brush)
-            qp.setTransform(QTransform())
+            self.paintIslandsEditor(e, qp)
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
                 modeText = "Click on outlines to add/remove preferred locations for holding tabs"
