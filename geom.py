@@ -119,6 +119,8 @@ class PathArc(PathNode):
     @staticmethod
     def from_tuple(t):
         return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6])
+    def angle_at_fraction(self, alpha):
+        return self.sstart + self.sspan * alpha
     def at_fraction(self, alpha):
         return self.c.at_angle(self.sstart + self.sspan * alpha)
     def length(self):

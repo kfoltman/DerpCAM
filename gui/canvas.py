@@ -45,36 +45,59 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
     def renderArrows(self, owner):
         pen = QPen(QColor(0, 0, 0), 0)
         self.owner.document.forEachOperation(lambda item: [self.renderArrowsForPath(owner, pen, path) for operation in item.renderer.operations.operations if item.renderer.operations for path in operation.flattened ] if item.renderer else None)
+    def renderArrowhead(self, owner, p1, p2, pos):
+        if p2.is_arc():
+            angle = p2.angle_at_fraction(pos) + pi / 2
+            midpoint = p2.at_fraction(pos)
+        else:
+            angle = atan2(p2.y - p1.y, p2.x - p1.x)
+            midpoint = weighted(p1, p2, pos)
+        d = 0.3
+        d2 = 1
+        da = pi / 2
+        da2 = 0
+        arrow = [
+            PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
+            PathPoint(midpoint.x + d * cos(angle + da), midpoint.y + d * sin(angle + da)),
+            PathPoint(midpoint.x + d * cos(angle - da), midpoint.y + d * sin(angle - da)),
+            PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
+        ]
+        owner.addPolygons(QBrush(QColor(0, 0, 0)), [arrow], False, darken=False)
     def renderArrowsForPath(self, owner, pen, path):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
                 self.paintArrowsForPath(e, qp, tp)
             return
         tlength = path.tlength
+        i = 0
         pos = 0
         spacing = 10
         max_arrows = 1000
         if tlength / spacing > max_arrows:
             spacing = tlength / max_arrows
-        while pos < tlength:
-            dp = max(2 / GeometrySettings.RESOLUTION, 0.05)
-            subpath = path.path.subpath(max(0, pos - dp), min(pos + dp, tlength))
-            p1 = subpath.seg_start()
-            p2 = subpath.seg_end()
-            angle = atan2(p2.y - p1.y, p2.x - p1.x)
-            midpoint = subpath.point_at(pos - max(0, pos - dp))
-            d = 0.5
-            d2 = 1
-            da = pi / 2
-            da2 = 0
-            nodes = [
-                PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
-                PathPoint(midpoint.x + d * cos(angle + da), midpoint.y + d * sin(angle + da)),
-                PathPoint(midpoint.x + d * cos(angle - da), midpoint.y + d * sin(angle - da)),
-                PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
-            ]
-            owner.addPolygons(QBrush(QColor(0, 0, 0)), [nodes], False, darken=False)
-            pos += spacing
+        lastpt = None
+        nodes = path.path.nodes
+        #nodes = CircleFitter.simplify(nodes)
+        lastpt2 = nodes[0]
+        cnt = 0
+        while i < len(nodes):
+            p1 = lastpt
+            p2 = nodes[i]
+            if p1 is not None and (dist(p1, p2) > 2 or p2.is_arc() or cnt > 5):
+                if dist(p1, p2) > 2:
+                    self.renderArrowhead(owner, p1, p2, 0.15)
+                    self.renderArrowhead(owner, p1, p2, 0.85)
+                else:
+                    self.renderArrowhead(owner, p1, p2, 0.5)
+                cnt = 0
+                lastpt2 = p2
+            elif lastpt is not None:
+                if p2.is_arc():
+                    cnt += p2.length()
+                else:
+                    cnt += dist(p1, p2)
+            lastpt = p2.seg_end()
+            i += 1
 
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
