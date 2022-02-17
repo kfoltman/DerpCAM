@@ -7,6 +7,7 @@ class GeometrySettings:
     fillMode = PFT_POSITIVE
     simplify_arcs = True
     simplify_lines = False
+    draw_arrows = False
 
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION

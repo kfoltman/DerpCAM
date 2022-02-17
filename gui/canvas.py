@@ -40,7 +40,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
         return self.owner.isSelected
     def renderToolpaths(self, owner, alpha_scale=1.0):
         view.OperationsRenderer.renderToolpaths(self, owner, alpha_scale)
-        if owner.mode == DrawingUIMode.MODE_NORMAL:
+        if owner.mode == DrawingUIMode.MODE_NORMAL and GeometrySettings.draw_arrows:
             self.renderArrows(owner)
     def renderArrows(self, owner):
         pen = QPen(QColor(0, 0, 0), 0)
