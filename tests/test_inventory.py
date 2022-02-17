@@ -19,6 +19,42 @@ class InventoryTest(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
     def tearDown(self):
         self.test_dir.cleanup()
+    def testPropagation(self):
+        self.checkPropagationForToolbit("2mm HSS", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
+        self.checkPropagationForPreset("2mm HSS", "Wood-untested", attr_values=[("rpm", 3), ("vfeed", 30), ("maxdoc", 1)])
+        self.checkPropagationForToolbit("cheapo 2F 3.2/15", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
+        self.checkPropagationForPreset("cheapo 2F 3.2/15", "Wood-roughing",
+            attr_values=[("rpm", 3), ("vfeed", 30), ("hfeed", 30), ("maxdoc", 1), ("stepover", 0.55), ("direction", MillDirection.CLIMB),
+                ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45)])
+    def checkPropagationForToolbit(self, toolbit_name, attr_values):
+        em = std_cutters.toolbitByName(toolbit_name)
+        self.checkPropagation(em, attr_values)
+    def checkPropagationForPreset(self, toolbit_name, preset_name, attr_values):
+        em = std_cutters.toolbitByName(toolbit_name)
+        preset = em.presetByName(preset_name)
+        p1, p2 = self.checkPropagation(preset, attr_values)
+        self.assertEqual(p1.toolbit, em)
+        self.assertEqual(p2.toolbit, em)
+    def checkPropagation(self, em, attr_values):
+        em2 = em.newInstance()
+        self.assertIsNot(em2, em)
+        self.assertIs(em2.base_object, em)
+        self.assertTrue(em2.equals(em))
+        self.assertTrue(em.equals(em2))
+        em3 = em.newInstance()
+        self.assertIsNot(em3, em)
+        self.assertIsNot(em3, em2)
+        self.assertIs(em3.base_object, em)
+        self.assertTrue(em2.equals(em3))
+        self.assertTrue(em3.equals(em2))
+        for attr, value in attr_values:
+            setattr(em3, attr, value)
+            self.assertFalse(em2.equals(em3), attr)
+            self.assertFalse(em3.equals(em2), attr)
+            em3.resetTo(em)
+            self.assertTrue(em2.equals(em3), attr)
+            self.assertTrue(em3.equals(em2), attr)
+        return em2, em3
     def testStdCutters(self):
         self.checkStdCutters(std_cutters)
     def testStdCuttersSaveLoad(self):
@@ -54,6 +90,7 @@ class InventoryTest(unittest.TestCase):
             self.assertEqual(toolbit.id, id)
         else:
             self.assertEqual(toolbit.orig_id, id)
+        self.assertIs(toolbit, gui.inventory.IdSequence.lookup(toolbit.id))
         self.assertEqual(toolbit.name, name)
         self.assertEqual(toolbit.diameter, diameter)
         self.assertEqual(toolbit.flutes, flutes)
