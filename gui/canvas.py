@@ -223,7 +223,7 @@ class DrawingViewer(view.PathViewer):
             self.rubberband_rect = None
             self.dragging = False
             pos = self.unproject(e.localPos())
-            objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
             if self.mode != DrawingUIMode.MODE_NORMAL:
                 if self.mode == DrawingUIMode.MODE_ISLANDS:
                     objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
@@ -267,7 +267,7 @@ class DrawingViewer(view.PathViewer):
     def mouseMoveEvent(self, e):
         if not self.dragging and self.mode == DrawingUIMode.MODE_ISLANDS:
             pos = self.unproject(e.localPos())
-            objs = self.document.drawing.objectsNear(pos, 8 / self.scalingFactor())
+            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
             objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
             if objs:
                 self.setCursor(Qt.PointingHandCursor)

@@ -229,18 +229,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def distanceTo(self, pt):
         if not self.points:
             return None
-        mindist = None
-        for i in range(len(self.points)):
-            dist = None
-            if self.closed or i > 0:
-                if self.points[i - 1].is_point() and self.points[i].is_point():
-                    dist = dist_line_to_point(self.points[i - 1], self.points[i], pt)
-                # XXXKF arcs - use closest_point?
-            if dist is not None:
-                if mindist is None:
-                    mindist = dist
-                else:
-                    mindist = min(dist, mindist)
+        path = Path(self.points, self.closed)
+        closest, mindist = path.closest_point(pt)
         return mindist
     def translated(self, dx, dy):
         pti = DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed)
@@ -344,11 +334,15 @@ class DrawingTreeItem(CAMListTreeItem):
     def objectsNear(self, pos, margin):
         xy = PathPoint(pos.x() + self.x_offset, pos.y() + self.y_offset)
         found = []
+        mindist = margin
         for item in self.items():
             if point_inside_bounds(expand_bounds(item.bounds, margin), xy):
                 distance = item.distanceTo(xy)
                 if distance is not None and distance < margin:
-                    found.append(item)
+                    mindist = min(mindist, distance)
+                    found.append((item, distance))
+        found = sorted(found, key=lambda item: item[1])
+        found = [item[0] for item in found if item[1] < mindist * 1.5]
         return found
     def objectsWithin(self, xs, ys, xe, ye):
         xs += self.x_offset
