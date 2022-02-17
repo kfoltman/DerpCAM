@@ -5,6 +5,7 @@ from geom import GeometrySettings
 
 class ConfigSettings(object):
     def __init__(self):
+        self.settings = self.createSettingsObj()
         self.resolution = GeometrySettings.RESOLUTION
         self.simplify_arcs = GeometrySettings.simplify_arcs
         self.simplify_lines = GeometrySettings.simplify_lines
@@ -14,20 +15,20 @@ class ConfigSettings(object):
     def createSettingsObj(self):
         return QSettings("kfoltman", "DerpCAM")
     def load(self):
-        settings = self.createSettingsObj()
+        settings = self.settings
         settings.sync()
         self.resolution = int(settings.value("geometry/resolution", self.resolution))
         self.simplify_arcs = settings.value("geometry/simplify_arcs", self.simplify_arcs) == 'true'
         self.simplify_lines = settings.value("geometry/simplify_lines", self.simplify_lines) == 'true'
-        self.draw_arrows = settings.value("geometry/draw_arrows", self.draw_arrows) == 'true'
+        self.draw_arrows = settings.value("display/draw_arrows", self.draw_arrows) == 'true'
         self.grid_resolution = int(settings.value("display/grid_resolution", self.grid_resolution))
     def save(self):
-        settings = self.createSettingsObj()
+        settings = self.settings
         settings.setValue("geometry/resolution", self.resolution)
-        settings.setValue("geometry/simplify_arcs", self.simplify_arcs)
-        settings.setValue("geometry/simplify_lines", self.simplify_lines)
-        settings.setValue("geometry/draw_arrows", self.draw_arrows)
-        settings.setValue("geometry/grid_resolution", self.grid_resolution)
+        settings.setValue("geometry/simplify_arcs", "true" if self.simplify_arcs else "false")
+        settings.setValue("geometry/simplify_lines", "true" if self.simplify_lines else "false")
+        settings.setValue("display/draw_arrows", "true" if self.draw_arrows else "false")
+        settings.setValue("display/grid_resolution", self.grid_resolution)
         settings.sync()
     def update(self):
         GeometrySettings.RESOLUTION = self.resolution
