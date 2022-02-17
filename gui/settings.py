@@ -11,8 +11,10 @@ class ConfigSettings(object):
         self.draw_arrows = GeometrySettings.draw_arrows
         self.grid_resolution = 50
         self.load()
+    def createSettingsObj(self):
+        return QSettings("kfoltman", "DerpCAM")
     def load(self):
-        settings = QSettings("kfoltman", "DerpCAM")
+        settings = self.createSettingsObj()
         settings.sync()
         self.resolution = int(settings.value("geometry/resolution", self.resolution))
         self.simplify_arcs = settings.value("geometry/simplify_arcs", self.simplify_arcs) == 'true'
@@ -20,7 +22,7 @@ class ConfigSettings(object):
         self.draw_arrows = settings.value("geometry/draw_arrows", self.draw_arrows) == 'true'
         self.grid_resolution = int(settings.value("display/grid_resolution", self.grid_resolution))
     def save(self):
-        settings = QSettings("kfoltman", "DerpCAM")
+        settings = self.createSettingsObj()
         settings.setValue("geometry/resolution", self.resolution)
         settings.setValue("geometry/simplify_arcs", self.simplify_arcs)
         settings.setValue("geometry/simplify_lines", self.simplify_lines)
