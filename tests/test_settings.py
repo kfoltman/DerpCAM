@@ -5,6 +5,7 @@ import time
 import unittest
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+import geom
 import gui.settings
 
 from PyQt5.QtCore import *
@@ -27,7 +28,7 @@ class ConfigDialogTest(unittest.TestCase):
     def tearDown(self):
         del self.dlg
     def testSpinboxes(self):
-        self.checkSpinbox("resolution", "resolutionSpin", [(42, 33), (21, 55)])
+        self.checkSpinbox("resolution", "resolutionSpin", [(42, 33), (21, 55)], geometry_setting='RESOLUTION')
         self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33), (21, 55)])
     def testCheckboxes(self):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
@@ -40,10 +41,13 @@ class ConfigDialogTest(unittest.TestCase):
         self.createDialog()
         self.assertEqual(self.dlg.resolutionSpin.text(), str(self.settings.resolution))
         self.assertEqual(self.dlg.gridSpin.text(), str(self.settings.grid_resolution))
-    def checkSpinbox(self, config_attr, widget_attr, values):
+    def checkSpinbox(self, config_attr, widget_attr, values, geometry_setting=None):
         for value, new_value in values:
             setattr(self.settings, config_attr, value)
             self.settings.save()
+            self.settings.update()
+            if geometry_setting:
+                self.assertEqual(getattr(geom.GeometrySettings, geometry_setting), value, geometry_setting)
             # OK without changes
             self.createDialog()
             self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
@@ -75,6 +79,7 @@ class ConfigDialogTest(unittest.TestCase):
             self.dlg.accept()
             self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
             self.settings.update()
+            self.assertEqual(getattr(geom.GeometrySettings, config_attr), value, config_attr)
             # OK with a change
             self.settings.load()
             self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
