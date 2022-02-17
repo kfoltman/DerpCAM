@@ -84,7 +84,12 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
             p1 = lastpt
             p2 = nodes[i]
             if p1 is not None and (dist(p1, p2) > 2 or p2.is_arc() or cnt > 5):
-                if dist(p1, p2) > 2:
+                if p2.is_arc():
+                    if p2.length() > 5:
+                        self.renderArrowhead(owner, p1, p2, 0.15)
+                        self.renderArrowhead(owner, p1, p2, 0.85)
+                    self.renderArrowhead(owner, p1, p2, 0.5)
+                elif dist(p1, p2) > 5:
                     self.renderArrowhead(owner, p1, p2, 0.15)
                     self.renderArrowhead(owner, p1, p2, 0.85)
                 else:
