@@ -252,8 +252,8 @@ def hsm_peel(shape, tool, zigzag, displace=0):
     from shapely.geometry import LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
     from shapely.ops import linemerge, nearest_points
     import cam.geometry
-    dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
-    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -dist)
+    tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
+    res = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
     if len(res) != 1:
         raise ValueError("Empty or multiple subpockets not supported yet")
     boundary_offset = geom.PtsFromInts(res[0])
@@ -261,7 +261,7 @@ def hsm_peel(shape, tool, zigzag, displace=0):
     polygon = Polygon(boundary)
     islands_offset = []
     for island in shape.islands:
-        island_offsets = process.Shape._offset(geom.PtsToInts(island), True, dist)
+        island_offsets = process.Shape._offset(geom.PtsToInts(island), True, tdist)
         island_offsets = pyclipper.SimplifyPolygons(island_offsets)
         for island_offset in island_offsets:
             island_offset_pts = geom.PtsFromInts(island_offset)
@@ -303,23 +303,36 @@ def hsm_peel(shape, tool, zigzag, displace=0):
         while r < rt:
             r = min(rt, r + tool.diameter * tool.stepover)
             gen_path += [geom.PathPoint(x + r, y), geom.PathArc(geom.PathPoint(x + r, y), geom.PathPoint(x + r, y), geom.CandidateCircle(x, y, r), int(2 * math.pi * r), 0, 2 * math.pi)]
+        lastpt = None
         for item in tp.joined_path_data:
             if isinstance(item, cam.geometry.LineData):
                 if not item.safe:
                     if geom.Path(gen_path, False).length():
                         tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
                     gen_path = []
+                    lastpt = None
                 else:
                     gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
+                    lastpt = geom.PathPoint(item.end.x, item.end.y)
             elif isinstance(item, cam.geometry.ArcData):
                 steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
                 cc = geom.CandidateCircle(item.origin.x, item.origin.y, item.radius)
                 sa = math.pi / 2 - item.start_angle
                 span = -item.span_angle
+                osp = geom.PathPoint(item.start.x, item.start.y)
                 sp = cc.at_angle(sa)
                 ep = cc.at_angle(sa + span)
+                oep = geom.PathPoint(item.end.x, item.end.y)
+                #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
+                assert geom.dist(osp, sp) < 0.1
+                assert geom.dist(oep, ep) < 0.1
                 # Fix slight inaccuracies with line segments
-                gen_path += [geom.PathPoint(item.start.x, item.start.y), sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span), geom.PathPoint(item.end.x, item.end.y)]
+                if geom.dist(osp, sp) >= 0.0005:
+                    gen_path.append(osp)
+                gen_path += [sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span)]
+                if geom.dist(ep, oep) >= 0.0005:
+                    gen_path.append(oep)
+                lastpt = oep
         if geom.Path(gen_path, False).length():
             if tool.diameter * (1 + tool.stepover) < 2 * tp.start_radius:
                 tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
