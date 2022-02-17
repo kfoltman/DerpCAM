@@ -1347,6 +1347,7 @@ class DocumentModel(QObject):
 
     def reinitDocument(self):
         self.undoStack.clear()
+        self.undoStack.setClean()
         self.material.resetProperties()
         self.current_cutter_cycle = None
         self.project_toolbits = {}
@@ -1469,6 +1470,7 @@ class DocumentModel(QObject):
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
         self.undoStack.clear()
+        self.undoStack.setClean()
     def make_machine_params(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def importDrawing(self, fn):

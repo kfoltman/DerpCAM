@@ -321,6 +321,7 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.modeChanged.connect(self.operationEditMode)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
         self.propsDW = CAMPropertiesDockWidget(self.document)
+        self.document.undoStack.cleanChanged.connect(self.cleanFlagChanged)
         self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
         self.document.operModel.dataChanged.connect(self.operChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
@@ -371,6 +372,8 @@ class CAMMainWindow(QMainWindow):
         self.refreshNeeded = False
         self.resetZoomNeeded = False
         self.idleTimer = self.startTimer(100)
+    def cleanFlagChanged(self, clean):
+        self.setWindowModified(not clean)
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
             progress = self.document.pollForUpdateCAM()
@@ -583,11 +586,13 @@ class CAMMainWindow(QMainWindow):
             self.document.filename = fn
             self.saveProject(fn)
             self.setWindowFilePath(fn)
+            self.document.undoStack.setClean()
     def fileSave(self):
         if self.document.filename is None:
             self.fileSaveAs()
         else:
             self.saveProject(self.document.filename)
+            self.document.undoStack.setClean()
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()
