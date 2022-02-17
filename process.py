@@ -78,14 +78,6 @@ def joinClosePaths(tps):
         last = tp
     return res
 
-class HelicalEntry(object):
-    def __init__(self, point, r, angle=0, climb=True):
-        self.point = point
-        self.r = r
-        self.angle = angle
-        self.start = PathPoint(point.x + r * cos(angle), point.y + r * sin(angle))
-        self.climb = climb
-
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
     boundary_path = IntPath(boundary)
     boundary_path = boundary_path.force_orientation(True)

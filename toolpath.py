@@ -54,6 +54,14 @@ class Tabs(object):
     def coords(self, path):
         return [tab.coords(path) for tab in self.tabs]
 
+class HelicalEntry(object):
+    def __init__(self, point, r, angle=0, climb=True):
+        self.point = point
+        self.r = r
+        self.angle = angle
+        self.start = PathPoint(point.x + r * cos(angle), point.y + r * sin(angle))
+        self.climb = climb
+
 class Toolpath(object):
     def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None):
         assert isinstance(path, Path)
@@ -65,7 +73,7 @@ class Toolpath(object):
         self.lines_to_arcs_cache = None
         self.optimize_lines_cache = None
         self.segmentation = segmentation
-        if segmentation and not helical_entry and segmentation[0][0] == 0:
+        if segmentation and helical_entry is None and segmentation[0][0] == 0 and isinstance(segmentation[0][2], HelicalEntry):
             helical_entry = segmentation[0][2]
         self.helical_entry = helical_entry
         # Allow borrowing bounds from the non-simplified shape to avoid calculating arc bounds
