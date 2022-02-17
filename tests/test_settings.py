@@ -18,7 +18,6 @@ app = QApplication(sys.argv)
 class ConfigSettingsForTest(gui.settings.ConfigSettings):
     def createSettingsObj(self):
         settings = QSettings("kfoltman", "DerpCAM-test")
-        settings.setAtomicSyncRequired(True)
         return settings
 
 class ConfigDialogTest(unittest.TestCase):
