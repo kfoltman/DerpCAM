@@ -587,12 +587,15 @@ class CAMMainWindow(QMainWindow):
             self.saveProject(fn)
             self.setWindowFilePath(fn)
             self.document.undoStack.setClean()
+            return True
+        return False
     def fileSave(self):
         if self.document.filename is None:
-            self.fileSaveAs()
+            return self.fileSaveAs()
         else:
             self.saveProject(self.document.filename)
             self.document.undoStack.setClean()
+            return True
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()
@@ -642,6 +645,18 @@ class CAMMainWindow(QMainWindow):
             exporter.write(fn)
     def fileExit(self):
         self.close()
+    def closeEvent(self, e):
+        if not self.document.undoStack.isClean():
+            answer = QMessageBox.question(self, "Unsaved changes", "Project has unsaved changes. Save?", QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            if answer == QMessageBox.Cancel:
+                e.ignore()
+                return
+            if answer == QMessageBox.Discard:
+                return
+            if answer == QMessageBox.Save:
+                self.fileSave()
+                return
+        QWidget.closeEvent(self, e)
 
 parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
 parser.add_argument('input', type=str, help="File to load on startup", nargs='?')
