@@ -574,7 +574,7 @@ class WorkpieceTreeItem(CAMTreeItem):
         #if name == 'material':
         #    self.document.make_tool()
         if name in ('clearance', 'safe_entry_z'):
-            self.document.make_machine_params()
+            self.document.makeMachineParams()
         self.emitDataChanged()
 
 
@@ -1324,10 +1324,10 @@ class DocumentModel(QObject):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
         self.material = WorkpieceTreeItem(self)
-        self.make_machine_params()
+        self.makeMachineParams()
         self.drawing = DrawingTreeItem(self)
         self.filename = None
-        self.drawingFilename = None
+        self.drawing_filename = None
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.default_preset_by_tool = {}
@@ -1349,9 +1349,12 @@ class DocumentModel(QObject):
         self.undoStack.clear()
         self.undoStack.setClean()
         self.material.resetProperties()
+        self.makeMachineParams()
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.default_preset_by_tool = {}
+        self.update_suspended = None
+        self.update_suspended_dirty = False
         self.refreshToolList()
         self.drawing.reset()
         self.drawing.removeRows(0, self.drawing.rowCount())
@@ -1434,8 +1437,8 @@ class DocumentModel(QObject):
             for i in data['default_presets']:
                 self.default_preset_by_tool[cutter_map[i['tool_id']]] = preset_map[i['preset_id']]
         #self.tool.reload(data['tool'])
-        self.drawing.reload(data['drawing']['header'])
         self.drawing.reset()
+        self.drawing.reload(data['drawing']['header'])
         for i in data['drawing']['items']:
             self.drawing.appendRow(DrawingItemTreeItem.load(self, i))
         if 'operations' in data:
@@ -1471,12 +1474,12 @@ class DocumentModel(QObject):
             self.selectCutterCycle(currentCutterCycle)
         self.undoStack.clear()
         self.undoStack.setClean()
-    def make_machine_params(self):
+    def makeMachineParams(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def importDrawing(self, fn):
         self.reinitDocument()
         self.filename = None
-        self.drawingFilename = fn
+        self.drawing_filename = fn
         self.drawing.importDrawing(fn)
     def forEachOperation(self, func):
         res = []
@@ -1491,7 +1494,7 @@ class DocumentModel(QObject):
             if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
                 item.startUpdateCAM()
     def startUpdateCAM(self, preset=None):
-        self.make_machine_params()
+        self.makeMachineParams()
         if preset is None:
             self.forEachOperation(lambda item: item.startUpdateCAM())
         else:

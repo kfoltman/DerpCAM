@@ -551,7 +551,7 @@ class CAMMainWindow(QMainWindow):
         data = json.load(f)
         f.close()
         self.document.filename = fn
-        self.document.drawingFilename = None
+        self.document.drawing_filename = None
         self.document.load(data)
         self.viewer.majorUpdate()
         self.projectDW.shapeTree.expandAll()
@@ -578,8 +578,8 @@ class CAMMainWindow(QMainWindow):
         dlg = QFileDialog(self, "Save a project", filter="DerpCAM project (*.dcp);;All files (*)")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
-        if self.document.drawingFilename is not None:
-            path = os.path.splitext(self.document.drawingFilename)[0] + ".dcp"
+        if self.document.drawing_filename is not None:
+            path = os.path.splitext(self.document.drawing_filename)[0] + ".dcp"
             dlg.selectFile(path)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
@@ -607,8 +607,8 @@ class CAMMainWindow(QMainWindow):
             if not self.document.waitForUpdateCAM():
                 return
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
-        if self.document.drawingFilename:
-            path = os.path.splitext(self.document.drawingFilename)[0] + ".ngc"
+        if self.document.drawing_filename:
+            path = os.path.splitext(self.document.drawing_filename)[0] + ".ngc"
         elif self.document.filename:
             path = os.path.splitext(self.document.filename)[0] + ".ngc"
         else:
