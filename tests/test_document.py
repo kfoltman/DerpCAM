@@ -194,7 +194,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(doc.itemForCutter(tool.inventory_tool), tool)
         self.assertEqual(doc.itemForPreset(preset.inventory_preset), preset)
         self.verifyPropertyOp(preset, "depth", 0.5, 1, "0.50 mm")
-        self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 /min")
+        self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 rev/min")
         self.verifyPropertyOp(preset, "hfeed", 500, 750, "500.0 mm/min")
         self.verifyPropertyOp(preset, "vfeed", 100, 150, "100.0 mm/min")
         self.verifyPropertyOp(preset, "stepover", 40, 60, "40.0 %")
@@ -258,6 +258,7 @@ class PDATest(unittest.TestCase):
     def testToPresetEM(self):
         op = gui.model.OperationTreeItem(self.document)
         op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
+        op.rpm = 18000
         op.vfeed = 200
         op.hfeed = 700
         op.doc = 1.5
@@ -274,6 +275,7 @@ class PDATest(unittest.TestCase):
         preset = pda.toPreset("new preset")
         self.assertIsInstance(preset, gui.inventory.EndMillPreset)
         self.assertEqual(preset.name, "new preset")
+        self.assertEqual(preset.rpm, 18000)
         self.assertEqual(preset.vfeed, 200)
         self.assertEqual(preset.hfeed, 700)
         self.assertEqual(preset.maxdoc, 1.5)
@@ -286,6 +288,7 @@ class PDATest(unittest.TestCase):
         pda.resetPresetDerivedValues(op)
         op.tool_preset = preset
         pda = gui.model.PresetDerivedAttributes(op)
+        self.verifyAttribute(op, pda, 'rpm', 18000, 20000)
         self.verifyAttribute(op, pda, 'vfeed', 200, 300)
         self.verifyAttribute(op, pda, 'hfeed', 700, 800)
         self.verifyAttribute(op, pda, 'doc', 1.5, 2)

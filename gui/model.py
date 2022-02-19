@@ -454,7 +454,7 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_doc = FloatEditableProperty("Cut depth/pass", "depth", "%0.2f", unit="mm", min=0.01, max=100, allow_none=True)
-    prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f", unit="/min", min=0.1, max=60000, allow_none=True)
+    prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f", unit="rev/min", min=0.1, max=60000, allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f", unit="%", min=1, max=100, allow_none=True)
@@ -686,7 +686,7 @@ class PresetDerivedAttributes(object):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
-        self.rpm = preset and preset.rpm
+        self.rpm = overrides(operation.rpm, preset and preset.rpm)
         self.vfeed = overrides(operation.vfeed, preset and preset.vfeed)
         self.doc = overrides(operation.doc, preset and preset.maxdoc)
         if isinstance(operation.cutter, inventory.EndMillCutter):
@@ -697,7 +697,7 @@ class PresetDerivedAttributes(object):
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
             self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.CONTOUR_PARALLEL)
             self.axis_angle = overrides(operation.axis_angle, preset.axis_angle if preset else None, 0)
-            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle, operation.direction)
+            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle, operation.direction, operation.rpm)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
             self.dirty = operation.vfeed or operation.doc
     def validate(self, errors):
@@ -738,6 +738,7 @@ class PresetDerivedAttributes(object):
         target.trc_rate = None
         target.pocket_strategy = None
         target.axis_angle = None
+        target.rpm = None
         target.emitDataChanged()
 
 class WorkerThread(threading.Thread):
@@ -774,6 +775,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", "%0.2f", unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", "%0.2f", unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
+    prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f", unit="rev/min", min=0.1, max=60000, allow_none=True)
 
     def __init__(self, document):
         CAMTreeItem.__init__(self, document)
@@ -808,6 +810,7 @@ class OperationTreeItem(CAMTreeItem):
         self.direction = None
         self.pocket_strategy = None
         self.axis_angle = None
+        self.rpm = None
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
@@ -876,7 +879,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed, self.prop_stepover,
-            self.prop_trc_rate]
+            self.prop_trc_rate, self.prop_rpm]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
