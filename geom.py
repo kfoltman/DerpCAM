@@ -36,6 +36,14 @@ def circle(x, y, r, n=None, sa=0, ea=2*pi):
             res.append(newpt)
     return res
 
+def circle2(x, y, r, n=None, sa=0, ea=2*pi):
+    if n is None:
+        n = pi * r * GeometrySettings.RESOLUTION
+    n *= abs((ea - sa) / (2 * pi))
+    n = ceil(n)
+    c = CandidateCircle(x, y, r)
+    return [c.at_angle(sa), PathArc(c.at_angle(sa), c.at_angle(ea), c, n, sa, ea - sa)]
+
 def dist_fast(a, b):
     dx = b.x - a.x
     dy = b.y - a.y

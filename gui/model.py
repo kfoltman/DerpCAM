@@ -175,7 +175,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         if name == 'x':
             self.centre = PathPoint(value, self.centre.y)
         elif name == 'y':
-            self.centre = PathPoint(self.x, value)
+            self.centre = PathPoint(self.centre.x, value)
         elif name == 'radius':
             self.r = value
         elif name == 'diameter':
@@ -270,8 +270,8 @@ class CAMListTreeItem(CAMTreeItem):
         pass
     
 class DrawingTreeItem(CAMListTreeItem):
-    prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f mm")
-    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f mm")
+    prop_x_offset = FloatEditableProperty("X offset", "x_offset", "%0.2f", unit="mm")
+    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", "%0.2f", unit="mm")
     def __init__(self, document):
         CAMListTreeItem.__init__(self, document, "Drawing")
     def resetProperties(self):
@@ -410,7 +410,7 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatEditableProperty("Diameter", "diameter", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
-    prop_length = FloatEditableProperty("Flute length", "length", "%0.1f mm", min=0.1, max=100, allow_none=True)
+    prop_length = FloatEditableProperty("Flute length", "length", "%0.1f", unit="mm", min=0.1, max=100, allow_none=True)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -1705,3 +1705,7 @@ class DocumentModel(QObject):
     def opModifyCutter(self, cutter, new_data):
         item = self.itemForCutter(cutter)
         self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
+    def undo(self):
+        self.undoStack.undo()
+    def redo(self):
+        self.undoStack.redo()
