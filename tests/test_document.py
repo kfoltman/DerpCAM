@@ -211,13 +211,23 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(prop.getData(item), orig_value)
         doc.opChangeProperty(prop, [(item, new_value)])
         self.assertEqual(prop.getData(item), new_value)
-        if isinstance(item, gui.model.ToolPresetTreeItem):
+        if isinstance(item, gui.model.ToolTreeItem):
+            saved = item.inventory_tool.newInstance()
+        elif isinstance(item, gui.model.ToolPresetTreeItem):
             saved = item.inventory_preset.newInstance()
         doc.undo()
         self.assertEqual(prop.getData(item), orig_value)
         doc.redo()
         self.assertEqual(prop.getData(item), new_value)
-        if isinstance(item, gui.model.ToolPresetTreeItem):
+        if isinstance(item, gui.model.ToolTreeItem):
+            doc.undo()
+            doc.opModifyCutter(item.inventory_tool, saved)
+            self.assertEqual(prop.getData(item), new_value)
+            doc.undo()
+            self.assertEqual(prop.getData(item), orig_value)
+            doc.redo()
+            self.assertEqual(prop.getData(item), new_value)
+        elif isinstance(item, gui.model.ToolPresetTreeItem):
             doc.undo()
             doc.opModifyPreset(item.inventory_preset, saved)
             self.assertEqual(prop.getData(item), new_value)
