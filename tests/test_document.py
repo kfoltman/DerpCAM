@@ -252,4 +252,61 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(doc.project_toolbits, {})
         self.assertEqual(doc.default_preset_by_tool, {})
 
+class PDATest(unittest.TestCase):
+    def setUp(self):
+        self.document = gui.model.DocumentModel()
+    def testToPresetEM(self):
+        op = gui.model.OperationTreeItem(self.document)
+        op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
+        op.vfeed = 200
+        op.hfeed = 700
+        op.doc = 1.5
+        op.stepover = 40
+        op.extra_width = 90
+        op.trc_rate = 50
+        op.direction = gui.inventory.MillDirection.CLIMB
+        op.pocket_strategy = gui.inventory.PocketStrategy.AXIS_PARALLEL
+        op.axis_angle = 30
+        pda = gui.model.PresetDerivedAttributes(op)
+        errors = []
+        pda.validate(errors)
+        self.assertEqual(errors, [])
+        preset = pda.toPreset("new preset")
+        self.assertIsInstance(preset, gui.inventory.EndMillPreset)
+        self.assertEqual(preset.name, "new preset")
+        self.assertEqual(preset.vfeed, 200)
+        self.assertEqual(preset.hfeed, 700)
+        self.assertEqual(preset.maxdoc, 1.5)
+        self.assertEqual(preset.stepover, 0.4)
+        self.assertEqual(preset.extra_width, 0.9)
+        self.assertEqual(preset.trc_rate, 0.5)
+        self.assertEqual(preset.direction, gui.inventory.MillDirection.CLIMB)
+        self.assertEqual(preset.pocket_strategy, gui.inventory.PocketStrategy.AXIS_PARALLEL)
+        self.assertEqual(preset.axis_angle, 30)
+        pda.resetPresetDerivedValues(op)
+        op.tool_preset = preset
+        pda = gui.model.PresetDerivedAttributes(op)
+        self.verifyAttribute(op, pda, 'vfeed', 200, 300)
+        self.verifyAttribute(op, pda, 'hfeed', 700, 800)
+        self.verifyAttribute(op, pda, 'doc', 1.5, 2)
+        self.verifyAttribute(op, pda, 'stepover', 40, 41)
+        self.verifyAttribute(op, pda, 'extra_width', 90, 91)
+        self.verifyAttribute(op, pda, 'trc_rate', 50, 51)
+        self.verifyAttribute(op, pda, 'direction', gui.inventory.MillDirection.CLIMB, gui.inventory.MillDirection.CONVENTIONAL)
+        self.verifyAttribute(op, pda, 'pocket_strategy', gui.inventory.PocketStrategy.AXIS_PARALLEL, gui.inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG)
+        self.verifyAttribute(op, pda, 'axis_angle', 30, 35)
+    def verifyAttribute(self, op, pda, name, value, alt_value):
+        mapping = {}
+        op_name = mapping.get(name, name)
+        self.assertEqual(getattr(pda, name), value)
+        self.assertEqual(getattr(op, op_name), None)
+        pda2 = gui.model.PresetDerivedAttributes(op)
+        self.assertFalse(pda2.dirty, name)
+        try:
+            setattr(op, op_name, alt_value)
+            pda2 = gui.model.PresetDerivedAttributes(op)
+            self.assertTrue(pda2.dirty, name)
+        finally:
+            setattr(op, op_name, None)
+
 unittest.main()

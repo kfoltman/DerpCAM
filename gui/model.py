@@ -697,7 +697,7 @@ class PresetDerivedAttributes(object):
             self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
             self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.CONTOUR_PARALLEL)
             self.axis_angle = overrides(operation.axis_angle, preset.axis_angle if preset else None, 0)
-            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle)
+            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle, operation.direction)
         elif isinstance(operation.cutter, inventory.DrillBitCutter):
             self.dirty = operation.vfeed or operation.doc
     def validate(self, errors):
@@ -729,8 +729,8 @@ class PresetDerivedAttributes(object):
         if isinstance(self.operation.cutter, inventory.DrillBitCutter):
             return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
     def resetPresetDerivedValues(self, target):
-        target.hfeed = None
         target.vfeed = None
+        target.hfeed = None
         target.stepover = None
         target.doc = None
         target.direction = None
