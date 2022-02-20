@@ -1,7 +1,5 @@
 import os.path
 import sys
-import threading
-import time
 import tempfile
 import unittest
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))

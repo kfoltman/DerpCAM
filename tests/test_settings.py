@@ -1,17 +1,13 @@
 import os.path
 import sys
-import threading
-import time
 import unittest
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import geom
 import gui.settings
 
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtTest import *
+from PyQt5.QtCore import QSettings
+from PyQt5.QtWidgets import QApplication
 
 app = QApplication(sys.argv)
 

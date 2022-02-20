@@ -9,10 +9,9 @@ import geom
 import gui.inventory
 import gui.model
 
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtTest import *
+from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtTest import QSignalSpy
 
 testDocument1={
     "material": { "_type": "WorkpieceTreeItem", "material": 1, "thickness": 5, "clearance": 6, "safe_entry_z": 2 },
