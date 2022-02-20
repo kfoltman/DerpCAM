@@ -20,6 +20,8 @@ from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
 import ezdxf
 import json
 
+debug_inventory_matching = False
+
 def overrides(*data):
     for i in data:
         if i is not None:
@@ -1415,14 +1417,16 @@ class DocumentModel(QObject):
                 if cutter.name in std_cutters:
                     std = std_cutters[cutter.name]
                     cutter.base_object = std
-                    if std.equals(cutter):
-                        print ("Matched library tool", cutter.name)
-                    else:
-                        print ("Found different library tool with same name", cutter.name)
+                    if debug_inventory_matching:
+                        if std.equals(cutter):
+                            print ("Matched library tool", cutter.name)
+                        else:
+                            print ("Found different library tool with same name", cutter.name)
                     cutter_map[cutter.orig_id] = cutter
                     self.project_toolbits[cutter.name] = cutter
                 else:
-                    print ("New tool without library prototype", cutter.name)
+                    if debug_inventory_matching:
+                        print ("New tool without library prototype", cutter.name)
                     if cutter.orig_id == data.get('current_cutter_id', None):
                         currentCutterCycle = cycle
                     # New tool not present in the inventory
