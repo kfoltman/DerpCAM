@@ -16,11 +16,10 @@ import json
 OperationType = model.OperationType
 
 class CAMMainWindow(QMainWindow):
-    def __init__(self, document):
+    def __init__(self, document, config):
         QMainWindow.__init__(self)
         self.document = document
-        self.configSettings = settings.ConfigSettings()
-        self.configSettings.update()
+        self.configSettings = config
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:

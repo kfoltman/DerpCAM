@@ -10,10 +10,13 @@ from PyQt5.QtWidgets import *
 import process
 import gcodegen
 import view
-from gui import model, cutter_mgr, main_win
+from gui import model, cutter_mgr, main_win, settings
 import json
 
 document = model.DocumentModel()
+settings = settings.ConfigSettings()
+settings.update()
+
 
 parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
 parser.add_argument('input', type=str, help="File to load on startup", nargs='?')
@@ -61,7 +64,7 @@ if retcode == 0:
                 retcode = 2
     else:
         cutter_mgr.loadInventory()
-        w = main_win.CAMMainWindow(document)
+        w = main_win.CAMMainWindow(document, settings)
         w.initUI()
         w.showMaximized()
         retcode = app.exec_()
