@@ -294,7 +294,7 @@ class CAMMainWindow(QMainWindow):
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.importDrawing(fn)
+            self.document.importDrawing(fn)
     def fileOpen(self):
         dlg = QFileDialog(self, "Open a project", filter="DerpCAM project (*.dcp);;All files (*)")
         dlg.setFileMode(QFileDialog.ExistingFile)
