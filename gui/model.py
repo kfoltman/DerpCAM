@@ -322,7 +322,7 @@ class DrawingTreeItem(CAMListTreeItem):
                 self.addItem(DrawingPolylineTreeItem(self.document, points, False))
             else:
                 print ("Ignoring DXF entity: %s" % dxftype)
-        self.drawingImported.emit(name)
+        self.document.drawingImported.emit(name)
     def renderTo(self, path, modeData):
         # XXXKF convert
         for i in self.items():
