@@ -101,6 +101,11 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
         self.updateOperations()
+        filename = self.document.filename or self.document.drawing_filename
+        if filename:
+            self.setWindowFilePath(filename)
+        else:
+            self.setWindowFilePath("unnamed project")
         self.refreshNeeded = False
         self.resetZoomNeeded = False
         self.idleTimer = self.startTimer(100)
