@@ -242,27 +242,13 @@ class Cut(object):
 
 # A bit unfortunate name, might be changed in future
 class CutPath2D(object):
-    @staticmethod
-    def simplifySubpathsArcs(subpaths):
-        return [subpath.lines_to_arcs() for subpath in subpaths]
-    @staticmethod
-    def simplifySubpathsLines(subpaths):
-        return [subpath.optimize_lines() for subpath in subpaths]
     def __init__(self, path):
         self.subpaths_full = [path.transformed()]
-        if GeometrySettings.simplify_arcs:
-            self.subpaths_full = self.simplifySubpathsArcs(self.subpaths_full)
-        if GeometrySettings.simplify_lines:
-            self.subpaths_full = self.simplifySubpathsLines(self.subpaths_full)
 
 class TabbedCutPath2D(CutPath2D):
     def __init__(self, path_notabs, path_withtabs):
         CutPath2D.__init__(self, path_notabs)
         self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
-        if GeometrySettings.simplify_arcs:
-            self.subpaths_tabbed = self.simplifySubpathsArcs(self.subpaths_tabbed)
-        if GeometrySettings.simplify_lines:
-            self.subpaths_tabbed = self.simplifySubpathsLines(self.subpaths_tabbed)
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False):
@@ -539,6 +525,8 @@ class ToolChangeOperation(Operation):
 class UntabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths):
         Operation.__init__(self, shape, tool, props)
+        if paths:
+            paths = paths.optimize()
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
         for i in self.flattened:
@@ -696,6 +684,8 @@ class Contour(TabbedOperation):
         if not path.closed:
             return contour
         points = path.nodes
+        if path.has_arcs():
+            points = CircleFitter.interpolate_arcs(points, False, 1)
         offset = cam.contour.plain(process.Shape(points, True), 0, True, extension, not path.orientation())
         if len(offset) == 1:
             extension = toolpath.Toolpath(offset[0], tool)

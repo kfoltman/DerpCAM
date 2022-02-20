@@ -318,6 +318,12 @@ class Path(object):
         return self.nodes[0] if self.closed else self.nodes[-1].seg_end()
     def __repr__(self):
         return f"Path({','.join(repr(node) for node in self.nodes)}, {repr(self.closed)})"
+    def has_arcs(self):
+        return any([p.is_arc() for p in self.nodes])
+    def lines_to_arcs(self):
+        return Path(CircleFitter.simplify(self.nodes), self.closed)
+    def optimize_lines(self):
+        return Path(LineOptimizer.simplify(self.nodes), self.closed)
 
 class PathSegmentIterator(object):
     def __init__(self, path):

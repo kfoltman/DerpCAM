@@ -105,6 +105,14 @@ class Toolpath(object):
             self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
         return self.optimize_lines_cache
 
+    def optimize(self):
+        path = self
+        if GeometrySettings.simplify_arcs:
+            path = path.lines_to_arcs()
+        if GeometrySettings.simplify_lines:
+            path = path.optimize_lines()
+        return path
+
     def subpath(self, start, end, is_tab=False, helical_entry=None):
         path = self.path.subpath(start, end)
         tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab)
@@ -234,4 +242,9 @@ class Toolpaths(object):
         return res
     def calc_bounds(self):
         return max_bounds(*[tp.bounds for tp in self.toolpaths])
-
+    def lines_to_arcs(self):
+        return Toolpaths([tp.lines_to_arcs() for tp in self.toolpaths])
+    def optimize_lines(self):
+        return Toolpaths([tp.optimize_lines() for tp in self.toolpaths])
+    def optimize(self):
+        return Toolpaths([tp.optimize() for tp in self.toolpaths])

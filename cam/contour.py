@@ -8,7 +8,12 @@ def plain_clipper(shape, diameter, outside, displace, climb):
     if not res:
         return None
     res = [geom.SameOrientation(i, outside ^ climb) for i in res]
-    return [geom.Path(geom.PtsFromInts(path), shape.closed) for path in res]
+    paths = [geom.Path(geom.PtsFromInts(path), shape.closed) for path in res]
+    if geom.GeometrySettings.simplify_arcs:
+        paths = [path.lines_to_arcs() for path in paths]
+    if geom.GeometrySettings.simplify_lines:
+        paths = [path.optimize_lines() for path in paths]
+    return paths
     
 def plain_shapely(shape, diameter, outside, displace, climb):
     import shapely.geometry
@@ -33,6 +38,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
     if inside.is_ccw != dest_orientation:
         inside = shapely.geometry.LinearRing(inside.coords[::-1])
     lastpt2 = None
+    lastpt2proj = None
     lastc = None
     lasti = None
     segmentation = []
@@ -44,13 +50,22 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         pt = inside.interpolate(i)
         while True:
             nps = shapely.ops.nearest_points(outside, pt)
+            pt2orig = nps[0]
             if step2 == 1:
                 pt2 = geom.PathPoint(nps[0].x, nps[0].y)
             else:
-                # Find a point somewhere in between, then find a closest match on the original outline
-                pt2 = geom.weighted(lastpt2, geom.PathPoint(nps[0].x, nps[0].y), step2)
-                nps = shapely.ops.nearest_points(outside, shapely.geometry.Point(pt2.x, pt2.y))
-                pt2 = geom.PathPoint(nps[0].x, nps[0].y)
+                # Find a closest match on the original outline, then pick something at step2 * 100%
+                # distance from it
+                if lastpt2proj is None:
+                    lastpt2proj = prev = outside.project(lastpt2)
+                else:
+                    prev = lastpt2proj
+                curr = outside.project(pt2orig)
+                # Wrap around
+                if prev > 0.9 * outside.length and curr < 0.1 * outside.length:
+                    curr = outside.length
+                pt2sh = outside.interpolate(prev + (curr - prev) * step2)
+                pt2 = geom.PathPoint(pt2sh.x, pt2sh.y)
             pt3 = geom.weighted(pt, pt2, 2) # far end of the circle, opposite pt
             mr = circle_size * diameter
             # Shorten the step if the opposite side of the circle is too far
@@ -69,19 +84,28 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
                         pt = inside.interpolate(i)
                     continue
             if lasti is not None:
-                outlen += i - lasti
-                res += [geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, lasti, i).coords]
+                subpath = geom.Path([geom.PathPoint(x, y) for x, y in shapely.ops.substring(inside, lasti, i).coords], False)
+                if geom.GeometrySettings.simplify_arcs:
+                    subpath = subpath.lines_to_arcs()
+                outlen += subpath.length()
+                res += subpath.nodes
             break
-        lastpt2 = pt2
+        lastpt2 = pt2orig
+        lastpt2proj = None
         lastc = pt3
         nexti = min(i + 1.5 * step, ilen)
-        c = geom.CandidateCircle(pt2.x, pt2.y, mr)
-        arclen = 2 * math.pi * mr
+        mr2 = geom.dist(geom.PathPoint(pt.x, pt.y), pt2)
+        if mr2 > 2 * mr:
+            print (f"Warning: invalid calculated radius {mr2} vs {mr}")
+        mr2 = mr
+        c = geom.CandidateCircle(pt2.x, pt2.y, mr2)
+        arclen = 2 * math.pi * mr2
         zpt = geom.PathPoint(pt.x, pt.y)
         ma = c.angle(zpt)
+        zpt = c.at_angle(ma)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * math.pi * (1 if climb else -1)))
-        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr, ma, climb)))
+        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr2, ma, climb)))
         outlen += arclen
         if i == ilen:
             break
@@ -98,7 +122,7 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     ddist2 = -circle_size * diameter
 
     # Use much higher resolution here, because the circles are tiny
-    resolution = geom.GeometrySettings.RESOLUTION * max(1.0 / circle_size, 1.0 / stepover, 3)
+    resolution = geom.GeometrySettings.RESOLUTION * max(4.0 / circle_size, 4.0 / stepover, 3)
     def PtsToInts(points):
         return [(round(p.x * resolution), round(p.y * resolution)) for p in points]
     def PtsFromInts(points):

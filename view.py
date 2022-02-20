@@ -7,6 +7,8 @@ import toolpath
 import sys
 import time
 
+interpolate_all_arcs = False
+
 def is_gui_application():
     return isinstance(QCoreApplication.instance(), QGuiApplication)
 
@@ -25,7 +27,15 @@ def addPolylineToPath(path, polyline):
             path.lineTo(point.x, point.y)
         else:
             arc = point
-            path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+            # Qt doesn't seem to handle large-radius arcs correctly, so we
+            # turn these into lines instead
+            if arc.c.r > 5 * arc.length():
+                npts = arc.steps or 20
+                for f in range(npts + 1):
+                    pt = arc.at_fraction(f / npts)
+                    path.lineTo(pt.x, pt.y)
+            else:
+                path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
 
 class OperationsRenderer(object):
     def __init__(self, operations):
@@ -311,7 +321,7 @@ class PathViewer(QWidget):
         return QPointF((qpf.x() - mx) / scale + self.zero.x(), -(qpf.y() - my) / scale + self.zero.y())
 
     def addLines(self, pen, points, closed, has_arcs=False, darken=True):
-        if has_arcs:
+        if has_arcs and interpolate_all_arcs:
             points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
         if closed and points[0] != points[-1].seg_end():
             self.addPath(pen, points + points[0:1], darken=darken)
