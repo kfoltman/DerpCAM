@@ -320,6 +320,7 @@ class DrawingTreeItem(CAMListTreeItem):
                 self.addItem(DrawingPolylineTreeItem(self.document, points, False))
             else:
                 print ("Ignoring DXF entity: %s" % dxftype)
+        self.drawingImported.emit(name)
     def renderTo(self, path, modeData):
         # XXXKF convert
         for i in self.items():
@@ -1323,6 +1324,8 @@ class DocumentModel(QObject):
     islandsEditRequested = pyqtSignal([OperationTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
+    projectLoaded = pyqtSignal([str])
+    drawingImported = pyqtSignal([str])
     def __init__(self):
         QObject.__init__(self)
         self.undoStack = QUndoStack(self)
@@ -1477,6 +1480,14 @@ class DocumentModel(QObject):
             self.selectCutterCycle(currentCutterCycle)
         self.undoStack.clear()
         self.undoStack.setClean()
+    def loadProject(self, fn):
+        f = open(fn, "r")
+        data = json.load(f)
+        f.close()
+        self.filename = fn
+        self.drawing_filename = None
+        self.load(data)
+        self.projectLoaded.emit(fn)
     def makeMachineParams(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
     def importDrawing(self, fn):
@@ -1517,26 +1528,31 @@ class DocumentModel(QObject):
     def waitForUpdateCAM(self):
         if self.pollForUpdateCAM() is None:
             return True
-        try:
-            self.progress_dialog_displayed = True
-            progress = QProgressDialog()
-            progress.show()
-            progress.setWindowModality(Qt.WindowModal)
-            progress.setLabelText("Calculating toolpaths")
+        if view.is_gui_application():
+            try:
+                self.progress_dialog_displayed = True
+                progress = QProgressDialog()
+                progress.show()
+                progress.setWindowModality(Qt.WindowModal)
+                progress.setLabelText("Calculating toolpaths")
+                cancelled = False
+                while True:
+                    if progress.wasCanceled():
+                        self.cancelAllWorkers()
+                        cancelled = True
+                        break
+                    pollValue = self.pollForUpdateCAM()
+                    if pollValue is None:
+                        break
+                    progress.setValue(int(pollValue * 100))
+                    QGuiApplication.sync()
+                    time.sleep(0.25)
+            finally:
+                self.progress_dialog_displayed = False
+        else:
             cancelled = False
-            while True:
-                if progress.wasCanceled():
-                    self.cancelAllWorkers()
-                    cancelled = True
-                    break
-                pollValue = self.pollForUpdateCAM()
-                if pollValue is None:
-                    break
-                progress.setValue(int(pollValue * 100))
-                QGuiApplication.sync()
+            while self.pollForUpdateCAM() is not None:
                 time.sleep(0.25)
-        finally:
-            self.progress_dialog_displayed = False
         return not cancelled
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
@@ -1606,6 +1622,9 @@ class DocumentModel(QObject):
         self.update_suspended_dirty = False
         if was_suspended is not None:
             was_suspended.startUpdateCAM()
+    def exportGcode(self, fn):
+        with view.Spinner():
+            OpExporter(self).write(fn)
     def opAddCutter(self, cutter: inventory.CutterBase):
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
@@ -1712,3 +1731,23 @@ class DocumentModel(QObject):
         self.undoStack.undo()
     def redo(self):
         self.undoStack.redo()
+
+class OpExporter(object):
+    def __init__(self, document):
+        document.waitForUpdateCAM()
+        self.operations = gcodegen.Operations(document.gcode_machine_params)
+        self.all_cutters = set([])
+        self.cutter = None
+        document.forEachOperation(self.add_cutter)
+        document.forEachOperation(self.process_operation)
+    def add_cutter(self, item):
+        if item.cam:
+            self.all_cutters.add(item.cutter)
+    def process_operation(self, item):
+        if item.cam:
+            if item.cutter != self.cutter and len(self.all_cutters) > 1:
+                self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
+                self.cutter = item.cutter
+            self.operations.add_all(item.cam.operations)
+    def write(self, fn):
+        self.operations.to_gcode_file(fn)

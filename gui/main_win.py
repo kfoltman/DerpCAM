@@ -61,6 +61,8 @@ class CAMMainWindow(QMainWindow):
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
         self.document.cutterSelected.connect(self.projectDW.onCutterSelected)
+        self.document.drawingImported.connect(self.onDrawingImportedOrProjectLoaded)
+        self.document.projectLoaded.connect(self.onDrawingImportedOrProjectLoaded)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
@@ -270,23 +272,14 @@ class CAMMainWindow(QMainWindow):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):
         self.coordLabel.setText("")
-    def importDrawing(self, fn):
-        self.document.importDrawing(fn)
+    def onDrawingImportedOrProjectLoaded(self, fn):
+        self.setWindowFilePath(fn)
         self.viewer.majorUpdate()
         self.updateSelection()
-        self.setWindowFilePath(fn)
-        self.projectDW.shapeTree.expandAll()
-    def loadProject(self, fn):
-        f = open(fn, "r")
-        data = json.load(f)
-        f.close()
-        self.document.filename = fn
-        self.document.drawing_filename = None
-        self.document.load(data)
-        self.viewer.majorUpdate()
         self.projectDW.shapeTree.expandAll()
         self.projectDW.operTree.expandAll()
-        self.setWindowFilePath(fn)
+    def loadProject(self, fn):
+        self.document.loadProject(fn)
     def saveProject(self, fn):
         data = self.document.store()
         f = open(fn, "w")
@@ -349,30 +342,7 @@ class CAMMainWindow(QMainWindow):
         dlg.selectFile(path)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.exportGcode(fn)
-    def exportGcode(self, fn):
-        class OpExporter(object):
-            def __init__(self, document):
-                self.operations = gcodegen.Operations(document.gcode_machine_params)
-                self.all_cutters = set([])
-                self.cutter = None
-                document.forEachOperation(self.add_cutter)
-                document.forEachOperation(self.process_operation)
-            def add_cutter(self, item):
-                if item.cam:
-                    self.all_cutters.add(item.cutter)
-            def process_operation(self, item):
-                if item.cam:
-                    if item.cutter != self.cutter and len(self.all_cutters) > 1:
-                        self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
-                        self.cutter = item.cutter
-                    self.operations.add_all(item.cam.operations)
-            def write(self, fn):
-                self.operations.to_gcode_file(fn)
-        with view.Spinner():
-            self.document.waitForUpdateCAM()
-            exporter = OpExporter(self.document)
-            exporter.write(fn)
+            self.document.exportGcode(fn)
     def fileExit(self):
         self.close()
     def closeEvent(self, e):

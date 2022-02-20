@@ -7,11 +7,16 @@ import toolpath
 import sys
 import time
 
+def is_gui_application():
+    return isinstance(QCoreApplication.instance(), QGuiApplication)
+
 class Spinner(object):
     def __enter__(self):
-        QGuiApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        if is_gui_application():
+            QGuiApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        QGuiApplication.restoreOverrideCursor()
+        if is_gui_application():
+            QGuiApplication.restoreOverrideCursor()
 
 def addPolylineToPath(path, polyline):
     path.moveTo(polyline[0].x, polyline[0].y)
