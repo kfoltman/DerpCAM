@@ -1516,7 +1516,7 @@ class DocumentModel(QObject):
             return totaldone / totaloverall
     def waitForUpdateCAM(self):
         if self.pollForUpdateCAM() is None:
-            return
+            return True
         try:
             self.progress_dialog_displayed = True
             progress = QProgressDialog()
