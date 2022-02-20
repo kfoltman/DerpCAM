@@ -1170,7 +1170,7 @@ class DeleteCycleUndoCommand(QUndoCommand):
         self.document.operModel.invisibleRootItem().insertRow(self.row, self.cycle)
         self.document.project_toolbits[self.cycle.cutter.name] = self.cycle.cutter
         if self.was_default:
-            self.document.selectCycle(self.cycle)
+            self.document.selectCutterCycle(self.cycle)
         self.document.refreshToolList()
     def redo(self):
         self.row = self.cycle.row()
@@ -1592,6 +1592,7 @@ class DocumentModel(QObject):
         self.current_cutter_cycle.emitDataChanged()
         if old:
             old.emitDataChanged()
+        self.cutterSelected.emit(cycle)
     def selectPresetAsDefault(self, toolbit, preset):
         old = self.default_preset_by_tool.get(toolbit, None)
         self.default_preset_by_tool[toolbit] = preset
@@ -1610,9 +1611,6 @@ class DocumentModel(QObject):
             p = tool.child(i)
             if p.inventory_preset is preset:
                 return p
-    def selectCycle(self, cycle):
-        self.current_cutter_cycle = cycle
-        self.cutterSelected.emit(self.current_cutter_cycle)
     def checkUpdateSuspended(self, item):
         if self.update_suspended is item:
             self.update_suspended_dirty = True
@@ -1634,7 +1632,7 @@ class DocumentModel(QObject):
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
         #self.operModel.appendRow(self.current_cutter_cycle)
         self.refreshToolList()
-        self.selectCycle(cycle)
+        self.selectCutterCycle(cycle)
         return cycle
     def opAddProjectPreset(self, cutter: inventory.CutterBase, preset: inventory.PresetBase):
         item = self.itemForCutter(cutter)

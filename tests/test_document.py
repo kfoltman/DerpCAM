@@ -265,7 +265,7 @@ class DocumentTest(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item.data(Qt.DisplayRole).value(), description)
         spy = QSignalSpy(doc.cutterSelected)
-        doc.selectCycle(cycle)
+        doc.selectCutterCycle(cycle)
         self.assertEqual(len(spy), 1)
         self.assertEqual(doc.current_cutter_cycle, cycle)
         toolbit = [tb for tb in doc.getToolbitList(type(cutter)) if tb[0] == cutter.id][0]
