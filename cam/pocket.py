@@ -334,12 +334,10 @@ def hsm_peel(shape, tool, zigzag, displace=0):
                     gen_path.append(oep)
                 lastpt = oep
         if geom.Path(gen_path, False).length():
-            if tool.diameter * (1 + tool.stepover) < 2 * tp.start_radius:
-                tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
-                tpo.helical_entry = process.HelicalEntry(tp.start_point, tool.diameter * tool.stepover)
-            else:
-                tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
+            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
             tps.append(tpo)
+        if tps and tool.diameter * (1 + tool.stepover) < 2 * tp.start_radius:
+            tps[0].helical_entry = process.HelicalEntry(tp.start_point, tool.diameter * tool.stepover)
         # Add a final pass around the perimeter
         def ls2path(ls):
             return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
