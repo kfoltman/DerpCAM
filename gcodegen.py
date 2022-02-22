@@ -9,6 +9,7 @@ import cam.pocket
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
+debug_sections = False
 
 class OperationProps(object):
     def __init__(self, depth, start_depth = 0, tab_depth = None, margin = 0):
@@ -35,6 +36,9 @@ class Gcode(object):
     def comment(self, comment):
         comment = comment.replace("(", "<").replace(")",">")
         self.add(f"({comment})")
+    def section_info(self, comment):
+        if debug_sections:
+            self.comment(comment)
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
@@ -121,6 +125,7 @@ class Gcode(object):
             self.rapid(z=new_z)
 
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
+        self.section_info(f"Start subpath")
         assert isinstance(lastpt, PathPoint)
         assert dist(lastpt, subpath.seg_start()) < 1 / GeometrySettings.RESOLUTION, f"lastpt={lastpt} != firstpt={subpath.seg_start()}"
         tdist = 0
@@ -142,6 +147,7 @@ class Gcode(object):
                 else:
                     self.linear(x=pt.x, y=pt.y)
         lastpt = pt.seg_end()
+        self.section_info(f"End subpath")
         return lastpt
 
     def prepare_move_z(self, new_z, old_z, semi_safe_z, already_cut_z):
@@ -154,9 +160,11 @@ class Gcode(object):
         return old_z
 
     def helical_move_z(self, new_z, old_z, helical_entry, tool, semi_safe_z, already_cut_z=None):
+        self.section_info(f"Start helical move from {old_z} to {new_z}")
         c, r = helical_entry.point, helical_entry.r
         if new_z >= old_z:
             self.rapid(z=new_z)
+            self.section_info(f"End helical move - upward direction detected")
             return
         old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
         cur_z = old_z
@@ -166,14 +174,17 @@ class Gcode(object):
             cur_z = next_z
         self.helix_turn(c.x, c.y, r, cur_z, cur_z, helical_entry.angle, helical_entry.climb)
         self.linear(z=new_z)
+        self.section_info(f"End helical move")
         return helical_entry.start
 
     def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
+        self.section_info(f"Start ramped move from {old_z} to {new_z}")
         if False:
             # If doing it properly proves to be too hard
             subpath = CircleFitter.interpolate_arcs(subpath, False, 1)
         if new_z >= old_z:
             self.rapid(z=new_z)
+            self.section_info(f"End ramped move - upward direction detected")
             return lastpt
         old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
         # Always positive
@@ -226,6 +237,7 @@ class Gcode(object):
                 lastpt = self.apply_subpath(subpath, lastpt, next_z, cur_z, tlengths[-1])
                 cur_z = next_z
                 lastpt = self.apply_subpath(subpath_reverse, lastpt)
+        self.section_info(f"End ramped move - upward direction detected")
         return lastpt
 
 class MachineParams(object):
@@ -371,6 +383,7 @@ class BaseCut2D(Cut):
 
         # For tabs, do not consider anything lower than tab_depth as milled, because
         # it is not, as there is a tab there!
+        gcode.section_info(f"Start enter cut at {newz}")
         z_already_cut_here = self.z_already_cut_here(subpath)
         z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
         if z_already_cut_here < self.curz:
@@ -396,14 +409,17 @@ class BaseCut2D(Cut):
             assert self.lastpt is not None
         gcode.feed(subpath.tool.hfeed)
         self.curz = newz
+        gcode.section_info(f"End enter cut")
 
     def start_cutpath(self, gcode, cutpath):
+        gcode.section_info(f"Start cutpath")
         self.curz = self.machine_params.safe_z
         self.depth = self.props.start_depth
         self.lastpt = None
 
     def end_cutpath(self, gcode, cutpath):
         self.go_to_safe_z(gcode)
+        gcode.section_info(f"End cutpath")
 
     def go_to_safe_z(self, gcode):
         gcode.rapid(z=self.machine_params.safe_z)
@@ -823,16 +839,19 @@ class HelicalDrill(UntabbedOperation):
 
     def to_gcode(self, gcode, machine_params):
         rate_factor = self.tool.full_plunge_feed_ratio
+        gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         for d in self.diameters():
             self.to_gcode_ring(gcode, d, rate_factor, machine_params)
             rate_factor = 1
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
+        gcode.section_info(f"Diagonal exit towards centre/safe Z")
         gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
+        gcode.section_info(f"End helical drill")
 
     def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
         r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
-        gcode.add("(Circle at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f)" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
+        gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
         gcode.rapid(z=machine_params.safe_z)
         gcode.rapid(x=self.x + r, y=self.y)
         curz = machine_params.semi_safe_z
@@ -845,6 +864,7 @@ class HelicalDrill(UntabbedOperation):
             gcode.helix_turn(self.x, self.y, r, curz, nextz)
             curz = nextz
         gcode.helix_turn(self.x, self.y, r, curz, curz)
+        gcode.section_info("End ring" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
 
 # First make a helical entry and then enlarge to the target diameter
 # by side milling
@@ -943,7 +963,9 @@ class Operations(object):
         gcode.rapid(z=self.machine_params.safe_z)
         gcode.rapid(x=0, y=0)
         for operation in self.operations:
+            gcode.section_info(f"Start operation: {type(operation).__name__}")
             operation.to_gcode(gcode, self.machine_params)
+            gcode.section_info(f"End operation: {type(operation).__name__}")
         gcode.rapid(x=0, y=0)
         gcode.finish()
         return gcode
