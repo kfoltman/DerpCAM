@@ -1,5 +1,5 @@
 import geom, process, toolpath
-import math, threading
+import math
 
 def plain_clipper(shape, diameter, outside, displace, climb):
     dist = (0.5 * diameter + displace) * geom.GeometrySettings.RESOLUTION

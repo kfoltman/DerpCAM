@@ -757,6 +757,14 @@ class WorkerThread(threading.Thread):
             import traceback
             traceback.print_exc()
 
+class DogboneMode(EnumClass):
+    DISABLED = 0
+    CORNER = 1
+    descriptions = [
+        (DISABLED, "None"),
+        (CORNER, "Corners"),
+    ]
+
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
@@ -768,6 +776,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
+    prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
@@ -803,6 +812,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_count = None
         self.offset = 0
         self.islands = set()
+        self.dogbones = DogboneMode.DISABLED
         self.user_tabs = set()
         self.hfeed = None
         self.vfeed = None
@@ -829,7 +839,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if (self.operation != OperationType.POCKET or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
-        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name == 'user_tabs':
+        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and (name == 'user_tabs' or name == 'dogbones'):
             return False
         if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name.startswith("trc_"):
             return False
@@ -878,6 +888,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_depth, self.prop_start_depth, 
             self.prop_offset,
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
+            self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
             self.prop_direction,
@@ -1045,14 +1056,14 @@ class OperationTreeItem(CAMTreeItem):
                     return
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
                     if pda.trc_rate:
-                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones != DogboneMode.DISABLED)
                     else:
-                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones != DogboneMode.DISABLED)
                 elif self.operation == OperationType.INSIDE_CONTOUR:
                     if pda.trc_rate:
-                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones != DogboneMode.DISABLED)
                     else:
-                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones != DogboneMode.DISABLED)
                 elif self.operation == OperationType.POCKET:
                     if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                         threadFunc = lambda: self.cam.pocket(self.shape)
