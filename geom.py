@@ -329,7 +329,7 @@ class PathSegmentIterator(object):
     def __init__(self, path):
         self.path = path
         self.index = 0
-        assert not self.path or self.path.nodes[0].is_point()
+        assert not self.path or not self.path.nodes or self.path.nodes[0].is_point()
     def __iter__(self):
         return self
     def __next__(self):
