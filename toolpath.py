@@ -118,6 +118,10 @@ class Toolpath(object):
         tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab)
         return tp
 
+    def without_circles(self):
+        assert self.is_tab
+        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab)
+
     def cut_by_tabs(self, tabs):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
         pos = 0

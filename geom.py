@@ -57,6 +57,8 @@ class PathNode(object):
         return False
     def is_arc(self):
         return False
+    def is_circle(self):
+        return False
 
 class PathPoint(PathNode):
     def __init__(self, x, y):
@@ -119,6 +121,8 @@ class PathArc(PathNode):
         return f"PathArc({self.p1}, {self.p2}, {self.c!r}, {self.steps}, {self.sstart}, {self.sspan})"
     def is_arc(self):
         return True
+    def is_circle(self):
+        return abs(abs(self.sspan) - 2 * pi) < 0.001
     def seg_start(self):
         return self.p1
     def seg_end(self):
@@ -170,6 +174,8 @@ class Path(object):
                 lval += end.length()
             res.append(lval)
         return res
+    def without_circles(self):
+        return Path([i for i in self.nodes if not i.is_circle()], self.closed)
     def subpath(self, start, end):
         res = []
         tlen = 0

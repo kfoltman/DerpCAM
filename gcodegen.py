@@ -11,6 +11,9 @@ debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
 debug_sections = False
+# Old trochoidal code didn't guarantee the same path for tabbed and non-tabbed
+# versions, so the non-tabbed version had to be cut all the way to the tab depth.
+old_trochoidal_code = False
 
 class OperationProps(object):
     def __init__(self, depth, start_depth = 0, tab_depth = None, margin = 0):
@@ -261,7 +264,11 @@ class CutPath2D(object):
 class TabbedCutPath2D(CutPath2D):
     def __init__(self, path_notabs, path_withtabs):
         CutPath2D.__init__(self, path_notabs)
-        self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
+        if old_trochoidal_code:
+            self.subpaths_tabbed_deep = self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
+        else:
+            self.subpaths_tabbed = path_withtabs
+            self.subpaths_tabbed_deep = [(p.without_circles() if p.is_tab else p) for p in path_withtabs]
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False):
@@ -451,14 +458,20 @@ class Cut2DWithTabs(BaseCut2D):
         self.cutpaths = [TabbedCutPath2D(toolpath_notabs, toolpath_withtabs)]
 
     def subpaths_for_layer(self, prev_depth, depth, cutpath):
-        return cutpath.subpaths_tabbed if depth < self.tab_depth else cutpath.subpaths_full
+        if depth >= self.tab_depth:
+            return cutpath.subpaths_full
+        if prev_depth > self.tab_depth:
+            # First pass through the tabs, potentially need to use trochoidal to cut the tabs
+            return cutpath.subpaths_tabbed
+        # Further passes through the tabs, use simplified paths without circles to save time
+        return cutpath.subpaths_tabbed_deep
 
     def next_depth(self, depth):
         if depth <= self.props.depth:
             return None
         doc = self.doc(depth)
         # Is there a tab depth in between the current and the new depth?
-        if depth > self.tab_depth and depth - doc < self.tab_depth:
+        if old_trochoidal_code and depth > self.tab_depth and depth - doc < self.tab_depth:
             # Make sure that the full tab depth is milled with non-interrupted
             # paths before switching to the interrupted (tabbed) path. This is
             # to prevent accidentally using a non-trochoidal path for the last pass
@@ -471,7 +484,12 @@ class Cut2DWithTabs(BaseCut2D):
         return max(self.tab_depth, self.prev_depth) if subpath.is_tab else self.prev_depth
 
     def z_to_be_cut(self, subpath):
-        return self.over_tab_z if subpath.is_tab else self.depth
+        if not subpath.is_tab:
+            return self.depth
+        # First cut of the tab should be at exact tab depth, the next ones can be at
+        # over_tab_z because the tab is already cut and there's no point in rubbing the
+        # cutter against the bottom of the cut.
+        return self.over_tab_z if self.prev_depth < self.tab_depth else self.tab_depth
 
     def start_subpath(self, subpath):
         if subpath.is_tab and debug_tabs:
