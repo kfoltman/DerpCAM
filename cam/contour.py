@@ -95,14 +95,16 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         lastc = pt3
         nexti = min(i + 1.5 * step, ilen)
         mr2 = geom.dist(geom.PathPoint(pt.x, pt.y), pt2)
-        if mr2 > 2 * mr:
-            print (f"Warning: invalid calculated radius {mr2} vs {mr}")
-        mr2 = mr
-        c = geom.CandidateCircle(pt2.x, pt2.y, mr2)
-        arclen = 2 * math.pi * mr2
+        if abs(mr - mr2) > 1 / geom.GeometrySettings.RESOLUTION:
+            print (f"Warning: possible discrepancy in calculated radius {mr2} vs {mr}")
+        mr = mr2
+        c = geom.CandidateCircle(pt2.x, pt2.y, mr)
+        arclen = 2 * math.pi * mr
         zpt = geom.PathPoint(pt.x, pt.y)
         ma = c.angle(zpt)
         zpt = c.at_angle(ma)
+        if res:
+            arclen += res[-1].seg_end().dist(zpt)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * math.pi * (1 if climb else -1)))
         segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr2, ma, climb)))
