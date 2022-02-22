@@ -864,7 +864,7 @@ class HelicalDrill(UntabbedOperation):
             gcode.helix_turn(self.x, self.y, r, curz, nextz)
             curz = nextz
         gcode.helix_turn(self.x, self.y, r, curz, curz)
-        gcode.section_info("End ring" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
+        gcode.section_info("End ring")
 
 # First make a helical entry and then enlarge to the target diameter
 # by side milling
