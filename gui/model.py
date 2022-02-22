@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import *
 import process
 import gcodegen
 import view
+import cam.dogbone
 from milling_tool import *
 
 from . import canvas, inventory
@@ -757,14 +758,6 @@ class WorkerThread(threading.Thread):
             import traceback
             traceback.print_exc()
 
-class DogboneMode(EnumClass):
-    DISABLED = 0
-    CORNER = 1
-    descriptions = [
-        (DISABLED, "None"),
-        (CORNER, "Corners"),
-    ]
-
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
@@ -776,7 +769,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join(["(%0.2f, %0.2f)" % (i.x, i.y) for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_offset = FloatEditableProperty("Offset", "offset", "%0.2f", unit="mm", min=-20, max=20)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
-    prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", DogboneMode, allow_none=False)
+    prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format="%0.1f", unit='\u00b0', min=0, max=90, allow_none=True)
 
@@ -812,7 +805,7 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_count = None
         self.offset = 0
         self.islands = set()
-        self.dogbones = DogboneMode.DISABLED
+        self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
         self.hfeed = None
         self.vfeed = None
@@ -1056,14 +1049,14 @@ class OperationTreeItem(CAMTreeItem):
                     return
                 if self.operation == OperationType.OUTSIDE_CONTOUR:
                     if pda.trc_rate:
-                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones != DogboneMode.DISABLED)
+                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
                     else:
-                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones != DogboneMode.DISABLED)
+                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
                 elif self.operation == OperationType.INSIDE_CONTOUR:
                     if pda.trc_rate:
-                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones != DogboneMode.DISABLED)
+                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
                     else:
-                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones != DogboneMode.DISABLED)
+                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
                 elif self.operation == OperationType.POCKET:
                     if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                         threadFunc = lambda: self.cam.pocket(self.shape)
