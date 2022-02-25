@@ -502,25 +502,29 @@ class ToolPresetTreeItem(CAMTreeItem):
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm]
     def getPropertyValue(self, name):
+        def toPercent(v):
+            return v * 100.0 if v is not None else v
         if name == 'depth':
             return self.inventory_preset.maxdoc
         elif name == 'stepover':
-            return 100 * self.inventory_preset.stepover if self.inventory_preset.stepover else None
+            return toPercent(self.inventory_preset.stepover)
         elif name == 'extra_width':
-            return 100 * self.inventory_preset.extra_width if self.inventory_preset.extra_width is not None else None
+            return toPercent(self.inventory_preset.extra_width)
         elif name == 'trc_rate':
-            return 100 * self.inventory_preset.trc_rate if self.inventory_preset.trc_rate is not None else None
+            return toPercent(self.inventory_preset.trc_rate)
         else:
             return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
+        def fromPercent(v):
+            return v / 100.0 if v is not None else v
         if name == 'depth':
             self.inventory_preset.maxdoc = value
         elif name == 'stepover':
-            self.inventory_preset.stepover = value / 100.0
+            self.inventory_preset.stepover = fromPercent(value)
         elif name == 'extra_width':
-            self.inventory_preset.extra_width = value / 100.0
+            self.inventory_preset.extra_width = fromPercent(value)
         elif name == 'trc_rate':
-            self.inventory_preset.trc_rate = value / 100.0
+            self.inventory_preset.trc_rate = fromPercent(value)
         elif name == 'name':
             self.inventory_preset.name = value
             # Update link to inventory object
