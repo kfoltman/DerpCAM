@@ -8,28 +8,8 @@ def outside_peel(shape, tool, displace=0):
         raise ValueError("Cannot side mill open polylines")
     tps = []
     tps_islands = []
-    boundary = geom.IntPath(shape.boundary)
-    boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, tool.diameter * 0.5 * geom.GeometrySettings.RESOLUTION) ]
-    islands_transformed = []
-    islands_transformed_nonoverlap = []
-    islands = shape.islands
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = pocket.calculate_tool_margin(shape, tool, displace)
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
-    for island in islands:
-        pc = pyclipper.PyclipperOffset()
-        pts = geom.PtsToInts(island)
-        if not pyclipper.Orientation(pts):
-            pts = list(reversed(pts))
-        pc.AddPath(pts, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-        res = pc.Execute((tool.diameter * 0.5 + displace) * geom.GeometrySettings.RESOLUTION)
-        if not res:
-            return None
-        if geom.is_calculation_cancelled():
-            return None
-        res = [geom.IntPath(it, True) for it in res]
-        islands_transformed += res
-        islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
-    if islands_transformed_nonoverlap:
-        islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
     for path in islands_transformed_nonoverlap:
         for ints in process.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
