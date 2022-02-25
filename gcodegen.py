@@ -3,14 +3,15 @@ from geom import *
 import process
 import toolpath
 import cam.contour
-import cam.pocket
 import cam.dogbone
+import cam.peel
+import cam.pocket
 
 # VERY experimental feature
 debug_simplify_arcs = False
 debug_ramp = False
 debug_tabs = False
-debug_sections = False
+debug_sections = True
 # Old trochoidal code didn't guarantee the same path for tabbed and non-tabbed
 # versions, so the non-tabbed version had to be cut all the way to the tab depth.
 old_trochoidal_code = False
@@ -604,7 +605,7 @@ class PocketWithDraft(UntabbedOperation):
 
 class OutsidePeel(UntabbedOperation):
     def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.outside_peel(tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props, cam.peel.outside_peel(shape, tool, displace=props.margin))
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths, tabs):
