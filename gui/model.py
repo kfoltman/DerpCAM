@@ -8,6 +8,8 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
+import geom
+import pyclipper
 import process
 import gcodegen
 import view
@@ -358,7 +360,38 @@ class DrawingTreeItem(CAMListTreeItem):
         for item in self.items():
             if inside_bounds(item.bounds, bounds):
                 found.append(item)
-        return found        
+        return found
+    def parseSelection(self, selection, operType):
+        translation = self.translation()
+        if operType == OperationType.INTERPOLATED_HOLE or operType == OperationType.DRILLED_HOLE:
+            selection = [ i for i in selection if isinstance(i, DrawingCircleTreeItem) ]
+        elif operType != OperationType.ENGRAVE:
+            selection = [ i for i in selection if i.toShape().closed ]
+        if operType != OperationType.POCKET and operType != OperationType.OUTSIDE_PEEL:
+            return {i.shape_id: set() for i in selection}, selection
+        nonzeros = set()
+        zeros = set()
+        selectionTrans = [ geom.IntPath(i.translated(*translation).toShape().boundary) for i in selection ]
+        for i in range(len(selectionTrans)):
+            isi = selection[i].shape_id
+            for j in range(len(selectionTrans)):
+                if i == j:
+                    continue
+                jsi = selection[j].shape_id
+                if geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipper.PFT_NONZERO):
+                    nonzeros.add((isi, jsi))
+                else:
+                    zeros.add((isi, jsi))
+        outsides = { i.shape_id: set() for i in selection }
+        for isi, jsi in zeros:
+            # i minus j = empty set, i.e. i wholly contained in j
+            if isi in outsides:
+                del outsides[isi]
+        for isi, jsi in zeros:
+            # i minus j = empty set, i.e. i wholly contained in j
+            if jsi in outsides:
+                outsides[jsi].add(isi)
+        return outsides, selection
     def properties(self):
         return [self.prop_x_offset, self.prop_y_offset]
     def translation(self):
@@ -1674,6 +1707,7 @@ class DocumentModel(QObject):
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
                 item.cutter = cycle.cutter
                 item.tool_preset = self.default_preset_by_tool.get(item.cutter, None)
+                item.islands = shapeIds[i]
                 item.startUpdateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())

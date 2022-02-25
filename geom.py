@@ -752,13 +752,15 @@ class IntPath(object):
     def area(self):
         return Area(self.int_points)
 
-def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=False, return_ints=False):
+def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=False, return_ints=False, fillMode=None):
+    if fillMode is None:
+        fillMode = GeometrySettings.fillMode
     pc = Pyclipper()
     for path in subject_polys:
         pc.AddPath(path.int_points, PT_SUBJECT, True)
     for path in clipper_polys:
         pc.AddPath(path.int_points, PT_CLIP, True)
-    res = pc.Execute(operation, GeometrySettings.fillMode, GeometrySettings.fillMode)
+    res = pc.Execute(operation, fillMode, fillMode)
     if bool_only:
         return True if res else False
     if not res:

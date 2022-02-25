@@ -209,9 +209,8 @@ class CAMMainWindow(QMainWindow):
             self.viewer.repaint()
             #self.viewer.majorUpdate()
             self.configSettings.save()
-    def millSelectedShapes(self, checkFunc, operType):
+    def millSelectedShapes(self, operType):
         selection = self.viewer.selection
-        translation = self.document.drawing.translation()
         anyLeft = False
         shapeIds = []
         if not selection:
@@ -221,19 +220,23 @@ class CAMMainWindow(QMainWindow):
             return
         elif operType != OperationType.DRILLED_HOLE and not self.needEndMill():
             return
-        for i in selection:
-            shape = i.translated(*translation).toShape()
-            if checkFunc(i, shape):
-                shapeIds.append(i.shape_id)
-                self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
-            else:
-                anyLeft = True
+        shapeIds, selectionsUsed = self.document.drawing.parseSelection(selection, operType)
         if not shapeIds:
             QMessageBox.warning(self, None, "No objects created")
             return
+        for i in selectionsUsed:
+            self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
+        #for shape in shapes:
+        #    shape = i.translated(*translation).toShape()
+        #    if islands[i]:
+        #        for j in islands[i]:
+        #            item = j.translated(*translation).toShape()
+        #                if item.closed:
+        #                    self.shape.add_island(item.boundary)
+        #islands = [j.translated(*translation).toShape() for j in islands[i]]
         rowCount, cycle, operations = self.document.opCreateOperation(shapeIds, operType)
         # The logic behind this is a bit iffy
-        if not anyLeft:
+        if len(selection) - len(selectionsUsed):
             self.projectDW.selectTab(self.projectDW.OPERATIONS_TAB)
             newSelection = QItemSelection()
             for index in operations:
@@ -259,19 +262,19 @@ class CAMMainWindow(QMainWindow):
             return False
         return True
     def millOutsideContour(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_CONTOUR)
+        self.millSelectedShapes(OperationType.OUTSIDE_CONTOUR)
     def millInsideContour(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.INSIDE_CONTOUR)
+        self.millSelectedShapes(OperationType.INSIDE_CONTOUR)
     def millPocket(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.POCKET)
+        self.millSelectedShapes(OperationType.POCKET)
     def millOutsidePeel(self):
-        self.millSelectedShapes(lambda item, shape: shape.closed, OperationType.OUTSIDE_PEEL)
+        self.millSelectedShapes(OperationType.OUTSIDE_PEEL)
     def millEngrave(self):
-        self.millSelectedShapes(lambda item, shape: True, OperationType.ENGRAVE)
+        self.millSelectedShapes(OperationType.ENGRAVE)
     def millInterpolatedHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, model.DrawingCircleTreeItem), OperationType.INTERPOLATED_HOLE)
+        self.millSelectedShapes(OperationType.INTERPOLATED_HOLE)
     def drillHole(self):
-        self.millSelectedShapes(lambda item, shape: isinstance(item, model.DrawingCircleTreeItem), OperationType.DRILLED_HOLE)
+        self.millSelectedShapes(OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
     def canvasMouseLeave(self):
