@@ -226,14 +226,6 @@ class CAMMainWindow(QMainWindow):
             return
         for i in selectionsUsed:
             self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
-        #for shape in shapes:
-        #    shape = i.translated(*translation).toShape()
-        #    if islands[i]:
-        #        for j in islands[i]:
-        #            item = j.translated(*translation).toShape()
-        #                if item.closed:
-        #                    self.shape.add_island(item.boundary)
-        #islands = [j.translated(*translation).toShape() for j in islands[i]]
         rowCount, cycle, operations = self.document.opCreateOperation(shapeIds, operType)
         # The logic behind this is a bit iffy
         if len(selection) - len(selectionsUsed):
