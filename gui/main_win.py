@@ -151,7 +151,7 @@ class CAMMainWindow(QMainWindow):
             self.toolChanged()
         elif type(item) == model.ToolPresetTreeItem:
             self.toolPresetChanged()
-        elif type(item) == model.DrawingTreeItem:
+        elif type(item) == model.DrawingTreeItem or isinstance(item, model.DrawingItemTreeItem):
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
     def scheduleMajorRedraw(self):
