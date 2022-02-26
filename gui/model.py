@@ -1609,6 +1609,8 @@ class DocumentModel(QObject):
             while self.pollForUpdateCAM() is not None:
                 time.sleep(0.25)
         return not cancelled
+    def checkCAMErrors(self):
+        return self.forEachOperation(lambda item: item.error)
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
