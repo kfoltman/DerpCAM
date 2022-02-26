@@ -299,33 +299,60 @@ class DrawingTreeItem(CAMListTreeItem):
         self.reset()
         msp = doc.modelspace()
         for entity in msp:
-            dxftype = entity.dxftype()
-            if dxftype == 'LWPOLYLINE':
-                points, closed = dxf_polyline_to_points(entity)
-                self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
-            elif dxftype == 'LINE':
-                start = tuple(entity.dxf.start)[0:2]
-                end = tuple(entity.dxf.end)[0:2]
-                self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(start[0], start[1]), PathPoint(end[0], end[1])], False))
-            elif dxftype == 'CIRCLE':
-                centre = PathPoint(entity.dxf.center[0], entity.dxf.center[1])
-                self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
-            elif dxftype == 'ARC':
-                start = PathPoint(entity.start_point[0], entity.start_point[1])
-                end = PathPoint(entity.end_point[0], entity.end_point[1])
-                centre = tuple(entity.dxf.center)[0:2]
-                c = CandidateCircle(*centre, entity.dxf.radius)
-                sangle = entity.dxf.start_angle * pi / 180
-                eangle = entity.dxf.end_angle * pi / 180
-                if eangle < sangle:
-                    sspan = eangle - sangle + 2 * pi
-                else:
-                    sspan = eangle - sangle
-                points = [start, PathArc( start, end, c, 50, sangle, sspan)]
-                self.addItem(DrawingPolylineTreeItem(self.document, points, False))
-            else:
-                print ("Ignoring DXF entity: %s" % dxftype)
+            self.importDrawingEntity(entity)
         self.document.drawingImported.emit(name)
+    def importDrawingEntity(self, entity):
+        dxftype = entity.dxftype()
+        if dxftype == 'LWPOLYLINE':
+            points, closed = dxf_polyline_to_points(entity)
+            self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
+        elif dxftype == 'LINE':
+            start = tuple(entity.dxf.start)[0:2]
+            end = tuple(entity.dxf.end)[0:2]
+            self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(start[0], start[1]), PathPoint(end[0], end[1])], False))
+        elif dxftype == 'CIRCLE':
+            centre = PathPoint(entity.dxf.center[0], entity.dxf.center[1])
+            self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
+        elif dxftype == 'ARC':
+            start = PathPoint(entity.start_point[0], entity.start_point[1])
+            end = PathPoint(entity.end_point[0], entity.end_point[1])
+            centre = tuple(entity.dxf.center)[0:2]
+            c = CandidateCircle(*centre, entity.dxf.radius)
+            sangle = entity.dxf.start_angle * pi / 180
+            eangle = entity.dxf.end_angle * pi / 180
+            if eangle < sangle:
+                sspan = eangle - sangle + 2 * pi
+            else:
+                sspan = eangle - sangle
+            points = [start, PathArc( start, end, c, 50, sangle, sspan)]
+            self.addItem(DrawingPolylineTreeItem(self.document, points, False))
+        elif dxftype == 'TEXT':
+            font = entity.font_name()
+            font = "Bitstream Vera Sans"
+            size = entity.dxf.height
+            scale = GeometrySettings.RESOLUTION
+            font = QFont(font, size * scale, 400, False)
+            metrics = QFontMetrics(font)
+            twidth = metrics.horizontalAdvance(entity.dxf.text) / scale
+            x, y = entity.dxf.insert[0], entity.dxf.insert[1]
+            if entity.dxf.halign == 2: # right
+                x -= twidth
+            if entity.dxf.halign == 1: # center
+                x -= twidth / 2
+            if entity.dxf.valign == 1:
+                y += metrics.descent() / scale
+            if entity.dxf.valign == 2:
+                y -= metrics.capHeight() / 2 / scale
+            if entity.dxf.valign == 3:
+                y -= metrics.capHeight() / scale
+            ppath = QPainterPath()
+            ppath.addText(0, 0, font, entity.dxf.text)
+            transform = QTransform().rotate(-entity.dxf.rotation)
+            polygons = ppath.toSubpathPolygons(transform)
+            for i in polygons:
+                self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(p.x() * entity.dxf.width / scale + x, -p.y() / scale + y) for p in i], True))
+        else:
+            print ("Ignoring DXF entity: %s" % dxftype)
     def renderTo(self, path, modeData):
         # XXXKF convert
         for i in self.items():
