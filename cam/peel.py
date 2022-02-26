@@ -7,13 +7,8 @@ def outside_peel(shape, tool, displace=0):
     if not shape.closed:
         raise ValueError("Cannot side mill open polylines")
     tps = []
-    tps_islands = []
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = pocket.calculate_tool_margin(shape, tool, displace)
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
-    for path in islands_transformed_nonoverlap:
-        for ints in process.Shape._intersection(path, *boundary_transformed):
-            # diff with other islands
-            tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
     displace_now = displace
     stepover = tool.stepover * tool.diameter
     while True:
@@ -24,9 +19,17 @@ def outside_peel(shape, tool, displace=0):
         if not res:
             break
         displace_now += stepover
-        process.mergeToolpaths(tps, res, tool.diameter)
+        tps += res.toolpaths
     if len(tps) == 0:
         raise ValueError("Empty contour")
-    tps = process.joinClosePaths(tps + tps_islands)
+    tps_islands = []
+    for path in islands_transformed_nonoverlap:
+        for ints in process.Shape._intersection(path, *boundary_transformed):
+            # diff with other islands
+            tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
+    # fixPathNesting normally expects the opposite order (inside to outside)
+    tps = list(reversed(process.fixPathNesting(list(reversed(tps)))))
+    tps = process.joinClosePathsWithCollisionCheck(tps, boundary_transformed, islands_transformed)
+    tps_islands = process.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
     geom.set_calculation_progress(expected_size, expected_size)
-    return toolpath.Toolpaths(tps)
+    return toolpath.Toolpaths(tps + tps_islands)

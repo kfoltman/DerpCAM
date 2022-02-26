@@ -78,6 +78,49 @@ def joinClosePaths(tps):
         last = tp
     return res
 
+def joinClosePathsWithCollisionCheck(tps, boundary, islands):
+    def findClosest(points, lastpt, diameter):
+        mindist = None
+        closest = 0
+        for i, pt in enumerate(points):
+            if i == 0 or dist(lastpt, pt) < mindist:
+                closest = i
+                mindist = dist(lastpt, pt)
+        if closest > 0 and mindist <= diameter:
+            points = points[closest:] + points[:closest]
+        return points, mindist
+
+    last = None
+    res = []
+    for tp in tps:
+        if isinstance(tp, Toolpaths):
+            res.append(tp)
+            last = None
+            continue
+        if last is not None and last.tool is tp.tool:
+            points = tp.path.nodes
+            found = False
+            if tp.path.closed:
+                points, mindist = findClosest(points, lastpt, tp.tool.diameter)
+                if dist(lastpt, points[0]) <= tp.tool.diameter:
+                    new_path = IntPath([lastpt, points[0]])
+                    if new_path.int_points[0] == new_path.int_points[1]:
+                        res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
+                        last = res[-1]
+                        lastpt = last.path.nodes[-1]
+                        continue
+                    # XXXKF workaround clipper bug
+                    if not boundary or not run_clipper_checkpath(CT_DIFFERENCE, subject_polys=[], clipper_polys=boundary, subject_paths=[new_path], fillMode=PFT_NONZERO):
+                        if not islands or not run_clipper_checkpath(CT_INTERSECTION, subject_polys=[], clipper_polys=islands, subject_paths=[new_path], fillMode=PFT_NONZERO):
+                            res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
+                            last = res[-1]
+                            lastpt = last.path.nodes[-1]
+                            continue
+        res.append(tp)
+        lastpt = tp.path.seg_end()
+        last = tp
+    return res
+
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
     boundary_path = IntPath(boundary)
     boundary_path = boundary_path.force_orientation(True)

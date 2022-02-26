@@ -770,7 +770,9 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
     else:
         return [PtsFromInts(i) for i in res]
 
-def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[]):
+def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[], fillMode=None):
+    if fillMode is None:
+        fillMode = GeometrySettings.fillMode
     pc = Pyclipper()
     if operation == CT_DIFFERENCE and subject_paths and not subject_polys:
         lowest_y = None
@@ -795,8 +797,12 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
         pc.AddPath(path.int_points, PT_SUBJECT, False)
     for path in clipper_polys:
         pc.AddPath(path.int_points, PT_CLIP, True)
-    tree = pc.Execute2(operation, GeometrySettings.fillMode, GeometrySettings.fillMode)
+    tree = pc.Execute2(operation, fillMode, fillMode)
     return tree
+
+def run_clipper_checkpath(operation, subject_polys=[], clipper_polys=[], subject_paths=[], fillMode=None):
+    tree = run_clipper_advanced(operation, subject_polys, clipper_polys, subject_paths, fillMode)
+    return OpenPathsFromPolyTree(tree)
 
 def dxf_polyline_to_points(entity):
     points = []
