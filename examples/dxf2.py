@@ -35,16 +35,17 @@ app.setOrganizationName("kfoltman")
 app.setApplicationName("DerpCAM")
 
 retcode = 0
-if args.input:
-    fn = args.input
-    ext = os.path.splitext(fn)[1].lower()
-    if ext == ".dxf":
-        document.importDrawing(fn)
-    elif ext == ".dcp":
-        document.loadProject(fn)
-    else:
-        sys.stderr.write("Error: Unrecognized file extension\n")
-        retcode = 1
+
+def doLoad(args):
+    if args.input:
+        fn = args.input
+        ext = os.path.splitext(fn)[1].lower()
+        if ext == ".dxf":
+            document.importDrawing(fn)
+        elif ext == ".dcp":
+            document.loadProject(fn)
+        else:
+            raise ValueError("Unrecognized file extension")
 
 if retcode == 0:
     if args.export_gcode:
@@ -56,17 +57,22 @@ if retcode == 0:
             retcode = 1
         else:
             try:
+                retcode = 0
+                doLoad(args)
                 document.validateForOutput()
                 document.exportGcode(args.export_gcode[0])
-                retcode = 0
             except ValueError as e:
-                sys.stderr.write(str(e) + "\n")
+                sys.stderr.write(f"Error: {e}\n")
                 retcode = 2
     else:
         cutter_mgr.loadInventory()
         w = main_win.CAMMainWindow(document, settings)
         w.initUI()
         w.showMaximized()
+        try:
+            doLoad(args)
+        except Exception as e:
+            QMessageBox.critical(w, "Error while loading a project/drawing", str(e))
         retcode = app.exec_()
         del w
         del app
