@@ -140,6 +140,9 @@ class DrawingItemTreeItem(CAMTreeItem):
             item = DrawingPolylineTreeItem(document, points, dump.get('closed', True))
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
             item = DrawingCircleTreeItem(document, PathPoint(dump['cx'], dump['cy']), dump['r'])
+        elif rtype == 'DrawingTextTreeItem':
+            item = DrawingTextTreeItem(document, PathPoint(dump['x'], dump['y']),
+                DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font']), dump['text'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
         item.shape_id = dump['shape_id']
@@ -153,10 +156,10 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
-    prop_x = FloatEditableProperty("Centre X", "x", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
-    prop_y = FloatEditableProperty("Centre Y", "y", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
-    prop_dia = FloatEditableProperty("Diameter", "diameter", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
-    prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f", unit="mm", min=0, max=100, allow_none=False)
+    prop_x = FloatEditableProperty("Centre X", "x", "%0.2f", unit="mm", allow_none=False)
+    prop_y = FloatEditableProperty("Centre Y", "y", "%0.2f", unit="mm", allow_none=False)
+    prop_dia = FloatEditableProperty("Diameter", "diameter", "%0.2f", unit="mm", min=0, allow_none=False)
+    prop_radius = FloatEditableProperty("Radius", "radius", "%0.2f", unit="mm", min=0, allow_none=False)
     def __init__(self, document, centre, r, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.centre = centre
@@ -265,6 +268,130 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def toShape(self):
         return process.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
         
+class DrawingTextStyle(object):
+    def __init__(self, height, width, halign, valign, angle, font_name):
+        self.height = height
+        self.width = width
+        self.halign = halign
+        self.valign = valign
+        self.angle = angle
+        self.font_name = font_name
+
+class DrawingTextTreeItem(DrawingItemTreeItem):
+    prop_x = FloatEditableProperty("Anchor X", "x", "%0.2f", unit="mm", allow_none=False)
+    prop_y = FloatEditableProperty("Anchor Y", "y", "%0.2f", unit="mm", allow_none=False)
+    prop_text = StringEditableProperty("Text", "text", False)
+    prop_font = StringEditableProperty("Font face", "font", False)
+    prop_height = FloatEditableProperty("Font size", "height", "%0.2f", min=1, unit="mm", allow_none=False)
+    prop_width = FloatEditableProperty("Stretch", "width", "%0.2f", min=10, unit="%", allow_none=False)
+    prop_angle = FloatEditableProperty("Angle", "angle", "%0.1f", min=-360, max=360, unit='\u00b0', allow_none=False)
+    def __init__(self, document, origin, style, text, untransformed = None):
+        DrawingItemTreeItem.__init__(self, document)
+        self.untransformed = untransformed if untransformed is not None else self
+        self.origin = origin
+        self.style = style
+        self.text = text
+        self.createPaths()
+    def properties(self):
+        return [ self.prop_x, self.prop_y, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle ]
+    def store(self):
+        return { '_type' : type(self).__name__, 'shape_id' : self.shape_id,
+            'text' : self.text, 'x' : self.origin.x, 'y' : self.origin.y,
+            'height' : self.style.height, 'width' : self.style.width,
+            'halign' : self.style.halign, 'valign' : self.style.valign,
+            'angle' : self.style.angle,
+            'font' : self.style.font_name, }
+    def getPropertyValue(self, name):
+        if name == 'x':
+            return self.origin.x
+        elif name == 'y':
+            return self.origin.y
+        elif name == 'text':
+            return self.text
+        elif name == 'font':
+            return self.style.font_name
+        elif name == 'height':
+            return self.style.height
+        elif name == 'width':
+            return self.style.width * 100
+        elif name == 'angle':
+            return self.style.angle
+        else:
+            assert False, "Unknown property: " + name
+    def setPropertyValue(self, name, value):
+        if name == 'x':
+            self.origin = geom.PathPoint(value, self.origin.y)
+        elif name == 'y':
+            self.origin = geom.PathPoint(self.origin.x, value)
+        elif name == 'text':
+            self.text = value
+        elif name == 'font':
+            self.style.font_name = value
+        elif name == 'height':
+            self.style.height = value
+        elif name == 'width':
+            self.style.width = value / 100
+        elif name == 'angle':
+            self.style.angle = value
+        else:
+            assert False, "Unknown property: " + name
+        self.createPaths()
+        self.emitDataChanged()
+    def translated(self, dx, dy):
+        tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.style, self.text, self.untransformed)
+        tti.shape_id = self.shape_id
+        return tti
+    def toShape(self):
+        return [process.Shape(path.nodes, path.closed) for path in self.paths]
+    def renderTo(self, path, modeData):
+        for i in self.paths:
+            path.addLines(self.penForPath(path, modeData), i.nodes, i.closed)
+    def distanceTo(self, pt):
+        mindist = None
+        for path in self.paths:
+            closest, dist = path.closest_point(pt)
+            if mindist is None or dist < mindist:
+                mindist = dist
+        return mindist
+    def calcBounds(self):
+        bounds = []
+        for i in self.paths:
+            xcoords = [p.x for p in i.nodes if p.is_point()]
+            ycoords = [p.y for p in i.nodes if p.is_point()]
+            bounds.append((min(xcoords), min(ycoords), max(xcoords), max(ycoords)))
+        self.bounds = max_bounds(*bounds)
+    def label(self):
+        return "Text%d" % self.shape_id
+    def textDescription(self):
+        return f"{self.label()}: {self.text}"
+    def createPaths(self):
+        scale = GeometrySettings.RESOLUTION
+        if self.style.height * scale > 1000:
+            scale = 1000 / self.style.height
+        font = QFont(self.style.font_name, self.style.height * scale, 400, False)
+        metrics = QFontMetrics(font)
+        twidth = metrics.horizontalAdvance(self.text) / scale
+        x, y = self.origin.x, self.origin.y
+        if self.style.halign == 2: # right
+            x -= twidth
+        if self.style.halign == 1: # center
+            x -= twidth / 2
+        if self.style.valign == 1:
+            y += metrics.descent() / scale
+        if self.style.valign == 2:
+            y -= metrics.capHeight() / 2 / scale
+        if self.style.valign == 3:
+            y -= metrics.capHeight() / scale
+        ppath = QPainterPath()
+        ppath.addText(0, 0, font, self.text)
+        transform = QTransform().rotate(-self.style.angle)
+        polygons = ppath.toSubpathPolygons(transform)
+        self.paths = []
+        for i in polygons:
+            #polyline = DrawingPolylineTreeItem(self.document, )
+            self.paths.append(geom.Path([PathPoint(p.x() * self.style.width / scale + x, -p.y() / scale + y) for p in i], True))
+        self.calcBounds()
+
 class CAMListTreeItem(CAMTreeItem):
     def __init__(self, document, name):
         CAMTreeItem.__init__(self, document, name)
@@ -327,30 +454,9 @@ class DrawingTreeItem(CAMListTreeItem):
             points = [start, PathArc( start, end, c, 50, sangle, sspan)]
             self.addItem(DrawingPolylineTreeItem(self.document, points, False))
         elif dxftype == 'TEXT':
-            font = entity.font_name()
-            font = "Bitstream Vera Sans"
-            size = entity.dxf.height
-            scale = GeometrySettings.RESOLUTION
-            font = QFont(font, size * scale, 400, False)
-            metrics = QFontMetrics(font)
-            twidth = metrics.horizontalAdvance(entity.dxf.text) / scale
-            x, y = entity.dxf.insert[0], entity.dxf.insert[1]
-            if entity.dxf.halign == 2: # right
-                x -= twidth
-            if entity.dxf.halign == 1: # center
-                x -= twidth / 2
-            if entity.dxf.valign == 1:
-                y += metrics.descent() / scale
-            if entity.dxf.valign == 2:
-                y -= metrics.capHeight() / 2 / scale
-            if entity.dxf.valign == 3:
-                y -= metrics.capHeight() / scale
-            ppath = QPainterPath()
-            ppath.addText(0, 0, font, entity.dxf.text)
-            transform = QTransform().rotate(-entity.dxf.rotation)
-            polygons = ppath.toSubpathPolygons(transform)
-            for i in polygons:
-                self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(p.x() * entity.dxf.width / scale + x, -p.y() / scale + y) for p in i], True))
+            font = "OpenSans"
+            style = DrawingTextStyle(entity.dxf.height, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font)
+            self.addItem(DrawingTextTreeItem(self.document, geom.PathPoint(entity.dxf.insert[0], entity.dxf.insert[1]), style, entity.dxf.text))
         else:
             print ("Ignoring DXF entity: %s" % dxftype)
     def renderTo(self, path, modeData):
@@ -364,6 +470,9 @@ class DrawingTreeItem(CAMListTreeItem):
         for i in self.items():
             if i.shape_id == shape_id:
                 return i
+            for j in i.items():
+                if j.shape_id == shape_id:
+                    return j
     def objectsNear(self, pos, margin):
         xy = PathPoint(pos.x() + self.x_offset, pos.y() + self.y_offset)
         found = []
@@ -393,7 +502,7 @@ class DrawingTreeItem(CAMListTreeItem):
         if operType == OperationType.INTERPOLATED_HOLE or operType == OperationType.DRILLED_HOLE:
             selection = [ i for i in selection if isinstance(i, DrawingCircleTreeItem) ]
         elif operType != OperationType.ENGRAVE:
-            selection = [ i for i in selection if i.toShape().closed ]
+            selection = [ i for i in selection if isinstance(i, DrawingTextTreeItem) or i.toShape().closed ]
         if operType != OperationType.POCKET and operType != OperationType.OUTSIDE_PEEL:
             return {i.shape_id: set() for i in selection}, selection
         nonzeros = set()
@@ -826,7 +935,12 @@ class WorkerThread(threading.Thread):
         threading.Thread.__init__(self, target=self.threadMain)
     def threadMain(self):
         try:
-            self.worker_func()
+            if isinstance(self.worker_func, list):
+                # XXXKF this gives pretty bad progress reporting
+                for fn in self.worker_func:
+                    fn()
+            else:
+                self.worker_func()
         except Exception as e:
             self.exception = e
             import traceback
@@ -1076,12 +1190,56 @@ class OperationTreeItem(CAMTreeItem):
             self.worker.cancelled = True
             self.worker.join()
             self.worker = None
+    def operationFunc(self, shape, pda):
+        translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+        if len(self.user_tabs):
+            tabs = self.user_tabs
+        else:
+            tabs = self.tab_count if self.tab_count is not None else shape.default_tab_count(2, 8, 200)
+        if self.document.checkUpdateSuspended(self):
+            return
+        if self.operation == OperationType.OUTSIDE_CONTOUR:
+            if pda.trc_rate:
+                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
+            else:
+                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
+        elif self.operation == OperationType.INSIDE_CONTOUR:
+            if pda.trc_rate:
+                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
+            else:
+                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
+        elif self.operation == OperationType.POCKET:
+            if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
+                return lambda: self.cam.pocket(shape)
+            elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL:
+                return lambda: self.cam.face_mill(shape, pda.axis_angle * pi / 180, 0, False)
+            elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
+                return lambda: self.cam.face_mill(shape, pda.axis_angle * pi / 180, 0, True)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
+                return lambda: self.cam.pocket_hsm(shape)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
+                return lambda: self.cam.pocket_hsm_zigzag(shape)
+        elif self.operation == OperationType.OUTSIDE_PEEL:
+            return lambda: self.cam.outside_peel(shape)
+        elif self.operation == OperationType.ENGRAVE:
+            return lambda: self.cam.engrave(shape)
+        elif self.operation == OperationType.INTERPOLATED_HOLE:
+            return lambda: self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
+        elif self.operation == OperationType.DRILLED_HOLE:
+            return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
+        else:
+            raise ValueError("Unsupported operation")
     def updateCAMWork(self):
         try:
             errors = []
             if self.orig_shape:
                 translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
                 self.shape = self.orig_shape.translated(*translation).toShape()
+                if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
+                    for island in self.islands:
+                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                        if item.closed:
+                            self.shape.add_island(item.boundary)
             else:
                 self.shape = None
             thickness = self.document.material.thickness
@@ -1108,50 +1266,10 @@ class OperationTreeItem(CAMTreeItem):
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
-                if len(self.user_tabs):
-                    tabs = self.user_tabs
+                if isinstance(self.shape, list):
+                    threadFunc = [ self.operationFunc(shape, pda) for shape in self.shape ]
                 else:
-                    tabs = self.tab_count if self.tab_count is not None else self.shape.default_tab_count(2, 8, 200)
-                threadFunc = None
-
-                if self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
-                    for island in self.islands:
-                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
-                            self.shape.add_island(item.boundary)
-                if self.document.checkUpdateSuspended(self):
-                    return
-                if self.operation == OperationType.OUTSIDE_CONTOUR:
-                    if pda.trc_rate:
-                        threadFunc = lambda: self.cam.outside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
-                    else:
-                        self.cam.outside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
-                elif self.operation == OperationType.INSIDE_CONTOUR:
-                    if pda.trc_rate:
-                        threadFunc = lambda: self.cam.inside_contour_trochoidal(self.shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
-                    else:
-                        self.cam.inside_contour(self.shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
-                elif self.operation == OperationType.POCKET:
-                    if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
-                        threadFunc = lambda: self.cam.pocket(self.shape)
-                    elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL:
-                        threadFunc = lambda: self.cam.face_mill(self.shape, pda.axis_angle * pi / 180, 0, False)
-                    elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
-                        threadFunc = lambda: self.cam.face_mill(self.shape, pda.axis_angle * pi / 180, 0, True)
-                    elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
-                        threadFunc = lambda: self.cam.pocket_hsm(self.shape)
-                    elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                        threadFunc = lambda: self.cam.pocket_hsm_zigzag(self.shape)
-                elif self.operation == OperationType.OUTSIDE_PEEL:
-                    threadFunc = lambda: self.cam.outside_peel(self.shape)
-                elif self.operation == OperationType.ENGRAVE:
-                    self.cam.engrave(self.shape)
-                elif self.operation == OperationType.INTERPOLATED_HOLE:
-                    self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
-                elif self.operation == OperationType.DRILLED_HOLE:
-                    self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
-                else:
-                    raise ValueError("Unsupported operation")
+                    threadFunc = self.operationFunc(self.shape, pda)
                 if threadFunc:
                     self.worker = WorkerThread(threadFunc)
                     self.worker.progress = (0, 1)
@@ -1483,6 +1601,7 @@ class DocumentModel(QObject):
             self.default_preset_by_tool[prj_cutter] = prj_preset
             self.refreshToolList()
         add_cycles = 'operation_cycles' not in data
+        cycle = None
         if 'tools' in data:
             std_cutters = { i.name : i for i in inventory.inventory.toolbits }
             cutters = [inventory.CutterBase.load(i, default_type='EndMillCutter') for i in data['tools']]
@@ -1505,15 +1624,16 @@ class DocumentModel(QObject):
                 else:
                     if debug_inventory_matching:
                         print ("New tool without library prototype", cutter.name)
-                    if cutter.orig_id == data.get('current_cutter_id', None):
-                        currentCutterCycle = cycle
                     # New tool not present in the inventory
                     self.project_toolbits[cutter.name] = cutter
                 if add_cycles:
                     cycle = CycleTreeItem(self, cutter)
                     cycleForCutter[orig_id] = cycle
                     self.operModel.appendRow(cycle)
-                    currentCutterCycle = currentCutterCycle or cycle
+                    if cutter.orig_id == data.get('current_cutter_id', None):
+                        currentCutterCycle = cycle
+                    else:
+                        currentCutterCycle = currentCutterCycle or cycle
             # Fixup cutter references (they're initially loaded as ints instead)
             for i in presets:
                 i.toolbit = cutter_map[i.toolbit]
