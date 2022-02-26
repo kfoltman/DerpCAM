@@ -378,9 +378,7 @@ class DrawingTreeItem(CAMListTreeItem):
                 if i == j:
                     continue
                 jsi = selection[j].shape_id
-                if geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipper.PFT_NONZERO):
-                    nonzeros.add((isi, jsi))
-                else:
+                if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipper.PFT_NONZERO):
                     zeros.add((isi, jsi))
         outsides = { i.shape_id: set() for i in selection }
         for isi, jsi in zeros:
@@ -391,6 +389,18 @@ class DrawingTreeItem(CAMListTreeItem):
             # i minus j = empty set, i.e. i wholly contained in j
             if jsi in outsides:
                 outsides[jsi].add(isi)
+        allObjects = set(outsides.keys())
+        for outside in outsides:
+            islands = outsides[outside]
+            redundant = set()
+            for i1 in islands:
+                for i2 in islands:
+                    if i1 != i2 and (i1, i2) in zeros:
+                        redundant.add(i1)
+            for i in redundant:
+                islands.remove(i)
+            allObjects |= islands
+        selection = [i for i in selection if i.shape_id in allObjects]
         return outsides, selection
     def properties(self):
         return [self.prop_x_offset, self.prop_y_offset]

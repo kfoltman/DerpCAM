@@ -187,11 +187,18 @@ class CAMMainWindow(QMainWindow):
             self.propsDW.propsheet.setFocus()
         elif mode != canvas.DrawingUIMode.MODE_NORMAL:
             self.viewer.setFocus()
+    def updateShapeSelection(self):
+        # Update preview regardless
+        items = self.projectDW.shapeSelection()
+        self.viewer.setSelection([item for item in items if isinstance(item, model.DrawingItemTreeItem)])
+        # Update property sheet only if the inputs tab is active
+        selType, items = self.projectDW.activeSelection()
+        if selType == 's':
+            self.propsDW.setSelection(items)
     def updateSelection(self):
         selType, items = self.projectDW.activeSelection()
         if selType == 's':
-            self.viewer.setSelection([item for item in items if isinstance(item, model.DrawingItemTreeItem)])
-            self.propsDW.setSelection(items)
+            self.updateShapeSelection()
         else:
             self.propsDW.setSelection(items)
     def editDelete(self):
@@ -238,6 +245,7 @@ class CAMMainWindow(QMainWindow):
                 if len(newSelection.indexes()):
                     self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
         self.updateOperations()
+        self.updateShapeSelection()
         self.propsDW.updateProperties()
     def needEndMill(self):
         return self.needCutterType(inventory.EndMillCutter, "an end mill")

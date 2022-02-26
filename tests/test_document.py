@@ -13,7 +13,7 @@ from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtTest import QSignalSpy
 
-testDocument1={
+testDocument1 = {
     "material": { "_type": "WorkpieceTreeItem", "material": 1, "thickness": 5, "clearance": 6, "safe_entry_z": 2 },
     "tools": [
         { "_type": "EndMillCutter", "id": 1036, "name": "test cutter", "material": "carbide", "diameter": 6, "length": 10.0, "flutes": 4 },
@@ -44,6 +44,25 @@ testDocument1={
             ],
         },
     ],
+}
+
+testDocument2 = {
+    "material": { "_type": "WorkpieceTreeItem", "material": 1, "thickness": 5, "clearance": 6, "safe_entry_z": 2 },
+    "tools": [],
+    "tool_presets": [],
+    "default_presets": [],
+    "drawing": {
+        "header": { "_type": "DrawingTreeItem", "x_offset": 10, "y_offset": 20 },
+        "items": [
+            { "_type": "DrawingCircleTreeItem", "shape_id": 1, "cx": 0, "cy": 0, "r": 15 },
+            { "_type": "DrawingCircleTreeItem", "shape_id": 2, "cx": 0, "cy": 0, "r": 30 },
+            { "_type": "DrawingCircleTreeItem", "shape_id": 3, "cx": 0, "cy": 0, "r": 8 },
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 4, "points": [[-50, 0], [50, 0]], "closed": False},
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 5, "points": [[200, 0], [250, 0], [250, 50], [200, 50]], "closed": True},
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 6, "points": [[220, 10], [240, 10], [240, 40], [210, 40]], "closed": True},
+        ],
+    },
+    "operation_cycles": [],
 }
 
 app = QApplication(sys.argv)
@@ -310,6 +329,29 @@ class DocumentTest(unittest.TestCase):
         self.assertIsNone(doc.current_cutter_cycle)
         self.assertEqual(doc.project_toolbits, {})
         self.assertEqual(doc.default_preset_by_tool, {})
+
+class DrawingTest(unittest.TestCase):
+    def setUp(self):
+        self.document = gui.model.DocumentModel()
+        self.document.load(testDocument2)
+        self.drawing = self.document.drawing
+        self.selection = list(self.drawing.items())
+    def testEngraveParser(self):
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.ENGRAVE)
+        self.assertEqual(outsides, {i.shape_id: set() for i in self.selection})
+    def testContourParser(self):
+        contourIds = {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3, 5, 6]}
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_CONTOUR)
+        self.assertEqual(outsides, contourIds)
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.INSIDE_CONTOUR)
+        self.assertEqual(outsides, contourIds)
+    def testPocketParser(self):
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.POCKET)
+        self.assertEqual(outsides, {2: set([1]), 5: set([6])})
+        self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_PEEL)
+        self.assertEqual(outsides, {2: set([1]), 5: set([6])})
+        self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
 
 class PDATest(unittest.TestCase):
     def setUp(self):
