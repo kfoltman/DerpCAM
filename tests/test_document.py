@@ -1,5 +1,6 @@
 import os.path
 import sys
+import math
 import threading
 import time
 import unittest
@@ -28,6 +29,9 @@ testDocument1 = {
         "header": { "_type": "DrawingTreeItem", "x_offset": 10, "y_offset": 20 },
         "items": [ 
             { "_type": "DrawingCircleTreeItem", "shape_id": 9, "cx": -40, "cy": -30, "r": 15 },
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 15, "points": [[200, 0], [250, 0], [250, 50], [200, 50]], "closed": True},
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 23, "points": [[100, 0], [150, 50]], "closed": False},
+            { "_type": "DrawingPolylineTreeItem", "shape_id": 24, "points": [[100, 0], ["ARC_CCW", [100, 0], [0, 100], [0, 0, 100], 50, 0, math.pi / 2]], "closed": False},
         ],
     },
     "operation_cycles": [ 
@@ -106,7 +110,7 @@ class DocumentTest(unittest.TestCase):
         
         self.assertEqual(doc.drawing.x_offset, 10)
         self.assertEqual(doc.drawing.y_offset, 20)
-        self.assertEqual(doc.drawing.rowCount(), 1)
+        self.assertEqual(doc.drawing.rowCount(), 4)
         circle = doc.drawing.child(0)
         self.assertIsInstance(circle, gui.model.DrawingCircleTreeItem)
         self.assertEqual(circle.centre.x, -40)
@@ -116,6 +120,41 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(circle.getPropertyValue("y"), -30)
         self.assertEqual(circle.getPropertyValue("radius"), 15)
         self.assertEqual(circle.getPropertyValue("diameter"), 30)
+        self.assertEqual(circle.translated(15, 25).getPropertyValue("x"), -25)
+        self.assertEqual(circle.translated(15, 25).getPropertyValue("y"), -5)
+        self.assertEqual(circle.translated(15, 25).getPropertyValue("diameter"), 30)
+        self.assertEqual(circle.scaled(0, 0, 2).getPropertyValue("x"), -80)
+        self.assertEqual(circle.scaled(0, 0, 2).getPropertyValue("y"), -60)
+        self.assertEqual(circle.scaled(0, 0, 2).getPropertyValue("diameter"), 60)
+        poly = doc.drawing.child(1)
+        self.assertEqual(poly.closed, True)
+        self.assertEqual(len(poly.points), 4)
+        self.assertEqual(poly.points, [geom.PathPoint(200, 0), geom.PathPoint(250, 0), geom.PathPoint(250, 50), geom.PathPoint(200, 50)])
+        self.assertEqual(poly.translated(20, 10).points, [geom.PathPoint(220, 10), geom.PathPoint(270, 10), geom.PathPoint(270, 60), geom.PathPoint(220, 60)])
+        self.assertEqual(poly.scaled(200, 0, 2).points, [geom.PathPoint(200, 0), geom.PathPoint(300, 0), geom.PathPoint(300, 100), geom.PathPoint(200, 100)])
+        self.assertEqual(poly.label(), "Polyline15")
+        self.assertIn("Polyline15(200.00, 0.00)-(250.00, 50.00)", poly.textDescription())
+        shape = poly.toShape()
+        self.assertEqual(shape.boundary, [geom.PathPoint(200, 0), geom.PathPoint(250, 0), geom.PathPoint(250, 50), geom.PathPoint(200, 50)])
+        self.assertEqual(shape.closed, True)
+        poly = doc.drawing.child(2)
+        self.assertEqual(poly.closed, False)
+        self.assertEqual(len(poly.points), 2)
+        self.assertEqual(poly.points, [geom.PathPoint(100, 0), geom.PathPoint(150, 50)])
+        self.assertEqual(poly.translated(20, 10).points, [geom.PathPoint(120, 10), geom.PathPoint(170, 60)])
+        self.assertEqual(poly.scaled(50, 10, 2).points, [geom.PathPoint(150, -10), geom.PathPoint(250, 90)])
+        self.assertEqual(poly.label(), "Line23")
+        self.assertIn("Line23(100.00, 0.00)-(150.00, 50.00)", poly.textDescription())
+        shape = poly.toShape()
+        self.assertEqual(shape.boundary, [geom.PathPoint(100, 0), geom.PathPoint(150, 50)])
+        self.assertEqual(shape.closed, False)
+        poly = doc.drawing.child(3)
+        self.assertEqual(poly.closed, False)
+        self.assertEqual(len(poly.points), 2)
+        self.assertEqual(poly.points, [geom.PathPoint(100, 0), geom.PathArc(geom.PathPoint(100, 0), geom.PathPoint(0, 100), geom.CandidateCircle(0, 0, 100), 50, 0, math.pi / 2)])
+        self.assertEqual(poly.translated(50, 25).points, [geom.PathPoint(150, 25), geom.PathArc(geom.PathPoint(150, 25), geom.PathPoint(50, 125), geom.CandidateCircle(50, 25, 100), 50, 0, math.pi / 2)])
+        self.assertEqual(poly.scaled(0, 0, 2).points, [geom.PathPoint(200, 0), geom.PathArc(geom.PathPoint(200, 0), geom.PathPoint(0, 200), geom.CandidateCircle(0, 0, 200), 50, 0, math.pi / 2)])
+        self.assertEqual(poly.label(), "Arc24")
         toolbit = doc.project_toolbits["test cutter"]
         self.assertEqual(toolbit.name, "test cutter")
         self.assertEqual(toolbit.diameter, 6)

@@ -59,6 +59,15 @@ class PathNode(object):
         return False
     def is_circle(self):
         return False
+    @staticmethod
+    def from_tuple(t):
+        l = len(t)
+        if l == 2:
+            return PathPoint.from_tuple(t)
+        elif l == 7:
+            return PathArc.from_tuple(t)
+        else:
+            raise ValueError(f"Invalid number of data items for a path node ({l})")
 
 class PathPoint(PathNode):
     def __init__(self, x, y):
@@ -83,7 +92,8 @@ class PathPoint(PathNode):
         return sqrt(dx * dx + dy * dy)
     @staticmethod
     def from_tuple(t):
-        assert len(t) == 2
+        if len(t) != 2:
+            raise ValueError("Invalid number of data items in a point record")
         return PathPoint(t[0], t[1])
     def translated(self, dx, dy):
         return PathPoint(self.x + dx, self.y + dy)
@@ -123,6 +133,9 @@ class PathArc(PathNode):
         return True
     def is_circle(self):
         return abs(abs(self.sspan) - 2 * pi) < 0.001
+    def __eq__(self, other):
+        angle_eps = 1e-4
+        return self.p1 == other.p1 and self.p2 == other.p2 and self.c == other.c and self.steps == other.steps and abs(self.sstart - other.sstart) < angle_eps and abs(self.sspan - other.sspan) < angle_eps
     def seg_start(self):
         return self.p1
     def seg_end(self):
@@ -131,6 +144,8 @@ class PathArc(PathNode):
         return ("ARC_CW" if self.sspan < 0 else "ARC_CCW", self.p1.as_tuple(), self.p2.as_tuple(), self.c.as_tuple(), self.steps, self.sstart, self.sspan)
     @staticmethod
     def from_tuple(t):
+        if len(t) != 7:
+            raise ValueError("Invalid number of data items in a point record")
         return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6])
     def angle_at_fraction(self, alpha):
         return self.sstart + self.sspan * alpha
@@ -437,6 +452,8 @@ class CandidateCircle(object):
     @staticmethod
     def from_tuple(t):
         return CandidateCircle(*t)
+    def __eq__(self, other):
+        return self.cx == other.cx and self.cy == other.cy and self.r == other.r
     def dist(self, p):
         return sqrt((p.x - self.cx) ** 2 + (p.y - self.cy) ** 2)
     def angle(self, p):

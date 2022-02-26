@@ -136,7 +136,7 @@ class DrawingItemTreeItem(CAMTreeItem):
     def load(klass, document, dump):
         rtype = dump['_type']
         if rtype == 'DrawingPolyline' or rtype == 'DrawingPolylineTreeItem':
-            points = [PathPoint.from_tuple(i) for i in dump['points']]
+            points = [PathNode.from_tuple(i) for i in dump['points']]
             item = DrawingPolylineTreeItem(document, points, dump.get('closed', True))
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
             item = DrawingCircleTreeItem(document, PathPoint(dump['cx'], dump['cy']), dump['r'])
