@@ -339,6 +339,11 @@ class DrawingTest(unittest.TestCase):
     def testEngraveParser(self):
         outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.ENGRAVE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection})
+    def testHoleParser(self):
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.DRILLED_HOLE)
+        self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
+        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.INTERPOLATED_HOLE)
+        self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
     def testContourParser(self):
         contourIds = {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3, 5, 6]}
         outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_CONTOUR)
