@@ -51,6 +51,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
         while True:
             nps = shapely.ops.nearest_points(outside, pt)
             pt2orig = nps[0]
+            mr = circle_size * diameter
             if step2 == 1:
                 pt2 = geom.PathPoint(nps[0].x, nps[0].y)
             else:
@@ -64,10 +65,17 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
                 # Wrap around
                 if prev > 0.9 * outside.length and curr < 0.1 * outside.length:
                     curr = outside.length
-                pt2sh = outside.interpolate(prev + (curr - prev) * step2)
-                pt2 = geom.PathPoint(pt2sh.x, pt2sh.y)
+                pt2s1 = outside.interpolate(prev + (curr - prev) * step2)
+                # Another estimate is a weighted average of the last and the current point
+                pt2s2 = shapely.geometry.Point(lastpt2.x + (pt2orig.x - lastpt2.x) * step2, lastpt2.y + (pt2orig.y - lastpt2.y) * step2)
+                nps = shapely.ops.nearest_points(outside, pt2s2)
+                pt2s2 = nps[0]
+                # Pick the better of the two
+                if abs(pt2s1.distance(pt) - mr) < abs(pt2s2.distance(pt) - mr):
+                    pt2 = geom.PathPoint(pt2s1.x, pt2s1.y)
+                else:
+                    pt2 = geom.PathPoint(pt2s2.x, pt2s2.y)
             pt3 = geom.weighted(pt, pt2, 2) # far end of the circle, opposite pt
-            mr = circle_size * diameter
             # Shorten the step if the opposite side of the circle is too far
             # away from the corresponding one for the previous step
             if lastc is not None:
