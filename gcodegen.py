@@ -949,8 +949,14 @@ class Operations(object):
         else:
             self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
     def outside_contour(self, shape, tabs, widen=0, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
+        if shape.islands:
+            for i in shape.islands:
+                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen, dogbones=dogbones))
         self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen, dogbones=dogbones))
     def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
+        if shape.islands:
+            for i in shape.islands:
+                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, dogbones=dogbones))
         #self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
         self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, dogbones=dogbones))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
