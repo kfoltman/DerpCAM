@@ -676,11 +676,12 @@ class Contour(TabbedOperation):
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
             if contour_paths is None:
-                TabbedOperation.__init__(self, shape, tool, props, None, tabs=None)
-                return
+                raise ValueError("Empty contour")
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened()
         else:
             contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
+            if contour_paths is None:
+                raise ValueError("Empty contour")
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened()
         if isinstance(tabs, int):
             newtabs = []
@@ -728,6 +729,8 @@ class Contour(TabbedOperation):
         if path.has_arcs():
             points = CircleFitter.interpolate_arcs(points, False, 1)
         offset = cam.contour.plain(process.Shape(points, True), 0, True, extension, not path.orientation())
+        if not offset:
+            raise ValueError("Empty contour")
         if len(offset) == 1:
             extension = toolpath.Toolpath(offset[0], tool)
             if process.startWithClosestPoint(extension, points[0], tool.diameter):
