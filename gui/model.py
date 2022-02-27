@@ -343,7 +343,13 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         tti.shape_id = self.shape_id
         return tti
     def toShape(self):
-        return [process.Shape(path.nodes, path.closed) for path in self.paths]
+        shapes = []
+        for i, path in enumerate(self.paths):
+            if path.orientation():
+                shapes[-1].add_island(path.nodes)
+            else:
+                shapes.append(process.Shape(path.nodes, path.closed))
+        return shapes
     def renderTo(self, path, modeData):
         for i in self.paths:
             path.addLines(self.penForPath(path, modeData), i.nodes, i.closed)
@@ -508,13 +514,15 @@ class DrawingTreeItem(CAMListTreeItem):
             return {i.shape_id: set() for i in selection}, selection
         nonzeros = set()
         zeros = set()
-        selectionTrans = [ geom.IntPath(i.translated(*translation).toShape().boundary) for i in selection ]
+        texts = [ i for i in selection if isinstance(i, DrawingTextTreeItem) ]
+        selectionId = [ i.shape_id for i in selection if not isinstance(i, DrawingTextTreeItem) ]
+        selectionTrans = [ geom.IntPath(i.translated(*translation).toShape().boundary) for i in selection if not isinstance(i, DrawingTextTreeItem) ]
         for i in range(len(selectionTrans)):
-            isi = selection[i].shape_id
+            isi = selectionId[i]
             for j in range(len(selectionTrans)):
                 if i == j:
                     continue
-                jsi = selection[j].shape_id
+                jsi = selectionId[j]
                 if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipper.PFT_NONZERO):
                     zeros.add((isi, jsi))
         outsides = { i.shape_id: set() for i in selection }
@@ -537,6 +545,10 @@ class DrawingTreeItem(CAMListTreeItem):
             for i in redundant:
                 islands.remove(i)
             allObjects |= islands
+        for i in texts:
+            #glyphs = i.translated(*translation).toShape()
+            outsides[i.shape_id] = set()
+            allObjects.add(i.shape_id)
         selection = [i for i in selection if i.shape_id in allObjects]
         return outsides, selection
     def properties(self):
@@ -1010,6 +1022,10 @@ class OperationTreeItem(CAMTreeItem):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
         self.document.islandsEditRequested.emit(self)
+    def areIslandsEditable(self):
+        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
+            return False
+        return not isinstance(self.orig_shape, DrawingTextTreeItem)
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
