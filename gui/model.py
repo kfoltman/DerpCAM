@@ -18,7 +18,8 @@ from milling_tool import *
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
-    EnumEditableProperty, SetEditableProperty, RefEditableProperty, StringEditableProperty
+    EnumEditableProperty, SetEditableProperty, RefEditableProperty, StringEditableProperty, \
+    FontEditableProperty
 
 import ezdxf
 import json
@@ -281,7 +282,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_x = FloatEditableProperty("Anchor X", "x", "%0.2f", unit="mm", allow_none=False)
     prop_y = FloatEditableProperty("Anchor Y", "y", "%0.2f", unit="mm", allow_none=False)
     prop_text = StringEditableProperty("Text", "text", False)
-    prop_font = StringEditableProperty("Font face", "font", False)
+    prop_font = FontEditableProperty("Font face", "font")
     prop_height = FloatEditableProperty("Font size", "height", "%0.2f", min=1, unit="mm", allow_none=False)
     prop_width = FloatEditableProperty("Stretch", "width", "%0.2f", min=10, unit="%", allow_none=False)
     prop_angle = FloatEditableProperty("Angle", "angle", "%0.1f", min=-360, max=360, unit='\u00b0', allow_none=False)

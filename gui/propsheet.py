@@ -65,6 +65,21 @@ class EnumClass(object):
                 return data[1]
         return None
 
+class FontEditableProperty(EditableProperty):
+    def createEditor(self, parent, item, objects):
+        widget = QFontComboBox(parent)
+        widget.setFontFilters(QFontComboBox.ScalableFonts)
+        widget.currentFontChanged.connect(lambda: self.destroyEditor(widget))
+        return widget
+    def setEditorData(self, editor, value):
+        editor.setCurrentFont(QFont(value))
+    def getEditorData(self, editor):
+        return editor.currentFont().family()
+    def getDisplayFont(self, value):
+        return QFont(value)
+    def destroyEditor(self, widget):
+        widget.close()
+
 class ComboEditableProperty(EditableProperty):
     def createEditor(self, parent, item, objects):
         widget = QListWidget(parent)
@@ -263,6 +278,8 @@ class PropertyTableWidgetItem(QTableWidgetItem):
         self.def_value = def_value
         self.valid_values = valid_values
     def data(self, role):
+        if role == Qt.FontRole and hasattr(self.prop, "getDisplayFont"):
+            return self.prop.getDisplayFont(self.value)
         if not (self.flags() & Qt.ItemIsEnabled):
             if role == Qt.DisplayRole:
                 return "N/A"
