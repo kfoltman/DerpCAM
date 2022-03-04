@@ -248,7 +248,7 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
 
 pyvlock = threading.RLock()
 
-def hsm_peel(shape, tool, zigzag, displace=0):
+def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     from shapely.geometry import Point, LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
     from shapely.ops import linemerge, nearest_points
     import cam.geometry
@@ -282,13 +282,15 @@ def hsm_peel(shape, tool, zigzag, displace=0):
         tps = []
         for polygon in inputs:
             step = tool.diameter * tool.stepover
-            with pyvlock:
-                v = cam.voronoi_centers.VoronoiCenters(polygon, tolerence = step)
             if zigzag:
                 arc_dir = cam.geometry.ArcDir.Closest
             else:
                 arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
-            tp = cam.geometry.ToolPath(polygon, step, arc_dir, voronoi=v, generate=True)
+            with pyvlock:
+                if from_outside:
+                    tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
+                else:
+                    tp = cam.geometry.InsidePocket(polygon, step, arc_dir, generate=True)
             generator = tp._get_arcs(100)
             try:
                 while not geom.is_calculation_cancelled():
@@ -296,21 +298,18 @@ def hsm_peel(shape, tool, zigzag, displace=0):
                     geom.set_calculation_progress(progress, 1000)
             except StopIteration:
                 pass
-            gen_path = []
-            x, y = tp.start_point.x, tp.start_point.y
-            r = 0
-            rt = tp.start_radius
             hsm_path = tp.path
+            gen_path = []
+            if from_outside:
+                x, y = hsm_path[0].start.x, hsm_path[0].start.y
+                rt = 0
+                x -= rt
+            else:
+                x, y = tp.start_point.x, tp.start_point.y
+                rt = tp.start_radius
+            r = 0
             c = geom.CandidateCircle(x, y, rt)
             a = 0
-            if len(hsm_path) and isinstance(hsm_path[0], cam.geometry.LineData) and hsm_path[0].safe:
-                sp = geom.PathPoint(hsm_path[0].end.x, hsm_path[0].end.y)
-                if sp.dist(geom.PathPoint(x, y)) <= rt + 0.001:
-                    a = c.angle(sp)
-                    cp = c.at_angle(a)
-                    psp = Point(cp.x, cp.y)
-                    pep = Point(sp.x, sp.y)
-                    hsm_path[0] = cam.geometry.LineData(psp, pep, LineString([psp, pep]), True)
             while r < rt:
                 r = min(rt, r + tool.diameter * tool.stepover)
                 c = geom.CandidateCircle(x, y, r)
@@ -319,7 +318,7 @@ def hsm_peel(shape, tool, zigzag, displace=0):
             lastpt = None
             for item in hsm_path:
                 if isinstance(item, cam.geometry.LineData):
-                    if not item.safe:
+                    if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
                         if geom.Path(gen_path, False).length():
                             tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
                         gen_path = []
@@ -349,7 +348,7 @@ def hsm_peel(shape, tool, zigzag, displace=0):
             if geom.Path(gen_path, False).length():
                 tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
                 tps.append(tpo)
-            if tps and tool.diameter * (1 + tool.stepover) < 2 * tp.start_radius:
+            if tps and tool.diameter * (1 + tool.stepover) < 2 * rt:
                 tps[0].helical_entry = process.HelicalEntry(tp.start_point, tool.diameter * tool.stepover)
             # Add a final pass around the perimeter
             def ls2path(ls):

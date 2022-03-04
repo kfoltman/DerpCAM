@@ -1029,34 +1029,28 @@ class OperationTreeItem(CAMTreeItem):
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
-        if self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL) and name in ['tab_height', 'tab_count', 'extra_width']:
+        is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
+        has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL)
+        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'dogbones']:
             return False
-        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL) and name == 'islands':
+        if not has_islands and name in ['islands', 'pocket_strategy', 'stepover']:
             return False
-        if self.operation != OperationType.POCKET and name == 'pocket_strategy':
+        if (not has_islands or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
-        if (self.operation != OperationType.POCKET or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
+        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction']:
             return False
-        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and (name == 'user_tabs' or name == 'dogbones'):
-            return False
-        if self.operation != OperationType.OUTSIDE_CONTOUR and self.operation != OperationType.INSIDE_CONTOUR and name.startswith("trc_"):
-            return False
-        if (self.operation == OperationType.OUTSIDE_CONTOUR or self.operation == OperationType.INSIDE_CONTOUR) and name == 'stepover':
-            return False
-        if self.operation == OperationType.ENGRAVE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'stepover']:
-            return False
-        if self.operation == OperationType.INTERPOLATED_HOLE and name in ['tab_height', 'tab_count', 'extra_width']:
-            return False
-        if self.operation == OperationType.DRILLED_HOLE and name in ['tab_height', 'tab_count', 'offset', 'extra_width', 'hfeed', 'stepover', 'trc_rate', 'direction']:
+        if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
         return True
     def getValidEnumValues(self, name):
+        if name == 'pocket_strategy' and self.operation == OperationType.OUTSIDE_PEEL:
+            return [inventory.PocketStrategy.CONTOUR_PARALLEL, inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG]
         if name == 'operation':
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
-            if isinstance(self.orig_shape, DrawingPolylineTreeItem):
+            if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
                     return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE]
                 else:
@@ -1237,7 +1231,12 @@ class OperationTreeItem(CAMTreeItem):
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
                 return lambda: self.cam.pocket_hsm_zigzag(shape)
         elif self.operation == OperationType.OUTSIDE_PEEL:
-            return lambda: self.cam.outside_peel(shape)
+            if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
+                return lambda: self.cam.outside_peel(shape)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
+                return lambda: self.cam.outside_peel_hsm(shape, zigzag=False)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
+                return lambda: self.cam.outside_peel_hsm(shape, zigzag=True)
         elif self.operation == OperationType.ENGRAVE:
             return lambda: self.cam.engrave(shape)
         elif self.operation == OperationType.INTERPOLATED_HOLE:

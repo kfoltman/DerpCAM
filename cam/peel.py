@@ -33,3 +33,6 @@ def outside_peel(shape, tool, displace=0):
     tps_islands = process.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
     geom.set_calculation_progress(expected_size, expected_size)
     return toolpath.Toolpaths(tps + tps_islands)
+
+def outside_peel_hsm(shape, tool, zigzag, displace=0):
+    return pocket.hsm_peel(shape, tool, zigzag=zigzag, displace=displace, from_outside=True)

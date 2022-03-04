@@ -607,6 +607,10 @@ class OutsidePeel(UntabbedOperation):
     def __init__(self, shape, tool, props):
         UntabbedOperation.__init__(self, shape, tool, props, cam.peel.outside_peel(shape, tool, displace=props.margin))
 
+class OutsidePeelHSM(UntabbedOperation):
+    def __init__(self, shape, tool, props, zigzag):
+        UntabbedOperation.__init__(self, shape, tool, props, cam.peel.outside_peel_hsm(shape, tool, zigzag=zigzag, displace=props.margin))
+
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths, tabs):
         Operation.__init__(self, shape, tool, props)
@@ -983,6 +987,8 @@ class Operations(object):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
         self.add(OutsidePeel(shape, self.tool, props or self.props))
+    def outside_peel_hsm(self, shape, zigzag, props=None):
+        self.add(OutsidePeelHSM(shape, self.tool, props or self.props, zigzag))
     def face_mill(self, shape, angle, margin, zigzag, props=None):
         self.add(FaceMill(shape, angle, margin, zigzag, self.tool, props or self.props))
     def peck_drill(self, x, y, props=None):

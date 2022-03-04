@@ -476,19 +476,17 @@ class CandidateCircle(object):
             if err > maxerr: maxerr = err
         return maxerr - minerr
     def calc_error2(self, points):
-        minerr = 0
         maxerr = 0
         for j in points:
             r2 = self.dist(j)
             err = self.r - r2
-            if err < minerr: minerr = err
-            if err > maxerr: maxerr = err
+            maxerr = max(maxerr, abs(err))
         for j in range(len(points) - 1):
-            r2 = self.dist(weighted(points[j], points[j + 1], 0.5))
-            err = self.r - r2
-            if err < minerr: minerr = err
-            if err > maxerr: maxerr = err
-        return maxerr - minerr
+            for q in range(1, 10):
+                r2 = self.dist(weighted(points[j], points[j + 1], 0.1 * q))
+                err = self.r - r2
+                maxerr = max(maxerr, abs(err))
+        return maxerr
     # Return the number of positive and negative angle delta and the total span
     # (sum of absolute values, assumes angles of one direction only)
     def count_angles(self, points):
@@ -547,7 +545,7 @@ class CandidateCircle(object):
 # Should this be a mostly fake class with only static methods? No idea.
 # There's very little state to keep, just the points array I suppose.
 class CircleFitter(object):
-    error_threshold = 2.5 / GeometrySettings.RESOLUTION
+    error_threshold = 2.0 / GeometrySettings.RESOLUTION
     # Maximum distance between subsequent points to still describe a segment
     # and not just a straight line
     line_segment_threshold = 3.0
