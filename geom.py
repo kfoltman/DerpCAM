@@ -482,10 +482,9 @@ class CandidateCircle(object):
             err = self.r - r2
             maxerr = max(maxerr, abs(err))
         for j in range(len(points) - 1):
-            for q in range(1, 10):
-                r2 = self.dist(weighted(points[j], points[j + 1], 0.1 * q))
-                err = self.r - r2
-                maxerr = max(maxerr, abs(err))
+            r2 = self.dist(weighted(points[j], points[j + 1], 0.5))
+            err = self.r - r2
+            maxerr = max(maxerr, abs(err))
         return maxerr
     # Return the number of positive and negative angle delta and the total span
     # (sum of absolute values, assumes angles of one direction only)
