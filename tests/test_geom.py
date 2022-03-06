@@ -4,9 +4,8 @@ import unittest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from process import *
 from geom import *
-from gcodegen import *
+from toolpath import Tab, Tabs
 
 def prepare(ranges):
     res = []
