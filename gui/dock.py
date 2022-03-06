@@ -7,7 +7,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from gui import propsheet, canvas, model, inventory
+from gui import propsheet, canvas, model, inventory, cutter_mgr
 
 OperationType = model.OperationType
 
@@ -127,6 +127,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             action = menu.addAction("Delete from project")
             action.triggered.connect(lambda: self.toolPresetDelete(item))
         elif isinstance(item, model.ToolTreeItem):
+            action = menu.addAction("New preset...")
+            action.triggered.connect(lambda: self.toolNewPreset(item))
+            menu.addSeparator()
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolSaveToInventory(item))
             action.setEnabled(item.isNewObject())
@@ -160,6 +163,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def onCutterSelected(self, cutter_cycle):
         if cutter_cycle:
             self.operTree.expand(cutter_cycle.index())
+    def toolNewPreset(self, item):
+        preset = cutter_mgr.createPresetDialog(self, self.document, item.inventory_tool, False)
+        if preset:
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
     def toolRevertFromInventory(self, item):
         if item.inventory_tool.base_object:
             self.document.opRevertTool(item)

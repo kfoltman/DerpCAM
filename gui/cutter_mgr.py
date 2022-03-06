@@ -115,6 +115,18 @@ class CutterListWidget(QTreeWidget):
         if item is not None:
             return item.content
 
+def createPresetDialog(parent, document, cutter, is_global):
+    dlg = SelectCutterDialog.presetEditorClassForCutter(cutter)(parent, "Create a preset in inventory" if is_global else "Create a preset in the project")
+    if dlg.exec_():
+        preset = dlg.result
+        preset.toolbit = cutter
+        if is_global:
+            cutter.presets.append(preset)
+            saveInventory()
+        else:
+            document.opAddProjectPreset(cutter, preset)
+        return preset
+
 class SelectCutterDialog(QDialog):
     def __init__(self, parent, document, cutter_type=None):
         QDialog.__init__(self, parent)
@@ -221,15 +233,8 @@ class SelectCutterDialog(QDialog):
             return CreateEditDrillBitPresetDialog
         assert False
     def newPresetAction(self, cutter, is_global):
-        dlg = self.presetEditorClassForCutter(cutter)(self, "Create a preset in inventory" if is_global else "Create a preset in the project")
-        if dlg.exec_():
-            preset = dlg.result
-            preset.toolbit = cutter
-            if is_global:
-                cutter.presets.append(preset)
-                saveInventory()
-            else:
-                self.document.opAddProjectPreset(cutter, preset)
+        preset = createPresetDialog(self, self.document, cutter, is_global)
+        if preset:
             self.tools.refreshCutters(preset)
     def editAction(self):
         item = self.tools.currentItem()
