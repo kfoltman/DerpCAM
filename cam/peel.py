@@ -9,7 +9,7 @@ def outside_peel(shape, tool, displace=0):
     tps = []
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = pocket.calculate_tool_margin(shape, tool, displace)
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
-    displace_now = displace
+    displace_now = displace - tool.diameter
     stepover = tool.stepover * tool.diameter
     while True:
         if geom.is_calculation_cancelled():

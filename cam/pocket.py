@@ -253,7 +253,10 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     from shapely.ops import linemerge, nearest_points
     import cam.geometry
     tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
-    subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
+    if from_outside:
+        subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
+    else:
+        subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
     alltps = []
     for subpocket in subpockets:
         boundary_offset = geom.PtsFromInts(subpocket)
