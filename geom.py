@@ -538,6 +538,8 @@ class CandidateCircle(object):
         x = (s1 * (y2 - y3) + s2 * (y3 - y1) + s3 * (y1 - y2)) / (2 * A)
         y = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / (2 * A)
         r = PathPoint(x, y).dist(p1)
+        if r < 5 / GeometrySettings.RESOLUTION:
+            return None
         return CandidateCircle(x, y, r)
 
 # Incredibly dodgy (but perhaps still useful) lines-to-arc fitter
