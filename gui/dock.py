@@ -114,6 +114,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
             action.setChecked(item.isDefault())
             action.setEnabled(not item.isDefault())
             action.triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
+            action = menu.addAction("Clone...")
+            action.triggered.connect(lambda: self.toolPresetClone(item))
             action = menu.addAction("Save to inventory")
             action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
             action.setEnabled(item.isNewObject() and not item.parent().isNewObject())
@@ -179,6 +181,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if QMessageBox.question(self, "Delete cutter from project",
             "This will delete the cutter, its presets and all the operations that use that cutter from the project. Continue?") == QMessageBox.Yes:
             self.document.opDeleteCycle(cycle)
+    def toolPresetClone(self, item):
+        preset = cutter_mgr.createPresetDialog(self, self.document, item.inventory_preset.toolbit, False, item.inventory_preset)
+        if preset:
+            self.document.refreshToolList()
+            self.shapeTree.expandAll()
     def toolPresetSetAsCurrent(self, item):
         self.document.selectPresetAsDefault(item.inventory_preset.toolbit, item.inventory_preset)
     def toolPresetRevertFromInventory(self, item):
