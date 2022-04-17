@@ -93,19 +93,12 @@ class Gcode(object):
         self.add("G4 P%0.0f" % millis)
 
     def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
-        self.linear(x = x + r * cos(angle), y = y + r * sin(angle))
+        sx = x + r * cos(angle)
+        sy = y + r * sin(angle)
+        self.linear(x = sx, y = sy)
         cur_z = start_z
         delta_z = end_z - start_z
-        if False: # generate 4 quadrants for a circle - seems unnecessary
-            self.arc_ccw(x = x, y = y + r, i = -r, z = cur_z + 0.25 * delta_z)
-            self.arc_ccw(x = x - r, y = y, j = -r, z = cur_z + 0.5 * delta_z)
-            self.arc_ccw(x = x, y = y - r, i = r, z = cur_z + 0.75 * delta_z)
-            self.arc_ccw(x = x + r, y = y, j = r, z = cur_z + delta_z)
-        else:
-            if climb:
-                self.arc_ccw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
-            else:
-                self.arc_cw(i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
+        self.arc(direction=1 if climb else -1, x = sx, i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
 
     def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
         if new_z == old_z:
