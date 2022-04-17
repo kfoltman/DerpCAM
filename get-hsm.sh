@@ -2,13 +2,16 @@
 if [ -d HSM_experiment ]; then
     (cd HSM_experiment; git pull) || exit 1
 else
-    git clone git://github.com/mrdunk/HSM_experiment || exit 1
+    git clone https://github.com/mrdunk/HSM_experiment || exit 1
+    (cd HSM_experiment; git switch development) || exit 1
 fi
 if [ -f HSM_experiment/src/geometry.py ]; then
+    cd cam
     for i in geometry helpers voronoi_centers; do
-        cp -v HSM_experiment/src/$i.py cam/ || exit 1
+        rm $i.py
+        ln -s ../HSM_experiment/src/$i.py $i.py || exit 1
     done
-    echo Files copied successfully.
+    echo Files linked successfully.
 else
     exit 1
 fi
