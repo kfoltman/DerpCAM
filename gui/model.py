@@ -881,25 +881,52 @@ def not_none(*args):
             return True
     return False
 
+class PresetDerivedAttributeItem(object):
+    def __init__(self, name, preset_name=None, preset_scale=None, def_value=None):
+        self.name = name
+        self.preset_name = preset_name or name
+        self.preset_scale = preset_scale
+        self.def_value = def_value
+    def resolve(self, operation, preset):
+        op_value = getattr(operation, self.name)
+        if op_value is not None:
+            return (True, op_value)
+        preset_value = getattr(preset, self.preset_name, None) if preset else None
+        if preset_value is not None:
+            if self.preset_scale is not None:
+                preset_value *= self.preset_scale
+            return (False, preset_value)
+        return (False, self.def_value)
+
 class PresetDerivedAttributes(object):
+    attrs_common = [
+        PresetDerivedAttributeItem('rpm'),
+        PresetDerivedAttributeItem('vfeed'),
+        PresetDerivedAttributeItem('doc', preset_name='maxdoc'),
+    ]
+    attrs_endmill = [
+        PresetDerivedAttributeItem('hfeed'),
+        PresetDerivedAttributeItem('stepover', preset_scale=100),
+        PresetDerivedAttributeItem('extra_width', preset_scale=100),
+        PresetDerivedAttributeItem('trc_rate', preset_scale=100),
+        PresetDerivedAttributeItem('direction', def_value=inventory.MillDirection.CONVENTIONAL),
+        PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
+        PresetDerivedAttributeItem('axis_angle', def_value=0),
+    ]
+    attrs_all = attrs_common + attrs_endmill
     def __init__(self, operation, preset=None):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
-        self.rpm = overrides(operation.rpm, preset and preset.rpm)
-        self.vfeed = overrides(operation.vfeed, preset and preset.vfeed)
-        self.doc = overrides(operation.doc, preset and preset.maxdoc)
         if isinstance(operation.cutter, inventory.EndMillCutter):
-            self.hfeed = overrides(operation.hfeed, preset and preset.hfeed)
-            self.stepover = overrides(operation.stepover, preset and preset.stepover and 100.0 * preset.stepover)
-            self.extra_width = overrides(operation.extra_width, (100.0 * preset.extra_width if preset and preset.extra_width is not None else 0))
-            self.trc_rate = overrides(operation.trc_rate, (100.0 * preset.trc_rate if preset and preset.trc_rate is not None else 0))
-            self.direction = overrides(operation.direction, preset and preset.direction, inventory.MillDirection.CONVENTIONAL)
-            self.pocket_strategy = overrides(operation.pocket_strategy, preset and preset.pocket_strategy, inventory.PocketStrategy.CONTOUR_PARALLEL)
-            self.axis_angle = overrides(operation.axis_angle, preset.axis_angle if preset else None, 0)
-            self.dirty = not_none(operation.hfeed, operation.vfeed, operation.doc, operation.stepover, operation.extra_width, operation.trc_rate, operation.pocket_strategy, operation.axis_angle, operation.direction, operation.rpm)
-        elif isinstance(operation.cutter, inventory.DrillBitCutter):
-            self.dirty = operation.vfeed or operation.doc
+            attrs = self.attrs_common + self.attrs_endmill
+        else:
+            attrs = self.attrs_common
+        self.dirty = False
+        for attr in attrs:
+            dirty, value = attr.resolve(operation, preset)
+            setattr(self, attr.name, value)
+            self.dirty = self.dirty or dirty
     def validate(self, errors):
         if self.vfeed is None:
             errors.append("Plunge rate is not set")
@@ -929,16 +956,8 @@ class PresetDerivedAttributes(object):
         if isinstance(self.operation.cutter, inventory.DrillBitCutter):
             return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
     def resetPresetDerivedValues(self, target):
-        target.vfeed = None
-        target.hfeed = None
-        target.stepover = None
-        target.doc = None
-        target.direction = None
-        target.extra_width = None
-        target.trc_rate = None
-        target.pocket_strategy = None
-        target.axis_angle = None
-        target.rpm = None
+        for attr in self.attrs_all:
+            setattr(target, attr.name, None)
         target.emitDataChanged()
 
 class WorkerThread(threading.Thread):
