@@ -111,7 +111,7 @@ class PathArc(PathNode):
         self.p1 = p1
         self.p2 = p2
         self.c = c
-        self.steps = steps
+        self.steps = max(3, steps)
         self.sstart = sstart
         self.sspan = sspan
         cp = c.centre()
