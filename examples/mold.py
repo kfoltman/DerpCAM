@@ -23,7 +23,7 @@ hsize = size / 2
 smargin = 4
 dmargin = smargin / sqrt(2)
 
-outside_points = [(-smargin, -smargin), (size + smargin, -smargin), (size + smargin, size + smargin), (-smargin, size + smargin)]
+outside_points = [PathPoint(-smargin, -smargin), PathPoint(size + smargin, -smargin), PathPoint(size + smargin, size + smargin), PathPoint(-smargin, size + smargin)]
 
 pockets = [
     [(dmargin, 0), (size - dmargin, 0), (hsize, hsize - dmargin)],
@@ -31,6 +31,7 @@ pockets = [
     [(dmargin, size), (size - dmargin, size), (hsize, hsize + dmargin)],
     [(0, dmargin), (0, size - dmargin), (hsize - dmargin, hsize)],
 ]
+pockets = [[PathPoint(x, y) for x, y in path] for path in pockets]
 draft_angle_deg = 10
 layer_height = 0.2
 layer_height_outside = 0.4

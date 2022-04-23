@@ -496,15 +496,16 @@ class Cut2DWithTabs(BaseCut2D):
             gcode.add("(tab end)")
 
 class Cut2DWithDraft(BaseCut2D):
-    def __init__(self, machine_params, props, tool, shape, toolpaths_func, outside, draft_angle_deg, layer_thickness):
+    def __init__(self, machine_params, props, tool, shape, toolpaths_func, outline_func, outside, draft_angle_deg, layer_thickness):
         BaseCut2D.__init__(self, machine_params, props, tool, None)
         self.shape = shape
         self.outside = outside
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
         self.draft = tan(draft_angle_deg * pi / 180)
+        self.outline_func = outline_func
         max_height = self.props.start_depth - self.props.depth
-        toolpaths = toolpaths_func(self.shape, self.tool, self.props.margin + max_height * self.draft)
+        toolpaths = toolpaths_func(self.props.margin + max_height * self.draft)
         self.flattened = toolpaths.flattened() if isinstance(toolpaths, toolpath.Toolpaths) else [toolpaths]
         self.cutpaths = [CutPath2D(p) for p in self.flattened]
     def layers_at_depth(self, prev_depth, depth, cutpath):
@@ -519,7 +520,7 @@ class Cut2DWithDraft(BaseCut2D):
             height = min(self.layer_thickness * (nslices - i), max_height)
             depth = self.props.start_depth - height
             draftval = self.draft * height
-            contour = self.shape.contour(self.tool, self.outside, displace=self.props.margin+draftval)
+            contour = self.outline_func(self.props.margin + draftval)
             flattened = contour.flattened() if isinstance(contour, toolpath.Toolpaths) else [contour]
             paths = [CutPath2D(p) for p in flattened]
             assert len(paths) == 1
@@ -534,6 +535,11 @@ class Operation(object):
         self.shape = shape
         self.tool = tool
         self.props = props
+    def outline(self, margin):
+        contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, margin, self.tool.climb)
+        if contour_paths is None:
+            raise ValueError("Empty contour")
+        return toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
     def to_text(self):
         if self.props.start_depth != 0:
             return self.operation_name() + ", " + ("%0.2fmm deep at %0.2fmm" % (self.props.start_depth - self.props.depth, -self.props.start_depth))
@@ -591,11 +597,14 @@ class HSMPocket(UntabbedOperation):
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
+        UntabbedOperation.__init__(self, shape, tool, props)
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
+        self.outside = False
+    def build_paths(self, margin):
+        return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
     def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: cam.pocket.contour_parallel(shape, tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
+        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
@@ -771,12 +780,19 @@ class TrochoidalContour(TabbedOperation):
 
 class ContourWithDraft(TabbedOperation):
     def __init__(self, shape, outside, tool, props, draft_angle_deg, layer_thickness):
-        TabbedOperation.__init__(self, shape, tool, props, shape.contour(tool, outside=outside, displace=props.margin), [])
+        contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
+        if contour_paths is None:
+            raise ValueError("Empty contour")
+        contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths])
+        TabbedOperation.__init__(self, shape, tool, props, contours, [])
         self.outside = outside
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
+    def build_paths(self, margin):
+        contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, self.props.margin, self.tool.climb)
+        return toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
     def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: shape.contour(tool, self.outside, margin), self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
+        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class RetractSchedule(object):
     pass
