@@ -17,11 +17,13 @@ debug_sections = True
 old_trochoidal_code = False
 
 class OperationProps(object):
-    def __init__(self, depth, start_depth = 0, tab_depth = None, margin = 0):
+    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0):
         self.depth = depth
         self.start_depth = start_depth
         self.tab_depth = tab_depth
         self.margin = margin
+        self.zigzag = zigzag
+        self.angle = angle
     def clone(self, **attrs):
         res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin)
         for k, v in attrs.items():
@@ -552,8 +554,9 @@ class ToolChangeOperation(Operation):
         gcode.prompt_for_tool(self.cutter.name)
 
 class UntabbedOperation(Operation):
-    def __init__(self, shape, tool, props, paths):
+    def __init__(self, shape, tool, props):
         Operation.__init__(self, shape, tool, props)
+        paths = self.build_paths(0)
         if paths:
             paths = paths.optimize()
         self.paths = paths
@@ -569,24 +572,22 @@ class UntabbedOperation(Operation):
         return [(self.props.depth, i) for i in self.flattened]
 
 class Engrave(UntabbedOperation):
-    def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, shape.engrave(tool))
+    def build_paths(self, margin):
+        if margin != 0:
+            raise ValueError("Offset not supported for engraving")
+        return self.shape.engrave(self.tool)
 
 class FaceMill(UntabbedOperation):
-    def __init__(self, shape, angle, margin, zigzag, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.axis_parallel(shape, tool, angle, margin, zigzag))
+    def build_paths(self, margin):
+        return cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag)
 
 class Pocket(UntabbedOperation):
-    def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.contour_parallel(shape, tool, displace=props.margin))
+    def build_paths(self, margin):
+        return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
 
 class HSMPocket(UntabbedOperation):
-    def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, False, displace=props.margin))
-
-class HSMPocketZigZag(UntabbedOperation):
-    def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.pocket.hsm_peel(shape, tool, True, displace=props.margin))
+    def build_paths(self, margin):
+        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin)
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
@@ -597,12 +598,12 @@ class PocketWithDraft(UntabbedOperation):
         Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, lambda shape, tool, margin: cam.pocket.contour_parallel(shape, tool, margin), False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class OutsidePeel(UntabbedOperation):
-    def __init__(self, shape, tool, props):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.peel.outside_peel(shape, tool, displace=props.margin))
+    def build_paths(self, margin):
+        return cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin)
 
 class OutsidePeelHSM(UntabbedOperation):
-    def __init__(self, shape, tool, props, zigzag):
-        UntabbedOperation.__init__(self, shape, tool, props, cam.peel.outside_peel_hsm(shape, tool, zigzag=zigzag, displace=props.margin))
+    def build_paths(self, margin):
+        return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin)
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, paths, tabs):
@@ -797,13 +798,15 @@ class RetractBy(RetractSchedule):
 class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
-        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpath(Path([PathPoint(x, y)], True), tool))
         self.x = x
         self.y = y
+        UntabbedOperation.__init__(self, shape, tool, props)
         self.dwell_bottom = dwell_bottom
         self.dwell_retract = dwell_retract
         self.retract = retract or RetractToSemiSafe()
         self.slow_retract = slow_retract
+    def build_paths(self, margin):
+        return toolpath.Toolpath(Path([PathPoint(self.x, self.y)], True), self.tool)
     def to_gcode(self, gcode, machine_params):
         gcode.rapid(x=self.x, y=self.y)
         gcode.rapid(z=machine_params.semi_safe_z)
@@ -834,13 +837,13 @@ class HelicalDrill(UntabbedOperation):
         self.y = y
         self.d = d
         self.tool = tool
+        shape = process.Shape.circle(x, y, r=0.5*self.d)
+        UntabbedOperation.__init__(self, shape, tool, props)
+    def build_paths(self, margin):
         coords = []
         for cd in self.diameters():
-            coords += process.Shape.circle(x, y, r=0.5*(cd - tool.diameter)).boundary
-        tp = toolpath.Toolpath(Path(coords, False), tool)
-        shape = process.Shape.circle(x, y, r=0.5*self.d)
-        UntabbedOperation.__init__(self, shape, tool, props, toolpath.Toolpaths([tp]))
-
+            coords += process.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary
+        return toolpath.Toolpaths([toolpath.Toolpath(Path(coords, False), self.tool)])
     def diameters(self):
         if self.d < self.min_dia:
             return [self.d]
@@ -974,16 +977,14 @@ class Operations(object):
         self.add(Pocket(shape, self.tool, props or self.props))
     def pocket_hsm(self, shape, props=None):
         self.add(HSMPocket(shape, self.tool, props or self.props))
-    def pocket_hsm_zigzag(self, shape, props=None):
-        self.add(HSMPocketZigZag(shape, self.tool, props or self.props))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
         self.add(OutsidePeel(shape, self.tool, props or self.props))
-    def outside_peel_hsm(self, shape, zigzag, props=None):
-        self.add(OutsidePeelHSM(shape, self.tool, props or self.props, zigzag))
-    def face_mill(self, shape, angle, margin, zigzag, props=None):
-        self.add(FaceMill(shape, angle, margin, zigzag, self.tool, props or self.props))
+    def outside_peel_hsm(self, shape, props=None):
+        self.add(OutsidePeelHSM(shape, self.tool, props or self.props))
+    def face_mill(self, shape, props=None):
+        self.add(FaceMill(shape, self.tool, props or self.props))
     def peck_drill(self, x, y, props=None):
         self.add(PeckDrill(x, y, self.tool, props or self.props))
     def helical_drill(self, x, y, d, props=None):

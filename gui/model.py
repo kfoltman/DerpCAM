@@ -1241,29 +1241,22 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.POCKET:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.pocket(shape)
-            elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL:
-                return lambda: self.cam.face_mill(shape, pda.axis_angle * pi / 180, 0, False)
-            elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
-                return lambda: self.cam.face_mill(shape, pda.axis_angle * pi / 180, 0, True)
-            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
+            elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL or pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
+                return lambda: self.cam.face_mill(shape)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
                 return lambda: self.cam.pocket_hsm(shape)
-            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                return lambda: self.cam.pocket_hsm_zigzag(shape)
         elif self.operation == OperationType.OUTSIDE_PEEL:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.outside_peel(shape)
-            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL:
-                return lambda: self.cam.outside_peel_hsm(shape, zigzag=False)
-            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                return lambda: self.cam.outside_peel_hsm(shape, zigzag=True)
+            elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
+                return lambda: self.cam.outside_peel_hsm(shape)
         elif self.operation == OperationType.ENGRAVE:
             return lambda: self.cam.engrave(shape)
         elif self.operation == OperationType.INTERPOLATED_HOLE:
             return lambda: self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
-        else:
-            raise ValueError("Unsupported operation")
+        raise ValueError("Unsupported operation")
     def updateCAMWork(self):
         try:
             errors = []
@@ -1288,7 +1281,6 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
             tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
-            self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)            
 
             pda = PresetDerivedAttributes(self)
             pda.validate(errors)
@@ -1296,8 +1288,11 @@ class OperationTreeItem(CAMTreeItem):
                 raise ValueError("\n".join(errors))
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, climb=(pda.direction == inventory.MillDirection.CLIMB), stepover=pda.stepover / 100.0)
+                zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
+                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset, zigzag, pda.axis_angle * pi / 180)
             else:
                 tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
+                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
