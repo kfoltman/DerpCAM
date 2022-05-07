@@ -696,6 +696,11 @@ class ToolPresetTreeItem(CAMTreeItem):
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm]
+    def getDefaultPropertyValue(self, name):
+        attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
+        if attr.def_value:
+            return attr.def_value
+        return None
     def getPropertyValue(self, name):
         def toPercent(v):
             return v * 100.0 if v is not None else v
@@ -911,16 +916,18 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('eh_diameter', preset_scale=100, def_value=50),
     ]
     attrs_all = attrs_common + attrs_endmill
+    attrs = {
+        inventory.EndMillCutter : {i.name : i for i in attrs_all},
+        inventory.DrillBitCutter : {i.name : i for i in attrs_common},
+    }
+    @classmethod
     def __init__(self, operation, preset=None):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
-        if isinstance(operation.cutter, inventory.EndMillCutter):
-            attrs = self.attrs_common + self.attrs_endmill
-        else:
-            attrs = self.attrs_common
+        attrs = self.attrs[operation.cutter.__class__]
         self.dirty = False
-        for attr in attrs:
+        for attr in attrs.values():
             dirty, value = attr.resolve(operation, preset)
             setattr(self, attr.name, value)
             self.dirty = self.dirty or dirty
