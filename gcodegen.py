@@ -884,22 +884,23 @@ class HelicalDrill(UntabbedOperation):
     def to_gcode(self, gcode, machine_params):
         rate_factor = self.tool.full_plunge_feed_ratio
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
+        first = True
         for d in self.diameters():
-            self.to_gcode_ring(gcode, d, rate_factor, machine_params)
-            rate_factor = 1
+            self.to_gcode_ring(gcode, d, rate_factor if first else 1, machine_params, first)
+            first = False
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
         gcode.section_info(f"Diagonal exit towards centre/safe Z")
         gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
         gcode.section_info(f"End helical drill")
 
-    def to_gcode_ring(self, gcode, d, rate_factor, machine_params):
+    def to_gcode_ring(self, gcode, d, rate_factor, machine_params, first):
         r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
         gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
-        gcode.rapid(z=machine_params.safe_z)
+        curz = machine_params.semi_safe_z + self.props.start_depth
+        gcode.rapid(z=machine_params.safe_z if first else curz)
         gcode.rapid(x=self.x + r, y=self.y)
-        curz = machine_params.semi_safe_z
-        gcode.rapid(z=machine_params.semi_safe_z)
+        gcode.rapid(z=curz)
         gcode.feed(self.tool.hfeed * rate_factor)
         dist = 2 * pi * r
         doc = min(self.tool.maxdoc, dist / self.tool.slope())
@@ -917,20 +918,20 @@ class HelicalDrillFullDepth(HelicalDrill):
         # Do the first pass at a slower rate because of full radial engagement downwards
         rate_factor = self.tool.full_plunge_feed_ratio
         if self.d < self.min_dia:
-            self.to_gcode_ring(gcode, self.d, rate_factor, machine_params)
+            self.to_gcode_ring(gcode, self.d, rate_factor, machine_params, True)
         else:
             # Mill initial hole by helical descent into desired depth
             d = self.min_dia
-            self.to_gcode_ring(gcode, d, rate_factor, machine_params)
+            self.to_gcode_ring(gcode, d, rate_factor, machine_params, True)
             gcode.feed(self.tool.hfeed)
             # Bore it out at full depth to the final diameter
             while d < self.d:
                 r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
                 gcode.linear(x=self.x + r, y=self.y)
-                gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
+                gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
                 d += self.tool.diameter * self.tool.stepover_fulldepth
             r = max(0, (self.d - self.tool.diameter) / 2)
-            gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth)
+            gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
         gcode.rapid(z=machine_params.safe_z)
 
 def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
