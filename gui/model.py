@@ -1,4 +1,5 @@
 import os.path
+import math
 import sys
 import threading
 import time
@@ -651,6 +652,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_doc = FloatEditableProperty("Cut depth/pass", "depth", "%0.2f", unit="mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", "%0.0f", unit="rev/min", min=0.1, max=60000, allow_none=True)
+    prop_surf_speed = FloatEditableProperty("Surface speed", "surf_speed", "%0.0f", unit="m/min", allow_none=True)
+    prop_chipload = FloatEditableProperty("Chipload", "chipload", "%0.3f", unit="mm/tooth", allow_none=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", "%0.1f", unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", "%0.1f", unit="%", min=1, max=100, allow_none=True)
@@ -692,14 +695,15 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
     @classmethod
     def properties_drillbit(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm]
+        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed]
     def getDefaultPropertyValue(self, name):
-        attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
-        if attr.def_value:
-            return attr.def_value
+        if name != 'surf_speed' and name != 'chipload':
+            attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
+            if attr.def_value is not None:
+                return attr.def_value
         return None
     def getPropertyValue(self, name):
         def toPercent(v):
@@ -708,6 +712,10 @@ class ToolPresetTreeItem(CAMTreeItem):
             return self.inventory_preset.maxdoc
         elif name in self.props_percent:
             return toPercent(getattr(self.inventory_preset, name))
+        elif name == 'surf_speed':
+            return self.inventory_preset.toolbit.diameter * pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
+        elif name == 'chipload':
+            return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
         else:
             return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
@@ -727,6 +735,20 @@ class ToolPresetTreeItem(CAMTreeItem):
                 assert self.inventory_preset.base_object is None
         elif hasattr(self.inventory_preset, name):
             setattr(self.inventory_preset, name, value)
+        elif name == 'surf_speed':
+            if value:
+                rpm = value * 1000 / (self.inventory_preset.toolbit.diameter * pi)
+                if rpm >= self.prop_rpm.min and rpm <= self.prop_rpm.max:
+                    self.inventory_preset.rpm = rpm
+            else:
+                self.inventory_preset.rpm = None
+        elif name == 'chipload':
+            if value and self.inventory_preset.rpm:
+                hfeed = self.inventory_preset.rpm * value * (self.inventory_preset.toolbit.flutes or 2)
+                if hfeed >= self.prop_hfeed.min and hfeed <= self.prop_hfeed.max:
+                    self.inventory_preset.hfeed = hfeed
+            else:
+                self.inventory_preset.hfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
         if name in ['stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
