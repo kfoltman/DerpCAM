@@ -178,9 +178,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -193,6 +193,7 @@ class EndMillPreset(PresetBase):
         res.trc_rate = trc_rate
         res.pocket_strategy = pocket_strategy
         res.axis_angle = axis_angle
+        res.eh_diameter = eh_diameter
         return res
     def description_only(self):
         res = []
@@ -220,8 +221,8 @@ class EndMillCutter(CutterBase):
     def new(klass, id, name, material, diameter, length, flutes):
         res = klass.new_impl(id, name, material, diameter, length, int(flutes))
         return res
-    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle):
-        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle))
+    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter):
+        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter))
         return self
     def description_only(self):
         if self.length is not None:
@@ -297,13 +298,13 @@ class Inventory(object):
     def createStdCutters(self):
         self.toolbits = [
             EndMillCutter.new(1, "cheapo 2F 3.2/15", CutterMaterial.carbide, 3.2, 15, 2)
-                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0)
-                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0),
+                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5)
+                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
             EndMillCutter.new(2, "cheapo 2F 2.5/12", CutterMaterial.carbide, 2.5, 12, 2)
-                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0)
-                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0),
+                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5)
+                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
             EndMillCutter.new(3, "cheapo 1F 3.2/15", CutterMaterial.carbide, 3.2, 15, 1)
-                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0),
+                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
             EndMillCutter.new(4, "cheapo 1F 2/8", CutterMaterial.carbide, 2, 8, 1),
             DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25)
                 .addPreset(200, "Wood-untested", 10000, 100, 6),

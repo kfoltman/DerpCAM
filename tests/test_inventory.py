@@ -23,7 +23,7 @@ class InventoryTest(unittest.TestCase):
         self.checkPropagationForToolbit("cheapo 2F 3.2/15", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("cheapo 2F 3.2/15", "Wood-roughing",
             attr_values=[("rpm", 3), ("vfeed", 30), ("hfeed", 30), ("maxdoc", 1), ("stepover", 0.55), ("direction", MillDirection.CLIMB),
-                ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45)])
+                ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45), ('eh_diameter', 30)])
     def checkPropagationForToolbit(self, toolbit_name, attr_values):
         em = std_cutters.toolbitByName(toolbit_name)
         self.checkPropagation(em, attr_values)

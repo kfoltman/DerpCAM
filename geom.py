@@ -24,6 +24,8 @@ def PtsToIntsPos(points):
     return res
 
 def circle(x, y, r, n=None, sa=0, ea=2*pi):
+    if not r:
+        return [PathPoint(x, y)]
     if n is None:
         n = pi * r * GeometrySettings.RESOLUTION
     n *= abs((ea - sa) / (2 * pi))

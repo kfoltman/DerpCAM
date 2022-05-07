@@ -141,7 +141,8 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
         for start in candidates:
             # Size of the helical entry hole
-            d = tool.diameter * (1 + 2 * tool.stepover) + margin
+            mr = tool.min_helix_diameter
+            d = (tool.diameter + 2 * mr) + margin
             c = IntPath(circle(start.x, start.y, d / 2))
             # Check if it sticks outside of the final shape
             # XXXKF could be optimized by doing a simple bounds check first
@@ -150,7 +151,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             # Check for collision with islands
             if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
                 continue
-            toolpath.helical_entry = HelicalEntry(start, tool.diameter * tool.stepover / 2)
+            toolpath.helical_entry = HelicalEntry(start, mr)
             break
 
 def startWithClosestPoint(path, pt, dia):
@@ -265,7 +266,7 @@ class Shape(object):
         return Shape(self._translate_points(self.boundary, dx, dy), self.closed, [self._translate_points(island, dx, dy) for island in self.islands])
     @staticmethod
     def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
-        return Shape(circle(x, y, r if r else 0.5 * d, n, sa, ea), True, None)
+        return Shape(circle(x, y, r if r is not None else 0.5 * d, n, sa, ea), True, None)
     @staticmethod
     def rectangle(sx, sy, ex, ey):
         polygon = [PathPoint(sx, sy), PathPoint(ex, sy), PathPoint(ex, ey), PathPoint(sx, ey)]

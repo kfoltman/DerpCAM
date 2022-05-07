@@ -2,7 +2,7 @@ from math import *
 from geom import *
 
 class Tool(object):
-    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False):
+    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None):
         self.diameter = diameter
         self.flutes = None
         self.hfeed = hfeed
@@ -15,8 +15,11 @@ class Tool(object):
         self.full_plunge_feed_ratio = 0.5
         # Minimum diameter of the helix during helical ramps. If 0, this will
         # essentially permit plunge cuts, and if it's too small, then chip
-        # evacuation may be a problem. Picking half the diameter just because.
-        self.min_helix_diameter = 0.5 * diameter
+        # evacuation may be a problem.
+        if min_helix_ratio is None:
+            min_helix_ratio = 0.5
+        self.min_helix_diameter = min_helix_ratio * diameter
+        self.helix_entry_diameter = self.min_helix_diameter
         self.material = None
         self.coating = None
         self.rpm = None
