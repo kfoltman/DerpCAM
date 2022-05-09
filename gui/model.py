@@ -860,9 +860,25 @@ class ToolPresetAdapter(object):
 class CycleTreeItem(CAMTreeItem):
     def __init__(self, document, cutter):
         CAMTreeItem.__init__(self, document, "Tool cycle")
+        self.setCheckable(True)
+        self.setAutoTristate(True)
         self.cutter = cutter
     def toString(self):
         return "Tool cycle"
+    def operCheckState(self):
+        allNo = allYes = True
+        for i in self.items():
+            if i.checkState() == Qt.CheckState.Checked:
+                allNo=False
+            else:
+                allYes=False
+        if allNo:
+            return Qt.CheckState.Unchecked
+        if allYes:
+            return Qt.CheckState.Checked
+        return Qt.CheckState.PartiallyChecked
+    def updateCheckState(self):
+        self.setCheckState(self.operCheckState())
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(f"Use tool: {self.cutter.name}")
@@ -1119,7 +1135,7 @@ class OperationTreeItem(CAMTreeItem):
         return getattr(pda, name, None)
     def store(self):
         dump = CAMTreeItem.store(self)
-        dump['active'] = self.checkState() != 0
+        dump['active'] = self.checkState() != Qt.CheckState.Unchecked
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
@@ -1130,7 +1146,7 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set(PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
-        self.setCheckState(2 if dump.get('active', True) else 0)
+        self.setCheckState(Qt.CheckState.Checked if dump.get('active', True) else Qt.CheckState.Unchecked)
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
@@ -1240,7 +1256,7 @@ class OperationTreeItem(CAMTreeItem):
             if not self.cutter:
                 self.error = "Cutter not set"
                 return
-            if self.checkState() == 0:
+            if self.checkState() == Qt.CheckState.Unchecked:
                 # Operation not enabled
                 return
             self.updateCAMWork()
@@ -1596,6 +1612,7 @@ class DocumentModel(QObject):
     drawingImported = pyqtSignal([str])
     def __init__(self):
         QObject.__init__(self)
+        self.blah = False
         self.undoStack = QUndoStack(self)
         self.material = WorkpieceTreeItem(self)
         self.makeMachineParams()
@@ -1617,7 +1634,9 @@ class DocumentModel(QObject):
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
-        self.operModel.itemChanged.connect(self.operItemChanged)
+        self.operModel.dataChanged.connect(self.operDataChanged)
+        self.operModel.rowsInserted.connect(self.operRowsInserted)
+        self.operModel.rowsRemoved.connect(self.operRowsRemoved)
 
     def reinitDocument(self):
         self.undoStack.clear()
@@ -1775,10 +1794,31 @@ class DocumentModel(QObject):
                 operation : OperationTreeItem = cycle.child(j)
                 res.append(func(operation))
         return res
-    def operItemChanged(self, item):
-        if isinstance(item, OperationTreeItem):
-            if (item.checkState() == 0 and item.cam is not None) or (item.checkState() != 0 and item.cam is None):
-                item.startUpdateCAM()
+    def operDataChanged(self, topLeft, bottomRight, roles):
+        if not roles or (10 in roles):
+            changedOpers = False
+            for row in range(topLeft.row(), bottomRight.row() + 1):
+                item = topLeft.model().itemFromIndex(topLeft.siblingAtRow(row))
+                if isinstance(item, OperationTreeItem):
+                    if (item.checkState() == Qt.CheckState.Unchecked and item.cam is not None) or (item.checkState() != Qt.CheckState.Unchecked and item.cam is None):
+                        changedOpers = True
+                        item.startUpdateCAM()
+                if isinstance(item, CycleTreeItem):
+                    reqState = item.checkState()
+                    itemState = item.operCheckState()
+                    if reqState != itemState:
+                        for i in item.items():
+                            i.setCheckState(reqState)
+            if changedOpers:
+                item.parent().setCheckState(item.parent().operCheckState())
+    def operRowsInserted(self, parent, first, last):
+        item = self.operModel.itemFromIndex(parent)
+        if isinstance(item, CycleTreeItem):
+            item.setCheckState(item.operCheckState())
+    def operRowsRemoved(self, parent, first, last):
+        item = self.operModel.itemFromIndex(parent)
+        if isinstance(item, CycleTreeItem):
+            item.setCheckState(item.operCheckState())
     def startUpdateCAM(self, preset=None):
         self.makeMachineParams()
         if preset is None:
