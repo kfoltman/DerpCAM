@@ -930,7 +930,7 @@ class PresetDerivedAttributes(object):
     attrs_endmill = [
         PresetDerivedAttributeItem('hfeed'),
         PresetDerivedAttributeItem('stepover', preset_scale=100),
-        PresetDerivedAttributeItem('extra_width', preset_scale=100),
+        PresetDerivedAttributeItem('extra_width', preset_scale=100, def_value=0),
         PresetDerivedAttributeItem('trc_rate', preset_scale=100),
         PresetDerivedAttributeItem('direction', def_value=inventory.MillDirection.CONVENTIONAL),
         PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
