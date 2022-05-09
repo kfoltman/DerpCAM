@@ -227,9 +227,7 @@ class CAMMainWindow(QMainWindow):
         if not selection:
             QMessageBox.critical(self, None, "No objects selected")
             return
-        if operType == OperationType.DRILLED_HOLE and not self.needDrillBit():
-            return
-        elif operType != OperationType.DRILLED_HOLE and not self.needEndMill():
+        if not self.needCutterType(model.cutterTypesForOperationType(operType)):
             return
         shapeIds, selectionsUsed = self.document.drawing.parseSelection(selection, operType)
         if not shapeIds:
@@ -251,18 +249,11 @@ class CAMMainWindow(QMainWindow):
         self.updateOperations()
         self.updateShapeSelection()
         self.propsDW.updateProperties()
-    def needEndMill(self):
-        return self.needCutterType(inventory.EndMillCutter, "an end mill")
-    def needDrillBit(self):
-        return self.needCutterType(inventory.DrillBitCutter, "a drill bit")
-    def needCutterType(self, cutter_type, name):
+    def needCutterType(self, cutter_type):
         if not self.millSelectTool(cutter_type=cutter_type):
             return False
         if not self.document.current_cutter_cycle:
             QMessageBox.critical(self, None, "No tool selected")
-            return False
-        if not isinstance(self.document.current_cutter_cycle.cutter, cutter_type):
-            QMessageBox.critical(self, None, f"Current tool is not {name}")
             return False
         return True
     def millOutsideContour(self):

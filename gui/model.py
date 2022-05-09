@@ -823,7 +823,7 @@ class CutterAdapter(object):
     def getLookupData(self, items):
         assert items
         if items[0].operation == OperationType.DRILLED_HOLE:
-            return items[0].document.getToolbitList(inventory.DrillBitCutter)
+            return items[0].document.getToolbitList((inventory.DrillBitCutter, inventory.EndMillCutter))
         else:
             return items[0].document.getToolbitList(inventory.EndMillCutter)
     def lookupById(self, id):
@@ -960,7 +960,8 @@ class PresetDerivedAttributes(object):
             errors.append("Maximum depth of cut per pass is not set")
         if isinstance(self.operation.cutter, inventory.EndMillCutter):
             if self.hfeed is None:
-                errors.append("Feed rate is not set")
+                if self.operation.operation != OperationType.DRILLED_HOLE:
+                    errors.append("Feed rate is not set")
             elif self.hfeed < 0.1 or self.hfeed > 10000:
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
@@ -1003,6 +1004,9 @@ class WorkerThread(threading.Thread):
             self.exception = e
             import traceback
             traceback.print_exc()
+
+def cutterTypesForOperationType(operationType):
+    return (inventory.DrillBitCutter, inventory.EndMillCutter) if operationType == OperationType.DRILLED_HOLE else inventory.EndMillCutter
 
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
@@ -1099,7 +1103,7 @@ class OperationTreeItem(CAMTreeItem):
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
-                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE]
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
                     return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE]
@@ -1160,7 +1164,7 @@ class OperationTreeItem(CAMTreeItem):
                 return
             if isinstance(value, LoadPresetOption):
                 from . import cutter_mgr
-                cutter_type = inventory.DrillBitCutter if self.operation == OperationType.DRILLED_HOLE else inventory.EndMillCutter
+                cutter_type = cutterTypesForOperationType(self.operation)
                 if cutter_mgr.selectCutter(None, cutter_mgr.SelectCutterDialog, self.document, cutter_type):
                     if self.cutter is not self.document.current_cutter_cycle.cutter:
                         self.document.opMoveItem(self.parent(), self, self.document.current_cutter_cycle, 0)
@@ -1312,6 +1316,8 @@ class OperationTreeItem(CAMTreeItem):
             # Only checking for end mills because most drill bits have a V tip and may require going slightly past
             if isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
+            if self.operation == OperationType.DRILLED_HOLE and self.cutter.diameter > 2 * self.orig_shape.r + 0.01:
+                self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
             tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
 
             pda = PresetDerivedAttributes(self)

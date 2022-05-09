@@ -457,4 +457,13 @@ class PDATest(unittest.TestCase):
         finally:
             setattr(op, op_name, None)
 
+class OpTypeTest(unittest.TestCase):
+    def testCutterSelection(self):
+        for id, name in gui.model.OperationType.descriptions:
+            cutter_types = gui.model.cutterTypesForOperationType(id)
+            if name == 'Drill':
+                assert cutter_types == (gui.inventory.DrillBitCutter, gui.inventory.EndMillCutter)
+            else:
+                assert cutter_types == gui.inventory.EndMillCutter
+
 unittest.main()
