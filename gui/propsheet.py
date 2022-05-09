@@ -2,6 +2,12 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
+def useFormat(format, value):
+    if isinstance(format, str):
+        return format % (value,)
+    else:
+        return format(value)
+
 class EditableProperty(object):
     def __init__(self, name, attribute, format = "%s"):
         self.name = name
@@ -24,7 +30,7 @@ class EditableProperty(object):
     def toTextColor(self, value):
         return None
     def toEditString(self, value):
-        return self.format % (value,)
+        return useFormat(self.format, value)
     def toDisplayString(self, value):
         return self.toEditString(value)
     def validate(self, value):
@@ -206,13 +212,13 @@ class FloatEditableProperty(EditableProperty):
     def toEditString(self, value):
         if value is None:
             return ""
-        return self.format % (value,)
+        return EditableProperty.toEditString(self, value)
     def toTextColor(self, value):
         return "gray" if value is None else None
     def toDisplayString(self, value):
         if value is None:
             return self.none_value
-        return (self.format % (value,)) + f" {self.unit}"
+        return f"{useFormat(self.format, value)} {self.unit}"
     def validate(self, value):
         if value == "" and self.allow_none:
             return None
@@ -233,11 +239,11 @@ class IntEditableProperty(EditableProperty):
     def toEditString(self, value):
         if value is None:
             return ""
-        return self.format % (value,)
+        return EditableProperty.toEditString(self, value)
     def toDisplayString(self, value):
         if value is None:
             return self.none_value
-        return self.format % (value,)
+        return useFormat(self.format, value)
     def validate(self, value):
         if value == "" and self.allow_none:
             return None
@@ -473,7 +479,7 @@ class BaseCreateEditDialog(QDialog):
                 if p.allow_none:
                     editor.setPlaceholderText(p.none_value)
                 def fmt(v):
-                    return "" if v is None else p.format % (v, )
+                    return "" if v is None else useFormat(p.format, v)
                 if p.min is not None or p.max is not None:
                     if p.unit != "":
                         self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)} {p.unit})", editor)
@@ -499,7 +505,7 @@ class BaseCreateEditDialog(QDialog):
                 ctl.setCurrentIndex(ctl.findData(self.values.get(p.attribute)))
             elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
                 if self.values.get(p.attribute, None) is not None:
-                    ctl.setText(p.format % (self.values.get(p.attribute, None), ))
+                    ctl.setText(useFormat(p.format, self.values.get(p.attribute, None)))
                 else:
                     ctl.setText("")
     def propertyEditError(self, p, msg):

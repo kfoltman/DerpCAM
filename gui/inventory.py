@@ -3,6 +3,53 @@ import os
 import json
 import sys
 
+class Format(object):
+    @staticmethod
+    def dp(value, dp):
+        s = f"%0.{dp}f" % (value,)
+        if '.' in s:
+            s = s.rstrip("0").rstrip(".")
+        return s
+    @staticmethod
+    def cutter_dia(value):
+        return Format.dp(value, 3)
+    @staticmethod
+    def cutter_length(value):
+        return Format.dp(value, 2)
+    @staticmethod
+    def depth_of_cut(value):
+        return Format.dp(value, 3)
+    @staticmethod
+    def feed(value):
+        return Format.dp(value, 1)
+    @staticmethod
+    def rpm(value):
+        return Format.dp(value, 1)
+    @staticmethod
+    def surf_speed(value):
+        return Format.dp(value, 2)
+    @staticmethod
+    def chipload(value):
+        return Format.dp(value, 4)
+    @staticmethod
+    def coord(value):
+        return Format.dp(value, 3)
+    @staticmethod
+    def point(value):
+        return f"({Format.coord(value.x)}, {Format.coord(value.y)})"
+    @staticmethod
+    def point_tuple(value):
+        return f"({Format.coord(value[0])}, {Format.coord(value[1])})"
+    @staticmethod
+    def angle(value):
+        return Format.dp(value, 2)
+    @staticmethod
+    def percent(value):
+        return Format.dp(value, 2)
+    @staticmethod
+    def as_percent(value):
+        return Format.dp(value, 2) + "%"
+
 class IdSequence(object):
     last_id = 999
     objects = {}
@@ -200,15 +247,15 @@ class EndMillPreset(PresetBase):
         if self.trc_rate:
             res.append(f"\u21f4")
         if self.hfeed:
-            res.append(f"f\u2194{self.hfeed:0.0f}")
+            res.append(f"f\u2194{Format.feed(self.hfeed)}")
         if self.vfeed:
-            res.append(f"f\u2193{self.vfeed:0.0f}")
+            res.append(f"f\u2193{Format.feed(self.vfeed)}")
         if self.maxdoc:
-            res.append(f"\u21a7{self.maxdoc:0.2f}")
+            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc)}")
         if self.stepover:
-            res.append(f"\u27f7{100 * self.stepover:0.0f}%")
+            res.append(f"\u27f7{Format.as_percent(self.stepover)}")
         if self.rpm:
-            res.append(f"\u27f3{self.rpm:0.0f}")
+            res.append(f"\u27f3{Format.rpm(self.rpm)}")
         if self.direction is not None:
             res.append(MillDirection.toString(self.direction))
         return " ".join(res)
@@ -226,12 +273,9 @@ class EndMillCutter(CutterBase):
         return self
     def description_only(self):
         if self.length is not None:
-            if (int(self.length * 10) % 10) != 0:
-                return f"{self.flutes}F \u2300{self.diameter:0.1f} L{self.length:0.1f} {self.material.name} end mill"
-            else:
-                return f"{self.flutes}F \u2300{self.diameter:0.1f} L{self.length:0.0f} {self.material.name} end mill"
+            return f"{self.flutes}F \u2300{Format.cutter_dia(self.diameter)} L{Format.cutter_length(self.length)} {self.material.name} end mill"
         else:
-            return f"{self.flutes}F \u2300{self.diameter:0.1f} {self.material.name} end mill"
+            return f"{self.flutes}F \u2300{Format.cutter_length(self.diameter)} {self.material.name} end mill"
         
 class DrillBitPreset(PresetBase):
     properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
@@ -246,11 +290,11 @@ class DrillBitPreset(PresetBase):
     def description_only(self):
         res = []
         if self.vfeed:
-            res.append(f"f\u2193{self.vfeed:0.0f}")
+            res.append(f"f\u2193{Format.feed(self.vfeed)}")
         if self.maxdoc:
-            res.append(f"\u21a7{self.maxdoc:0.2f}")
+            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc)}")
         if self.rpm:
-            res.append(f"\u27f3{self.rpm:0.0f}")
+            res.append(f"\u27f3{Format.rpm(self.rpm)}")
         return " ".join(res)
 
 class DrillBitCutter(CutterBase):
@@ -263,10 +307,7 @@ class DrillBitCutter(CutterBase):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self
     def description_only(self):
-        if (int(self.diameter * 10) % 10) != 0:
-            return f"{self.diameter:0.1f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
-        else:
-            return f"{self.diameter:0.0f}mm {self.material.name} drill bit" + (f", L={self.length:0.0f}mm" if self.length is not None else "")
+        return f"{Format.cutter_dia(self.diameter)}mm {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}mm" if self.length is not None else "")
     
 class Inventory(object):
     def __init__(self):
