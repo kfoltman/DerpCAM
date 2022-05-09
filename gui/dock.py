@@ -89,61 +89,67 @@ class CAMObjectTreeDockWidget(QDockWidget):
         print (selection)
     def customContextMenu(self, point):
         mode, items = self.activeSelection()
-        if len(items) != 1:
-            return
-        item = items[0]
         if mode == 's':
+            if len(items) != 1:
+                return
             point = self.shapeTree.mapToGlobal(point)
         else:
             point = self.operTree.mapToGlobal(point)
         menu = QMenu(self)
-        if isinstance(item, model.OperationTreeItem):
-            if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
-                menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
-            elif item.operation == OperationType.POCKET:
-                menu.addAction("Islands").triggered.connect(self.operationIslands)
-            elif item.operation == OperationType.OUTSIDE_PEEL:
-                menu.addAction("Contours").triggered.connect(self.operationIslands)
-            else:
-                return
-        elif isinstance(item, model.CycleTreeItem):
-            menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
-        elif isinstance(item, model.ToolPresetTreeItem):
-            action = menu.addAction("Set as default")
+        if mode == 'o':
+            action = menu.addAction("Enabled")
             action.setCheckable(True)
-            action.setChecked(item.isDefault())
-            action.setEnabled(not item.isDefault())
-            action.triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
-            action = menu.addAction("Clone...")
-            action.triggered.connect(lambda: self.toolPresetClone(item))
-            action = menu.addAction("Save to inventory")
-            action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
-            action.setEnabled(item.isNewObject() and not item.parent().isNewObject())
-            action = menu.addAction("Update in inventory")
-            action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
-            action.setEnabled(item.isModifiedStock() and not item.parent().isNewObject())
-            action = menu.addAction("Reload from inventory")
-            action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
-            action.setEnabled(item.isModifiedStock())
-            menu.addSeparator()
-            action = menu.addAction("Delete from project")
-            action.triggered.connect(lambda: self.toolPresetDelete(item))
-        elif isinstance(item, model.ToolTreeItem):
-            action = menu.addAction("New preset...")
-            action.triggered.connect(lambda: self.toolNewPreset(item))
-            menu.addSeparator()
-            action = menu.addAction("Save to inventory")
-            action.triggered.connect(lambda: self.toolSaveToInventory(item))
-            action.setEnabled(item.isNewObject())
-            action = menu.addAction("Update in inventory")
-            action.triggered.connect(lambda: self.toolUpdateInInventory(item))
-            action.setEnabled(item.isModifiedStock())
-            action = menu.addAction("Reload from inventory")
-            action.triggered.connect(lambda: self.toolRevertFromInventory(item))
-            action.setEnabled(item.isModifiedStock())
-            menu.addSeparator()
-            action = menu.addAction("Delete from project")
-            action.triggered.connect(lambda: self.toolDelete(item))
+            action.setChecked(model.CycleTreeItem.listCheckState(items) != Qt.CheckState.Unchecked)
+            action.changed.connect(self.operationEnable)
+        if len(items) == 1:
+            item = items[0]
+            if isinstance(item, model.OperationTreeItem):
+                if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
+                    menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
+                elif item.operation == OperationType.POCKET:
+                    menu.addAction("Islands").triggered.connect(self.operationIslands)
+                elif item.operation == OperationType.OUTSIDE_PEEL:
+                    menu.addAction("Contours").triggered.connect(self.operationIslands)
+            elif isinstance(item, model.CycleTreeItem):
+                menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
+            elif isinstance(item, model.ToolPresetTreeItem):
+                action = menu.addAction("Set as default")
+                action.setCheckable(True)
+                action.setChecked(item.isDefault())
+                action.setEnabled(not item.isDefault())
+                action.triggered.connect(lambda: self.toolPresetSetAsCurrent(item))
+                action = menu.addAction("Clone...")
+                action.triggered.connect(lambda: self.toolPresetClone(item))
+                action = menu.addAction("Save to inventory")
+                action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
+                action.setEnabled(item.isNewObject() and not item.parent().isNewObject())
+                action = menu.addAction("Update in inventory")
+                action.triggered.connect(lambda: self.toolPresetSaveToInventory(item))
+                action.setEnabled(item.isModifiedStock() and not item.parent().isNewObject())
+                action = menu.addAction("Reload from inventory")
+                action.triggered.connect(lambda: self.toolPresetRevertFromInventory(item))
+                action.setEnabled(item.isModifiedStock())
+                menu.addSeparator()
+                action = menu.addAction("Delete from project")
+                action.triggered.connect(lambda: self.toolPresetDelete(item))
+            elif isinstance(item, model.ToolTreeItem):
+                action = menu.addAction("New preset...")
+                action.triggered.connect(lambda: self.toolNewPreset(item))
+                menu.addSeparator()
+                action = menu.addAction("Save to inventory")
+                action.triggered.connect(lambda: self.toolSaveToInventory(item))
+                action.setEnabled(item.isNewObject())
+                action = menu.addAction("Update in inventory")
+                action.triggered.connect(lambda: self.toolUpdateInInventory(item))
+                action.setEnabled(item.isModifiedStock())
+                action = menu.addAction("Reload from inventory")
+                action.triggered.connect(lambda: self.toolRevertFromInventory(item))
+                action.setEnabled(item.isModifiedStock())
+                menu.addSeparator()
+                action = menu.addAction("Delete from project")
+                action.triggered.connect(lambda: self.toolDelete(item))
+        if menu.isEmpty():
+            return
         menu.exec_(point)
     def toolSaveToInventory(self, item):
         if not item.inventory_tool.base_object:
@@ -249,6 +255,15 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return self.operTree
         assert False
+    def operationEnable(self):
+        mode, items = self.activeSelection()
+        if mode != 'o' or not items:
+            return
+        oldState = model.CycleTreeItem.listCheckState(items)
+        newState = Qt.CheckState.Checked if oldState != Qt.CheckState.Checked else Qt.CheckState.Unchecked
+        for i in items:
+            i.setCheckState(newState)
+
     def operationHoldingTabs(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
     def operationIslands(self):

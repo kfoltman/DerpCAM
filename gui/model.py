@@ -865,18 +865,21 @@ class CycleTreeItem(CAMTreeItem):
         self.cutter = cutter
     def toString(self):
         return "Tool cycle"
-    def operCheckState(self):
+    @staticmethod
+    def listCheckState(items):
         allNo = allYes = True
-        for i in self.items():
-            if i.checkState() == Qt.CheckState.Checked:
-                allNo=False
-            else:
-                allYes=False
+        for i in items:
+            if i.checkState() != Qt.CheckState.Unchecked:
+                allNo = False
+            if i.checkState() != Qt.CheckState.Checked:
+                allYes = False
         if allNo:
             return Qt.CheckState.Unchecked
         if allYes:
             return Qt.CheckState.Checked
         return Qt.CheckState.PartiallyChecked
+    def operCheckState(self):
+        return CycleTreeItem.listCheckState(self.items())
     def updateCheckState(self):
         self.setCheckState(self.operCheckState())
     def data(self, role):
