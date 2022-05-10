@@ -129,6 +129,10 @@ class PathArc(PathNode):
             print ("Warning: start angle doesn't match")
         if dist(c.at_angle(sstart + sspan), p2) > 0.01:
             print ("Warning: start angle doesn't match")
+    @staticmethod
+    def xyra(x, y, r, sstart, sspan, steps = 100):
+        c = CandidateCircle(x, y, r)
+        return PathArc(c.at_angle(sstart), c.at_angle(sstart + sspan), c, steps, sstart, sspan)
     def __repr__(self):
         return f"PathArc({self.p1}, {self.p2}, {self.c!r}, {self.steps}, {self.sstart}, {self.sspan})"
     def is_arc(self):
@@ -171,6 +175,35 @@ class PathArc(PathNode):
         arc_start = self.c.at_angle(start)
         arc_end = self.c.at_angle(start + span)
         return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span)]
+    def quadrant_seps(self):
+        # Return extra points (other than start and end) needed to calculate the bounds, i.e. the points separating the quadrants of a circle
+        # a1, a2 = angles 0..2*pi, choosen between start and end so that a1 <= a2
+        if self.sspan < 0:
+            a1 = (self.sstart + self.sspan) % (2 * pi)
+            a2 = self.sstart % (2 * pi)
+        else:
+            a1 = self.sstart % (2 * pi)
+            a2 = (self.sstart + self.sspan) % (2 * pi)
+        # Convert to quadrant numbers
+        q1 = floor(a1 / (pi / 2))
+        q2 = floor(a2 / (pi / 2))
+        # If a straight wrap around (end < start), or if they're both in the same
+        # quadrant but the arc is more than half circle (which is also a wrap
+        # around) then compensate by adding 4 (quadrants per circle)
+        if q2 < q1 or (q2 == q1 and abs(self.sspan) >= pi):
+            q2 += 4
+        return [self.c.at_angle((i + 1) * pi / 2) for i in range(q1, q2)]
+
+class MinMax(object):
+    def __init__(self):
+        self.min = None
+        self.max = None
+    def feed(self, value):
+        if self.min is None:
+            self.min = self.max = value
+        else:
+            self.min = min(self.min, value)
+            self.max = max(self.max, value)
 
 class Path(object):
     def __init__(self, nodes, closed):
@@ -347,6 +380,22 @@ class Path(object):
         return Path(CircleFitter.simplify(self.nodes), self.closed)
     def optimize_lines(self):
         return Path(LineOptimizer.simplify(self.nodes), self.closed)
+    def bounds(self):
+        xcoords = MinMax()
+        ycoords = MinMax()
+        for p in self.nodes:
+            if p.is_point():
+                xcoords.feed(p.x)
+                ycoords.feed(p.y)
+            elif p.is_arc():
+                xcoords.feed(p.p1.x)
+                xcoords.feed(p.p2.x)
+                ycoords.feed(p.p1.y)
+                ycoords.feed(p.p2.y)
+                for q in p.quadrant_seps():
+                    xcoords.feed(q.x)
+                    ycoords.feed(q.y)
+        return (xcoords.min, ycoords.min, xcoords.max, ycoords.max)
 
 class PathSegmentIterator(object):
     def __init__(self, path):
@@ -463,6 +512,7 @@ class CandidateCircle(object):
     def centre(self):
         return PathPoint(self.cx, self.cy)
     def at_angle(self, angle):
+        angle = angle % (2 * pi)
         return PathPoint(self.cx + self.r * cos(angle), self.cy + self.r * sin(angle))
     def translated(self, dx, dy):
         return CandidateCircle(self.cx + dx, self.cy + dy, self.r)

@@ -90,6 +90,30 @@ class GeomTest(unittest.TestCase):
         self.assertLess(abs(r4.sstart - 5 * pi / 8), 0.001)
         self.assertLess(abs(r4.sspan - pi / 4), 0.001)
 
+        for i in range(4):
+            base = pi / 4 + i * pi / 2
+            r = PathArc.xyra(0, 0, 10, base, pi / 6)
+            self.assertEqual(r.quadrant_seps(), [])
+            r = PathArc.xyra(0, 0, 10, base, pi / 2)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i + 1) * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, pi)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i + 1) * pi / 2), r.c.at_angle((i + 2) * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, 3 * pi / 2)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i + 1) * pi / 2), r.c.at_angle((i + 2) * pi / 2), r.c.at_angle((i + 3) * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, 2 * pi - pi / 8)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i + 1) * pi / 2), r.c.at_angle((i + 2) * pi / 2), r.c.at_angle((i + 3) * pi / 2), r.c.at_angle((i + 4) * pi / 2)])
+            #
+            r = PathArc.xyra(0, 0, 10, base, -pi / 6)
+            self.assertEqual(r.quadrant_seps(), [])
+            r = PathArc.xyra(0, 0, 10, base, -pi / 2)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle(i * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, -pi)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i - 1) * pi / 2), r.c.at_angle(i * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, -3 * pi / 2)
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i - 2) * pi / 2), r.c.at_angle((i - 1) * pi / 2), r.c.at_angle(i * pi / 2)])
+            r = PathArc.xyra(0, 0, 10, base, -(2 * pi - pi / 8))
+            self.assertEqual(r.quadrant_seps(), [r.c.at_angle((i - 3) * pi / 2), r.c.at_angle((i - 2) * pi / 2), r.c.at_angle((i - 1) * pi / 2), r.c.at_angle(i * pi / 2)])
+
     def testPath(self):
         # point_at
         p = Path([ PathPoint(0, 0), PathPoint(100, 0), PathPoint(100, 100), PathPoint(0, 100) ], True)
@@ -134,6 +158,34 @@ class GeomTest(unittest.TestCase):
         self.assertNear(Path(arc.cut(0, 0.5), False).length(), pi * 25)
         self.assertNear(Path(arc.cut(0.5, 1), False).length(), pi * 25)
         self.assertNear(Path(arc.cut(0.25, 0.75), False).length(), pi * 25)
+
+        arc = PathArc.xyra(100, 20, 20, pi / 4, pi / 2)
+        b = Path([arc.p1, arc], False).bounds()
+        self.assertNear(b[0], 100 + 20 * cos(pi / 4 + pi / 2))
+        self.assertNear(b[1], 20 + 20 * sin(pi / 4))
+        self.assertNear(b[2], 100 + 20 * cos(pi / 4))
+        self.assertNear(b[3], 40)
+
+        arc = PathArc.xyra(100, 20, 20, pi / 4 + pi, pi / 2)
+        b = Path([arc.p1, arc], False).bounds()
+        self.assertNear(b[0], 100 + 20 * cos(pi / 4 + pi / 2))
+        self.assertNear(b[1], 0)
+        self.assertNear(b[2], 100 + 20 * cos(pi / 4))
+        self.assertNear(b[3], 20 - 20 * sin(pi / 4))
+
+        arc = PathArc.xyra(100, 20, 20, pi / 4 + pi / 2, pi / 2)
+        b = Path([arc.p1, arc], False).bounds()
+        self.assertNear(b[0], 80)
+        self.assertNear(b[1], 20 - 20 * cos(pi / 4))
+        self.assertNear(b[2], 100 - 20 * sin(pi / 4))
+        self.assertNear(b[3], 20 + 20 * cos(pi / 4))
+
+        arc = PathArc.xyra(100, 20, 20, -pi / 4, pi / 2)
+        b = Path([arc.p1, arc], False).bounds()
+        self.assertNear(b[0], 100 + 20 * cos(pi / 4))
+        self.assertNear(b[1], 20 - 20 * sin(pi / 4))
+        self.assertNear(b[2], 120)
+        self.assertNear(b[3], 20 + 20 * sin(pi / 4))
 
     def testClosestPoint(self):
         # closest_point

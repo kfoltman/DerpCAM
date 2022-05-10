@@ -226,9 +226,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
         if points:
-            xcoords = [p.x for p in self.points if p.is_point()]
-            ycoords = [p.y for p in self.points if p.is_point()]
-            self.bounds = (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
+            self.bounds = geom.Path(self.points, closed).bounds()
         else:
             self.bounds = None
         self.closed = closed
