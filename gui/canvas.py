@@ -36,9 +36,13 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
     def __init__(self, owner):
         view.OperationsRenderer.__init__(self, owner.cam)
         self.owner = owner
+        self.isFlashHighlighted = False
     def isHighlighted(self, operation):
+        if self.isFlashHighlighted:
+            return (64, 160, 128) if not self.owner.isSelected else (0, 192, 255)
         return self.owner.isSelected
     def renderToolpaths(self, owner, alpha_scale=1.0):
+        self.isFlashHighlighted = owner.flash_highlight is self.owner
         view.OperationsRenderer.renderToolpaths(self, owner, alpha_scale)
         if owner.mode == DrawingUIMode.MODE_NORMAL and GeometrySettings.draw_arrows:
             self.renderArrows(owner)
@@ -116,6 +120,7 @@ class DrawingViewer(view.PathViewer):
         self.start_point = None
         self.mode = DrawingUIMode.MODE_NORMAL
         self.mode_item = None
+        self.flash_highlight = None
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
@@ -126,6 +131,13 @@ class DrawingViewer(view.PathViewer):
         self.applyButton.setCursor(QCursor(Qt.ArrowCursor))
         self.applyButton.move(5, 5)
         self.applyButton.clicked.connect(self.applyClicked)
+    def flashHighlight(self, item):
+        if self.flash_highlight is item:
+            return
+        #QTimer.singleShot(500, lambda: (self.flash_highlight is item) and self.flashHighlight(None))
+        self.flash_highlight = item
+        self.renderDrawing()
+        self.repaint()
     def changeMode(self, mode, item):
         self.mode = mode
         self.mode_item = item

@@ -54,7 +54,9 @@ class OperationsRenderer(object):
     def penColInt(self, r, g, b, a, diameter):
         return QPen(QColor(255 + (r - 255) * a / 255, 255 + (g - 255) * a / 255, 255 + (b - 255) * a / 255), diameter)
     def toolPen(self, path, alpha=255, isHighlighted=False):
-        if isHighlighted:
+        if isinstance(isHighlighted, tuple):
+            pen = self.penColInt(*isHighlighted, alpha, path.tool.diameter)
+        elif isHighlighted:
             pen = self.penColInt(0, 128, 192, alpha, path.tool.diameter)
         else:
             pen = self.penColInt(192, 192, 192, alpha, path.tool.diameter)

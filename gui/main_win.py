@@ -99,6 +99,8 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsUpdated.connect(self.canvasMouseMove)
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
+        self.projectDW.operationTouched.connect(self.operationTouched)
+        self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.updateOperations()
         filename = self.document.filename or self.document.drawing_filename
         if filename:
@@ -120,6 +122,11 @@ class CAMMainWindow(QMainWindow):
                 self.refreshNeeded = False
             return
         QMainWindow.timerEvent(self, event)
+    def noOperationTouched(self):
+        self.viewer.flashHighlight(None)
+    def operationTouched(self, item):
+        if isinstance(item, model.OperationTreeItem):
+            self.viewer.flashHighlight(item)
     def millAddTool(self):
         self.millSelectTool(dlg_type=cutter_mgr.AddCutterDialog)
     def millSelectTool(self, cutter_type=None, dlg_type=cutter_mgr.SelectCutterDialog):

@@ -12,6 +12,10 @@ from gui import propsheet, canvas, model, inventory, cutter_mgr
 OperationType = model.OperationType
 
 class TreeViewWithAltArrows(QTreeView):
+    widgetLeft = pyqtSignal([])
+    def leaveEvent(self, event):
+        self.widgetLeft.emit()
+        return QTreeView.leaveEvent(self, event)
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Down or event.key() == Qt.Key_Up) and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
             event.setAccepted(False)
@@ -19,6 +23,8 @@ class TreeViewWithAltArrows(QTreeView):
             return QTreeView.keyPressEvent(self, event)
 
 class CAMObjectTreeDockWidget(QDockWidget):
+    operationTouched = pyqtSignal([QStandardItem])
+    noOperationTouched = pyqtSignal([])
     selectionChanged = pyqtSignal([])
     modeChanged = pyqtSignal([int])
     INPUTS_TAB = 0
@@ -51,9 +57,13 @@ class CAMObjectTreeDockWidget(QDockWidget):
         tree.setSelectionBehavior(QAbstractItemView.SelectRows)
         tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         tree.setModel(self.document.operModel)
+        tree.setMouseTracking(True)
         tree.selectionModel().selectionChanged.connect(self.operationSelectionChanged)
         tree.setContextMenuPolicy(Qt.CustomContextMenu)
         tree.customContextMenuRequested.connect(self.customContextMenu)
+        tree.entered.connect(self.onOperationEntered)
+        tree.viewportEntered.connect(self.onOperationViewportEntered)
+        tree.widgetLeft.connect(self.onOperationViewportEntered)
         self.operTree = tree
         self.tabs.addTab(tree, "&Operations")
 
@@ -68,6 +78,12 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.setWidget(self.tabs)
     def onCutterChanged(self, cutter):
         self.shapeTree.repaint()
+    def onOperationViewportEntered(self):
+        self.noOperationTouched.emit()
+    def onOperationEntered(self, index):
+        item = self.document.operModel.itemFromIndex(index)
+        if item:
+            self.operationTouched.emit(item)
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
             self.returnKeyPressed(self.activeSelection())
