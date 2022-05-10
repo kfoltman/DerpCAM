@@ -289,16 +289,26 @@ class CAMMainWindow(QMainWindow):
         f.close()
     def fileImport(self):
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
+        input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
+        if input_dir:
+            dlg.setDirectory(input_dir)
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
             self.document.importDrawing(fn)
+            self.configSettings.last_input_directory = os.path.split(fn)[0]
+            self.configSettings.save()
     def fileOpen(self):
         dlg = QFileDialog(self, "Open a project", filter="DerpCAM project (*.dcp);;All files (*)")
+        input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
+        if input_dir:
+            dlg.setDirectory(input_dir)
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
             self.loadProject(fn)
+            self.configSettings.last_input_directory = os.path.split(fn)[0]
+            self.configSettings.save()
     def fileSaveAs(self):
         dlg = QFileDialog(self, "Save a project", filter="DerpCAM project (*.dcp);;All files (*)")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
@@ -338,6 +348,10 @@ class CAMMainWindow(QMainWindow):
             path = os.path.splitext(self.document.filename)[0] + ".ngc"
         else:
             path = ''
+        output_dir = self.configSettings.gcode_directory or self.configSettings.last_gcode_directory
+        if output_dir != '':
+            old_path, gcode_filename = os.path.split(path)
+            path = os.path.join(output_dir, gcode_filename)
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
         dlg.setDefaultSuffix(".ngc")
@@ -345,6 +359,8 @@ class CAMMainWindow(QMainWindow):
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
             self.document.exportGcode(fn)
+            self.configSettings.last_gcode_directory = os.path.split(fn)[0]
+            self.configSettings.save()
     def fileExit(self):
         self.close()
     def closeEvent(self, e):
