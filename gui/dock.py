@@ -56,6 +56,13 @@ class CAMObjectTreeDockWidget(QDockWidget):
         tree.customContextMenuRequested.connect(self.customContextMenu)
         self.operTree = tree
         self.tabs.addTab(tree, "&Operations")
+
+        self.operToolbar = QToolBar()
+        self.operToolbar.addAction(self.style().standardIcon(QStyle.SP_ArrowUp), "Move Earlier", self.operationMoveUp)
+        self.operToolbar.addAction(self.style().standardIcon(QStyle.SP_ArrowDown), "Move Later", self.operationMoveDown)
+        self.operToolbar.addAction(self.style().standardIcon(QStyle.SP_TrashIcon), "Delete", self.operationDelete)
+        self.operToolbar.addAction(self.style().standardIcon(QStyle.SP_MediaPause), "Enable/disable", self.operationEnable)
+
         self.tabs.setTabPosition(QTabWidget.South)
         self.tabs.currentChanged.connect(self.tabSelectionChanged)
         self.setWidget(self.tabs)
@@ -64,21 +71,12 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
             self.returnKeyPressed(self.activeSelection())
-        elif (event.key() == Qt.Key_Down or event.key() == Qt.Key_Up) and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
-            self.altArrowPressed(self.activeSelection(), -1 if event.key() == Qt.Key_Up else +1)
+        elif event.key() == Qt.Key_Down and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
+            self.operationMoveDown()
+        elif event.key() == Qt.Key_Up and (event.modifiers() & Qt.AltModifier) == Qt.AltModifier:
+            self.operationMoveUp()
         else:
             QDockWidget.keyPressEvent(self, event)
-    def altArrowPressed(self, selection, direction):
-        mode, items = selection
-        if len(items) == 1:
-            item = items[0]
-            if hasattr(item, 'reorderItem'):
-                index = item.reorderItem(direction)
-                if index is None:
-                    return
-                tree = self.activeTree()
-                tree.selectionModel().setCurrentIndex(index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
-                tree.selectionModel().select(index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
     def returnKeyPressed(self, selection):
         mode, items = selection
         if len(items) == 1:
@@ -230,7 +228,10 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def tabSelectionChanged(self):
         if self.tabs.currentIndex() == 0:
             self.shapeTree.setFocus()
+            self.tabs.setCornerWidget(None, Qt.TopRightCorner)
         elif self.tabs.currentIndex() == 1:
+            self.tabs.setCornerWidget(self.operToolbar, Qt.TopRightCorner)
+            self.operToolbar.show()
             self.operTree.setFocus()
         self.selectionChanged.emit()
     def shapeSelectionChanged(self):
@@ -255,6 +256,32 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return self.operTree
         assert False
+    def operationMove(self, selection, direction):
+        mode, items = selection
+        itemsToMove = []
+        for item in items:
+            if hasattr(item, 'reorderItem'):
+                itemsToMove.append(item)
+        itemsToMove = list(sorted(itemsToMove, key=lambda item: -item.row() * direction))
+        newSelection = QItemSelection()
+        lastIndex = None
+        for item in itemsToMove:
+            index = item.reorderItem(direction)
+            if index is not None:
+                lastIndex = index
+                newSelection.select(index, index)
+        tree = self.activeTree()
+        if lastIndex is not None:
+            tree.selectionModel().setCurrentIndex(lastIndex, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
+        tree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
+    def operationMoveUp(self):
+        self.operationMove(self.activeSelection(), -1)
+    def operationMoveDown(self):
+        self.operationMove(self.activeSelection(), +1)
+    def operationDelete(self):
+        selType, items = self.activeSelection()
+        if selType == 'o':
+            self.document.opDeleteOperations(items)
     def operationEnable(self):
         mode, items = self.activeSelection()
         if mode != 'o' or not items:
@@ -263,7 +290,6 @@ class CAMObjectTreeDockWidget(QDockWidget):
         newState = Qt.CheckState.Checked if oldState != Qt.CheckState.Checked else Qt.CheckState.Unchecked
         for i in items:
             i.setCheckState(newState)
-
     def operationHoldingTabs(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
     def operationIslands(self):

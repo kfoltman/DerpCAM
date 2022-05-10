@@ -206,9 +206,7 @@ class CAMMainWindow(QMainWindow):
         else:
             self.propsDW.setSelection(items)
     def editDelete(self):
-        selType, items = self.projectDW.activeSelection()
-        if selType == 'o':
-            self.document.opDeleteOperations(items)
+        self.projectDW.operationDelete()
     def editPreferences(self):
         dlg = settings.PreferencesDialog(self, self.configSettings)
         self.prefDlg = dlg
