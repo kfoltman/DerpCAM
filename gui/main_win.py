@@ -225,11 +225,12 @@ class CAMMainWindow(QMainWindow):
         if not selection:
             QMessageBox.critical(self, None, "No objects selected")
             return
-        if not self.needCutterType(model.cutterTypesForOperationType(operType)):
-            return
-        shapeIds, selectionsUsed = self.document.drawing.parseSelection(selection, operType)
+        shapeIds, selectionsUsed, warningsList = self.document.drawing.parseSelection(selection, operType)
+        warningsText = "\n".join(warningsList)
         if not shapeIds:
-            QMessageBox.warning(self, None, "No objects created")
+            QMessageBox.warning(self, None, f"None of the selected objects are suitable for the operation:\n{warningsText}")
+            return
+        if not self.needCutterType(model.cutterTypesForOperationType(operType)):
             return
         for i in selectionsUsed:
             self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
@@ -244,6 +245,7 @@ class CAMMainWindow(QMainWindow):
             if rowCount:
                 if len(newSelection.indexes()):
                     self.projectDW.operTree.scrollTo(newSelection.indexes()[0])
+            QMessageBox.warning(self, None, f"Some objects did not match the operation:\n{warningsText}")
         self.updateOperations()
         self.updateShapeSelection()
         self.propsDW.updateProperties()

@@ -376,26 +376,33 @@ class DrawingTest(unittest.TestCase):
         self.drawing = self.document.drawing
         self.selection = list(self.drawing.items())
     def testEngraveParser(self):
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.ENGRAVE)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.ENGRAVE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection})
+        self.assertEqual(warnings, [])
     def testHoleParser(self):
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.DRILLED_HOLE)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.DRILLED_HOLE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.INTERPOLATED_HOLE)
+        self.assertEqual(warnings, ["Line4 is not a circle", "Polyline5 is not a circle", "Polyline6 is not a circle"])
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.INTERPOLATED_HOLE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
+        self.assertEqual(warnings, ["Line4 is not a circle", "Polyline5 is not a circle", "Polyline6 is not a circle"])
     def testContourParser(self):
         contourIds = {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3, 5, 6]}
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_CONTOUR)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_CONTOUR)
+        self.assertEqual(warnings, ["Line4 is not a closed shape"])
         self.assertEqual(outsides, contourIds)
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.INSIDE_CONTOUR)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.INSIDE_CONTOUR)
         self.assertEqual(outsides, contourIds)
+        self.assertEqual(warnings, ["Line4 is not a closed shape"])
     def testPocketParser(self):
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.POCKET)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.POCKET)
         self.assertEqual(outsides, {2: set([1]), 5: set([6])})
         self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
-        outsides, actualSelection = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_PEEL)
+        self.assertEqual(warnings, ["Line4 is not a closed shape"])
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_PEEL)
         self.assertEqual(outsides, {2: set([1]), 5: set([6])})
         self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
+        self.assertEqual(warnings, ["Line4 is not a closed shape"])
 
 class PDATest(unittest.TestCase):
     def setUp(self):

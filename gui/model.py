@@ -509,12 +509,23 @@ class DrawingTreeItem(CAMListTreeItem):
         return found
     def parseSelection(self, selection, operType):
         translation = self.translation()
+        warnings = []
+        def pickObjects(selector):
+            matched = []
+            warnings = []
+            for i in selection:
+                verdict = selector(i)
+                if verdict is True:
+                    matched.append(i)
+                else:
+                    warnings.append(verdict % (i.label(),))
+            return matched, warnings
         if operType == OperationType.INTERPOLATED_HOLE or operType == OperationType.DRILLED_HOLE:
-            selection = [ i for i in selection if isinstance(i, DrawingCircleTreeItem) ]
+            selection, warnings = pickObjects(lambda i: isinstance(i, DrawingCircleTreeItem) or "%s is not a circle")
         elif operType != OperationType.ENGRAVE:
-            selection = [ i for i in selection if isinstance(i, DrawingTextTreeItem) or i.toShape().closed ]
+            selection, warnings = pickObjects(lambda i: isinstance(i, DrawingTextTreeItem) or i.toShape().closed or "%s is not a closed shape")
         if operType != OperationType.POCKET and operType != OperationType.OUTSIDE_PEEL:
-            return {i.shape_id: set() for i in selection}, selection
+            return {i.shape_id: set() for i in selection}, selection, warnings
         nonzeros = set()
         zeros = set()
         texts = [ i for i in selection if isinstance(i, DrawingTextTreeItem) ]
@@ -553,7 +564,7 @@ class DrawingTreeItem(CAMListTreeItem):
             outsides[i.shape_id] = set()
             allObjects.add(i.shape_id)
         selection = [i for i in selection if i.shape_id in allObjects]
-        return outsides, selection
+        return outsides, selection, warnings
     def properties(self):
         return [self.prop_x_offset, self.prop_y_offset]
     def translation(self):
