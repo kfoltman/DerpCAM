@@ -127,6 +127,8 @@ class CAMMainWindow(QMainWindow):
     def operationTouched(self, item):
         if isinstance(item, model.OperationTreeItem):
             self.viewer.flashHighlight(item)
+        else:
+            self.viewer.flashHighlight(None)
     def millAddTool(self):
         self.millSelectTool(dlg_type=cutter_mgr.AddCutterDialog)
     def millSelectTool(self, cutter_type=None, dlg_type=cutter_mgr.SelectCutterDialog):

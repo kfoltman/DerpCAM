@@ -134,7 +134,6 @@ class DrawingViewer(view.PathViewer):
     def flashHighlight(self, item):
         if self.flash_highlight is item:
             return
-        #QTimer.singleShot(500, lambda: (self.flash_highlight is item) and self.flashHighlight(None))
         self.flash_highlight = item
         self.renderDrawing()
         self.repaint()
