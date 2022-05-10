@@ -444,6 +444,10 @@ def weighted_with_arcs(p1, p2, alpha):
 def SameOrientation(path, expected):
     return path if Orientation(path) == expected else ReversePath(path)
 
+def bounds_area(b):
+    sx, sy, ex, ey = b
+    return abs(ex - sx) * abs(ey - sy)
+
 # Is b1 inside or overlapping b2?
 def inside_bounds(b1, b2):
     sx1, sy1, ex1, ey1 = b1

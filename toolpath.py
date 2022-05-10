@@ -231,6 +231,8 @@ class Toolpath(object):
 
 class Toolpaths(object):
     def __init__(self, toolpaths):
+        self.set_toolpaths(toolpaths)
+    def set_toolpaths(self, toolpaths):
         self.toolpaths = toolpaths
         self.bounds = self.calc_bounds()
         self.flattened_cache = self.calc_flattened()
@@ -241,8 +243,10 @@ class Toolpaths(object):
         for path in self.toolpaths:
             if isinstance(path, Toolpaths):
                 res += path.flattened()
-            else:
+            elif isinstance(path, Toolpath):
                 res.append(path)
+            else:
+                assert False, f"Unexpected type: {type(path)}"
         return res
     def calc_bounds(self):
         return max_bounds(*[tp.bounds for tp in self.toolpaths])

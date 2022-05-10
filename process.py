@@ -7,17 +7,17 @@ import threading
 
 def findPathNesting(tps):
     nestings = []
-    for tp in tps:
-        contours = tp.toolpaths if isinstance(tp, Toolpaths) else [tp]
-        for subtp in contours:
-            for children in nestings:
-                if inside_bounds(children[-1].bounds, subtp.bounds):
-                    # subtp contains this chain of contours
-                    children.append(subtp)
-                    break
-            else:
-                # Doesn't contain any earlier contour, so start a nesting.
-                nestings.append([subtp])
+    contours = Toolpaths(tps).flattened()
+    contours = sorted(contours, key=lambda item: bounds_area(item.bounds))
+    for subtp in contours:
+        for children in nestings:
+            if inside_bounds(children[-1].bounds, subtp.bounds):
+                # subtp contains this chain of contours
+                children.append(subtp)
+                break
+        else:
+            # Doesn't contain any earlier contour, so start a nesting.
+            nestings.append([subtp])
     return nestings
 
 def fixPathNesting(tps):
@@ -60,8 +60,7 @@ def joinClosePaths(tps):
                     for j in range(len(last.path.nodes) - 1, 0, -1):
                         points, mindist = findClosest(points, last.path.nodes[j], tp.tool.diameter)
                         if mindist <= tp.tool.diameter:
-                            print ("Found a backtrack")
-                            res[-1] = Toolpath(Path(last.path.nodes + list(reversed(last.path.nodes[j:])) + points + points[0:1], False), tp.tool)
+                            res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + last.path.nodes[:j - 1:-1] + points + points[0:1], False), tp.tool)
                             last = res[-1]
                             lastpt = last.path.nodes[-1]
                             found = True
@@ -194,7 +193,7 @@ def mergeToolpaths(tps, new, dia):
                 new_toolpaths.append(l)
         if not found:
             new_toolpaths.append(i)
-        last.toolpaths = new_toolpaths
+        last.set_toolpaths(new_toolpaths)
 
 class Shape(object):
     def __init__(self, boundary, closed=True, islands=None):
