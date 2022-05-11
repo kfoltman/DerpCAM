@@ -71,7 +71,7 @@ class DirectorySelector(QWidget):
         elif self.default_value:
             dlg.setDirectory(self.default_value)
         if dlg.exec_():
-            self.setValue(dlg.directory().absolutePath())
+            self.setValue(dlg.directory().absolutePath(), self.default_value)
     def value(self):
         return self.edit.text()
     def setValue(self, value, default_value):
