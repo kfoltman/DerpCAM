@@ -48,7 +48,7 @@ class Format(object):
         return Format.dp(value, 2)
     @staticmethod
     def as_percent(value):
-        return Format.dp(value, 2) + "%"
+        return Format.dp(value * 100, 2) + "%"
 
 class IdSequence(object):
     last_id = 999
