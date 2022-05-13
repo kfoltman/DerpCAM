@@ -450,7 +450,7 @@ class CreateEditEndMillPresetDialog(CreateEditPresetDialog):
             values = {'name' : preset.name, 'rpm' : preset.rpm, 'hfeed' : preset.hfeed, 'vfeed' : preset.vfeed, 'depth' : preset.maxdoc,
                 'direction' : preset.direction,
                 'stepover' : percent(preset.stepover), 'extra_width' : percent(preset.extra_width), 'trc_rate' : percent(preset.trc_rate),
-                'axis_angle' : preset.axis_angle, 'pocket_strategy' : preset.pocket_strategy}
+                'axis_angle' : preset.axis_angle, 'pocket_strategy' : preset.pocket_strategy, 'eh_diameter' : preset.eh_diameter}
         else:
             values = { 'direction': inventory.MillDirection.CONVENTIONAL }
         CreateEditPresetDialog.__init__(self, parent, title, values, cutter_for_add)
@@ -461,7 +461,8 @@ class CreateEditEndMillPresetDialog(CreateEditPresetDialog):
             return v * 0.01 if v is not None else None
         return inventory.EndMillPreset.new(None, name=result['name'], toolbit=None, rpm=result['rpm'], hfeed=result['hfeed'], vfeed=result['vfeed'],
             maxdoc=result['depth'], stepover=percent(result['stepover']), direction=result['direction'],
-            extra_width=percent(result['extra_width']), trc_rate=percent(result['trc_rate']), axis_angle=result['axis_angle'], pocket_strategy=result['pocket_strategy'], )
+            extra_width=percent(result['extra_width']), trc_rate=percent(result['trc_rate']), axis_angle=result['axis_angle'], pocket_strategy=result['pocket_strategy'], 
+            eh_diameter=percent(result['eh_diameter']))
 
 class CreateEditDrillBitPresetDialog(CreateEditPresetDialog):
     def __init__(self, parent=None, title=None, preset=None, cutter_for_add=None):
