@@ -100,7 +100,7 @@ class DocumentTest(unittest.TestCase):
         self.assertIsInstance(presetItem, gui.model.ToolPresetTreeItem)
         self.assertEqual(presetItem.getPropertyValue('vfeed'), 100)
         self.assertEqual(presetItem.getPropertyValue('hfeed'), 500)
-        self.assertEqual(presetItem.getPropertyValue('depth'), 0.5)
+        self.assertEqual(presetItem.getPropertyValue('doc'), 0.5)
         self.assertEqual(presetItem.getPropertyValue('stepover'), 40)
         self.assertEqual(presetItem.getPropertyValue('extra_width'), 15)
         self.assertEqual(presetItem.getPropertyValue('trc_rate'), 90)
@@ -250,7 +250,7 @@ class DocumentTest(unittest.TestCase):
         preset = tool.child(0)
         self.assertEqual(doc.itemForCutter(tool.inventory_tool), tool)
         self.assertEqual(doc.itemForPreset(preset.inventory_preset), preset)
-        self.verifyPropertyOp(preset, "depth", 0.5, 1, "0.5 mm")
+        self.verifyPropertyOp(preset, "doc", 0.5, 1, "0.5 mm")
         self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 rev/min")
         self.verifyPropertyOp(preset, "hfeed", 500, 750, "500 mm/min")
         self.verifyPropertyOp(preset, "vfeed", 100, 150, "100 mm/min")
@@ -410,6 +410,7 @@ class PDATest(unittest.TestCase):
     def testToPresetEM(self):
         op = gui.model.OperationTreeItem(self.document)
         op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
+        self.verifyOpBlank(op)
         op.rpm = 18000
         op.vfeed = 200
         op.hfeed = 700
@@ -439,8 +440,69 @@ class PDATest(unittest.TestCase):
         self.assertEqual(preset.pocket_strategy, gui.inventory.PocketStrategy.AXIS_PARALLEL)
         self.assertEqual(preset.axis_angle, 30)
         self.assertEqual(preset.eh_diameter, 0.8)
+        # Reset the operation's settings, verify that they are reset
         pda.resetPresetDerivedValues(op)
+        self.verifyOpBlank(op)
+        # Verify that applying a newly created preset on an empty operation
+        # is equivalent to setting the values at the operation level.
         op.tool_preset = preset
+        self.verifyOpValuesEM(op)
+        self.verifyOpBlank(op)
+        # Convert preset values to a dictionary (used by the preset editor dialog)
+        # and create another preset from those values, verify that they are identical
+        values = gui.model.PresetDerivedAttributes.valuesFromPreset(preset, type(preset.toolbit))
+        preset2 = gui.model.PresetDerivedAttributes.toPresetFromAny("from dlg values", values, preset.toolbit, type(preset.toolbit))
+        op.tool_preset = preset2
+        self.verifyOpValuesEM(op)
+        self.verifyOpBlank(op)
+        # Modify one value and retest, just to be slightly on the paranoid side
+        values['rpm'] = 22000
+        preset2 = pda.toPresetFromAny("from dlg values", values, preset.toolbit, type(preset.toolbit))
+        op.tool_preset = preset2
+        pda = gui.model.PresetDerivedAttributes(op)
+        self.verifyAttribute(op, pda, 'rpm', 22000, 20000)
+    def testToPresetDB(self):
+        op = gui.model.OperationTreeItem(self.document)
+        op.cutter = gui.inventory.DrillBitCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
+        self.verifyOpBlank(op)
+        op.rpm = 18000
+        op.vfeed = 200
+        op.doc = 1.5
+        pda = gui.model.PresetDerivedAttributes(op)
+        errors = []
+        pda.validate(errors)
+        self.assertEqual(errors, [])
+        preset = pda.toPreset("new preset")
+        self.assertIsInstance(preset, gui.inventory.DrillBitPreset)
+        self.assertEqual(preset.name, "new preset")
+        self.assertEqual(preset.rpm, 18000)
+        self.assertEqual(preset.vfeed, 200)
+        self.assertEqual(preset.maxdoc, 1.5)
+        # Reset the operation's settings, verify that they are reset
+        pda.resetPresetDerivedValues(op)
+        self.verifyOpBlank(op)
+        # Verify that applying a newly created preset on an empty operation
+        # is equivalent to setting the values at the operation level.
+        op.tool_preset = preset
+        self.verifyOpValuesDB(op)
+        self.verifyOpBlank(op)
+        # Convert preset values to a dictionary (used by the preset editor dialog)
+        # and create another preset from those values, verify that they are identical
+        values = gui.model.PresetDerivedAttributes.valuesFromPreset(preset, type(preset.toolbit))
+        preset2 = gui.model.PresetDerivedAttributes.toPresetFromAny("from dlg values", values, preset.toolbit, type(preset.toolbit))
+        op.tool_preset = preset2
+        self.verifyOpValuesDB(op)
+        self.verifyOpBlank(op)
+        # Modify one value and retest, just to be slightly on the paranoid side
+        values['rpm'] = 22000
+        preset2 = pda.toPresetFromAny("from dlg values", values, preset.toolbit, type(preset.toolbit))
+        op.tool_preset = preset2
+        pda = gui.model.PresetDerivedAttributes(op)
+        self.verifyAttribute(op, pda, 'rpm', 22000, 20000)
+    def verifyOpBlank(self, op):
+        for i in gui.model.PresetDerivedAttributes.attrs[type(op.cutter)].values():
+            self.assertIsNone(getattr(op, i.name), i.name)
+    def verifyOpValuesEM(self, op):
         pda = gui.model.PresetDerivedAttributes(op)
         self.verifyAttribute(op, pda, 'rpm', 18000, 20000)
         self.verifyAttribute(op, pda, 'vfeed', 200, 300)
@@ -453,6 +515,11 @@ class PDATest(unittest.TestCase):
         self.verifyAttribute(op, pda, 'pocket_strategy', gui.inventory.PocketStrategy.AXIS_PARALLEL, gui.inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG)
         self.verifyAttribute(op, pda, 'axis_angle', 30, 35)
         self.verifyAttribute(op, pda, 'eh_diameter', 80, 20)
+    def verifyOpValuesDB(self, op):
+        pda = gui.model.PresetDerivedAttributes(op)
+        self.verifyAttribute(op, pda, 'rpm', 18000, 20000)
+        self.verifyAttribute(op, pda, 'vfeed', 200, 300)
+        self.verifyAttribute(op, pda, 'doc', 1.5, 2)
     def verifyAttribute(self, op, pda, name, value, alt_value):
         mapping = {}
         op_name = mapping.get(name, name)

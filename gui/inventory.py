@@ -263,6 +263,7 @@ class EndMillPreset(PresetBase):
 class EndMillCutter(CutterBase):
     cutter_type_name = "End mill"
     cutter_type_priority = 1
+    preset_type = EndMillPreset
     properties = CutterBase.properties
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes):
@@ -300,6 +301,7 @@ class DrillBitPreset(PresetBase):
 class DrillBitCutter(CutterBase):
     cutter_type_name = "Drill bit"
     cutter_type_priority = 2
+    preset_type = DrillBitPreset
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes=2):
         return klass.new_impl(id, name, material, diameter, length, flutes)

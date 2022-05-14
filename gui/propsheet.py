@@ -201,12 +201,13 @@ class EnumEditableProperty(EditableProperty):
         return validValues
 
 class FloatEditableProperty(EditableProperty):
-    def __init__(self, name, attribute, format, unit="", min = None, max = None, allow_none = False, none_value = "none"):
+    def __init__(self, name, attribute, format, unit="", min=None, max=None, allow_none=False, none_value="none", computed=False):
         EditableProperty.__init__(self, name, attribute, format)
         self.min = min
         self.max = max
         self.allow_none = allow_none
         self.none_value = none_value
+        self.computed = computed
         assert isinstance(unit, str)
         self.unit = unit
     def toEditString(self, value):
@@ -475,6 +476,8 @@ class BaseCreateEditDialog(QDialog):
                 self.form.addRow(p.name, widget)
                 self.prop_controls[p] = widget
             elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                if p.computed:
+                    continue
                 editor = QLineEdit()
                 if p.allow_none:
                     editor.setPlaceholderText(p.none_value)
@@ -504,6 +507,8 @@ class BaseCreateEditDialog(QDialog):
             elif isinstance(p, EnumEditableProperty):
                 ctl.setCurrentIndex(ctl.findData(self.values.get(p.attribute)))
             elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                if p.computed:
+                    continue
                 if self.values.get(p.attribute, None) is not None:
                     ctl.setText(useFormat(p.format, self.values.get(p.attribute, None)))
                 else:
@@ -524,6 +529,8 @@ class BaseCreateEditDialog(QDialog):
             elif isinstance(p, EnumEditableProperty):
                 result[p.attribute] = ctl.itemData(ctl.currentIndex())
             elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
+                if p.computed:
+                    continue
                 text = ctl.text()
                 if text == '' and not p.allow_none:
                     return self.propertyEditError(p, f"{p.name} is required")

@@ -661,10 +661,10 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
-    prop_doc = FloatEditableProperty("Cut depth/pass", "depth", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
+    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", Format.rpm, unit="rev/min", min=0.1, max=60000, allow_none=True)
-    prop_surf_speed = FloatEditableProperty("Surface speed", "surf_speed", Format.surf_speed, unit="m/min", allow_none=True)
-    prop_chipload = FloatEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True)
+    prop_surf_speed = FloatEditableProperty("Surface speed", "surf_speed", Format.surf_speed, unit="m/min", allow_none=True, computed=True)
+    prop_chipload = FloatEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True, computed=True)
     prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
@@ -699,10 +699,13 @@ class ToolPresetTreeItem(CAMTreeItem):
     def isNewObject(self):
         return self.inventory_preset.base_object is None
     def properties(self):
-        if isinstance(self.inventory_preset, inventory.EndMillPreset):
-            return self.properties_endmill()
-        elif isinstance(self.inventory_preset, inventory.DrillBitPreset):
-            return self.properties_drillbit()
+        return self.properties_for_cutter_type(type(self.inventory_preset.toolbit))
+    @classmethod
+    def properties_for_cutter_type(klass, cutter_type):
+        if cutter_type == inventory.EndMillCutter:
+            return klass.properties_endmill()
+        elif cutter_type == inventory.DrillBitCutter:
+            return klass.properties_drillbit()
         return []
     @classmethod
     def properties_endmill(klass):
@@ -719,10 +722,12 @@ class ToolPresetTreeItem(CAMTreeItem):
     def getPropertyValue(self, name):
         def toPercent(v):
             return v * 100.0 if v is not None else v
-        if name == 'depth':
-            return self.inventory_preset.maxdoc
-        elif name in self.props_percent:
-            return toPercent(getattr(self.inventory_preset, name))
+        attrs = PresetDerivedAttributes.attrs[type(self.inventory_preset.toolbit)]
+        attr = attrs.get(name)
+        if attr is not None:
+            present, value = attr.resolve(None, self.inventory_preset)
+            if present:
+                return value
         elif name == 'surf_speed':
             return self.inventory_preset.toolbit.diameter * pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
         elif name == 'chipload':
@@ -732,7 +737,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     def setPropertyValue(self, name, value):
         def fromPercent(v):
             return v / 100.0 if v is not None else v
-        if name == 'depth':
+        if name == 'doc':
             self.inventory_preset.maxdoc = value
         elif name in self.props_percent:
             setattr(self.inventory_preset, name, fromPercent(value))
@@ -941,14 +946,15 @@ class PresetDerivedAttributeItem(object):
         self.preset_scale = preset_scale
         self.def_value = def_value
     def resolve(self, operation, preset):
-        op_value = getattr(operation, self.name)
-        if op_value is not None:
-            return (True, op_value)
+        if operation is not None:
+            op_value = getattr(operation, self.name)
+            if op_value is not None:
+                return (True, op_value)
         preset_value = getattr(preset, self.preset_name, None) if preset else None
         if preset_value is not None:
             if self.preset_scale is not None:
                 preset_value *= self.preset_scale
-            return (False, preset_value)
+            return (operation is None, preset_value)
         return (False, self.def_value)
 
 class PresetDerivedAttributes(object):
@@ -961,7 +967,7 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('hfeed'),
         PresetDerivedAttributeItem('stepover', preset_scale=100),
         PresetDerivedAttributeItem('extra_width', preset_scale=100, def_value=0),
-        PresetDerivedAttributeItem('trc_rate', preset_scale=100),
+        PresetDerivedAttributeItem('trc_rate', preset_scale=100, def_value=0),
         PresetDerivedAttributeItem('direction', def_value=inventory.MillDirection.CONVENTIONAL),
         PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
         PresetDerivedAttributeItem('axis_angle', def_value=0),
@@ -1003,16 +1009,30 @@ class PresetDerivedAttributes(object):
                 else:
                     # Fake value that is never used
                     self.stepover = 0.5
+    @staticmethod
+    def valuesFromPreset(preset, cutter_type):
+        values = {}
+        if preset:
+            values['name'] = preset.name
+            for attr in PresetDerivedAttributes.attrs[cutter_type].values():
+                present, value = attr.resolve(None, preset)
+                values[attr.name] = value if present is not None else None
+        return values
     def toPreset(self, name):
+        return self.toPresetFromAny(name, self, self.operation.cutter, type(self.operation.cutter))
+    @classmethod
+    def toPresetFromAny(klass, name, src, cutter, cutter_type):
         kwargs = {}
-        for attr in self.attrs[type(self.operation.cutter)].values():
-            value = getattr(self, attr.name)
+        is_dict = isinstance(src, dict)
+        for attr in klass.attrs[cutter_type].values():
+            value = src[attr.name] if is_dict else getattr(src, attr.name)
             if value is not None and attr.preset_scale is not None:
                 value /= attr.preset_scale
             kwargs[attr.preset_name] = value
-        return inventory.EndMillPreset.new(None, name, self.operation.cutter, **kwargs)
-    def resetPresetDerivedValues(self, target):
-        for attr in self.attrs_all:
+        return cutter_type.preset_type.new(None, name, cutter, **kwargs)
+    @classmethod
+    def resetPresetDerivedValues(klass, target):
+        for attr in klass.attrs_all:
             setattr(target, attr.name, None)
         target.emitDataChanged()
 
@@ -1087,17 +1107,7 @@ class OperationTreeItem(CAMTreeItem):
         self.islands = set()
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
-        self.hfeed = None
-        self.vfeed = None
-        self.doc = None
-        self.stepover = None
-        self.trc_rate = None
-        self.extra_width = None
-        self.direction = None
-        self.pocket_strategy = None
-        self.axis_angle = None
-        self.eh_diameter = None
-        self.rpm = None
+        PresetDerivedAttributes.resetPresetDerivedValues(self)
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
