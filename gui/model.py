@@ -1004,14 +1004,13 @@ class PresetDerivedAttributes(object):
                     # Fake value that is never used
                     self.stepover = 0.5
     def toPreset(self, name):
-        def percent(value):
-            return value / 100.0 if value is not None else None
-        if isinstance(self.operation.cutter, inventory.EndMillCutter):
-            return inventory.EndMillPreset.new(None, name, self.operation.cutter, 
-                self.rpm, self.hfeed, self.vfeed, self.doc,
-                percent(self.stepover), self.direction, percent(self.extra_width), percent(self.trc_rate), self.pocket_strategy, self.axis_angle, self.eh_diameter)
-        if isinstance(self.operation.cutter, inventory.DrillBitCutter):
-            return inventory.DrillBitPreset.new(None, name, self.operation.cutter, self.rpm, self.vfeed, self.doc)
+        kwargs = {}
+        for attr in self.attrs[type(self.operation.cutter)].values():
+            value = getattr(self, attr.name)
+            if value is not None and attr.preset_scale is not None:
+                value /= attr.preset_scale
+            kwargs[attr.preset_name] = value
+        return inventory.EndMillPreset.new(None, name, self.operation.cutter, **kwargs)
     def resetPresetDerivedValues(self, target):
         for attr in self.attrs_all:
             setattr(target, attr.name, None)

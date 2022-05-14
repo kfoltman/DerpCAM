@@ -420,6 +420,7 @@ class PDATest(unittest.TestCase):
         op.direction = gui.inventory.MillDirection.CLIMB
         op.pocket_strategy = gui.inventory.PocketStrategy.AXIS_PARALLEL
         op.axis_angle = 30
+        op.eh_diameter = 80
         pda = gui.model.PresetDerivedAttributes(op)
         errors = []
         pda.validate(errors)
@@ -437,6 +438,7 @@ class PDATest(unittest.TestCase):
         self.assertEqual(preset.direction, gui.inventory.MillDirection.CLIMB)
         self.assertEqual(preset.pocket_strategy, gui.inventory.PocketStrategy.AXIS_PARALLEL)
         self.assertEqual(preset.axis_angle, 30)
+        self.assertEqual(preset.eh_diameter, 0.8)
         pda.resetPresetDerivedValues(op)
         op.tool_preset = preset
         pda = gui.model.PresetDerivedAttributes(op)
@@ -450,6 +452,7 @@ class PDATest(unittest.TestCase):
         self.verifyAttribute(op, pda, 'direction', gui.inventory.MillDirection.CLIMB, gui.inventory.MillDirection.CONVENTIONAL)
         self.verifyAttribute(op, pda, 'pocket_strategy', gui.inventory.PocketStrategy.AXIS_PARALLEL, gui.inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG)
         self.verifyAttribute(op, pda, 'axis_angle', 30, 35)
+        self.verifyAttribute(op, pda, 'eh_diameter', 80, 20)
     def verifyAttribute(self, op, pda, name, value, alt_value):
         mapping = {}
         op_name = mapping.get(name, name)
