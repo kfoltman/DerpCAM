@@ -313,6 +313,12 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             r = 0
             c = geom.CandidateCircle(x, y, rt)
             a = 0
+            min_helix_dia = tool.min_helix_diameter
+            max_helix_dia = 2 * rt
+            if min_helix_dia <= max_helix_dia:
+                r = 0.5 * min_helix_dia
+            else:
+                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
             while r < rt:
                 r = min(rt, r + tool.diameter * tool.stepover)
                 c = geom.CandidateCircle(x, y, r)
@@ -351,8 +357,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             if geom.Path(gen_path, False).length():
                 tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
                 tps.append(tpo)
-            if tps and tool.diameter * tool.stepover < 2 * rt:
-                tps[0].helical_entry = process.HelicalEntry(tp.start_point, tool.diameter * tool.stepover)
+            if tps and min_helix_dia <= max_helix_dia:
+                tps[0].helical_entry = process.HelicalEntry(tp.start_point, min_helix_dia / 2.0)
             # Add a final pass around the perimeter
             def ls2path(ls):
                 return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
