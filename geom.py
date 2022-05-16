@@ -128,7 +128,7 @@ class PathArc(PathNode):
         if dist(c.at_angle(sstart), p1) > 0.01:
             print ("Warning: start angle doesn't match")
         if dist(c.at_angle(sstart + sspan), p2) > 0.01:
-            print ("Warning: start angle doesn't match")
+            print ("Warning: end angle doesn't match")
     @staticmethod
     def xyra(x, y, r, sstart, sspan, steps = 100):
         c = CandidateCircle(x, y, r)
