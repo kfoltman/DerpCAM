@@ -29,6 +29,9 @@ class DocumentRenderer(object):
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
                 self.lastpt = PathPoint(0, 0)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
+                if dist(self.lastpt, PathPoint(0, 0)) > 0:
+                    pen = QPen(QColor(255, 0, 0), 0)
+                    owner.addRapidLine(pen, self.lastpt, PathPoint(0, 0))
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 
