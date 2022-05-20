@@ -120,7 +120,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             if isinstance(item, model.OperationTreeItem):
                 if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
                     menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
-                elif item.operation == OperationType.POCKET:
+                elif item.areIslandsEditable():
                     menu.addAction("Islands").triggered.connect(self.operationIslands)
                 elif item.operation == OperationType.OUTSIDE_PEEL:
                     menu.addAction("Contours").triggered.connect(self.operationIslands)

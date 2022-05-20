@@ -91,6 +91,7 @@ class CAMMainWindow(QMainWindow):
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
             ("Out&side peel", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling on the outside of the part"),
+            ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
             ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
         ])
@@ -277,6 +278,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.ENGRAVE)
     def millInterpolatedHole(self):
         self.millSelectedShapes(OperationType.INTERPOLATED_HOLE)
+    def millRefine(self):
+        self.millSelectedShapes(OperationType.REFINE)
     def drillHole(self):
         self.millSelectedShapes(OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):

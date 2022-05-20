@@ -172,10 +172,11 @@ class DrawingViewer(view.PathViewer):
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
-        p = op.shape.boundary + op.shape.boundary[0:1]
+        shape = op.orig_shape.toShape()
+        p = shape.boundary + shape.boundary[0:1]
         path = QPainterPath()
         view.addPolylineToPath(path, p)
-        for p in op.shape.islands:
+        for p in shape.islands:
             path2 = QPainterPath()
             view.addPolylineToPath(path2, p + p[0:1])
             path = path.subtracted(path2)

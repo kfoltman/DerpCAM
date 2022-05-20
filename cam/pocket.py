@@ -1,4 +1,4 @@
-import geom, process, toolpath
+import geom, process, toolpath, milling_tool
 import math, threading
 import pyclipper
 
@@ -248,16 +248,29 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
 
 pyvlock = threading.RLock()
 
-def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
-    from shapely.geometry import Point, LineString, MultiLineString, LinearRing, Polygon, GeometryCollection, MultiPolygon
-    from shapely.ops import linemerge, nearest_points
-    import cam.geometry
+def objects_to_polygons(polygon):
+    from shapely.geometry import Polygon, GeometryCollection, MultiPolygon
+    inputs = []
+    if isinstance(polygon, Polygon):
+        inputs.append(polygon)
+    elif isinstance(polygon, MultiPolygon):
+        inputs += polygon.geoms
+    elif isinstance(polygon, GeometryCollection):
+        for i in polygon.geoms:
+            if isinstance(i, Polygon):
+                inputs.append(i)
+            elif isinstance(i, MultiPolygon):
+                inputs += i.geoms
+    return inputs
+
+def shape_to_polygons(shape, tool, displace=0, from_outside=False):
+    from shapely.geometry import LinearRing, Polygon
     tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
     if from_outside:
         subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
     else:
         subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
-    alltps = []
+    all_inputs = []
     for subpocket in subpockets:
         boundary_offset = geom.PtsFromInts(subpocket)
         boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
@@ -271,125 +284,146 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
                 polygon = polygon.difference(Polygon(ii))
-        inputs = []
-        if isinstance(polygon, Polygon):
-            inputs.append(polygon)
-        elif isinstance(polygon, MultiPolygon):
-            inputs += polygon.geoms
-        elif isinstance(polygon, GeometryCollection):
-            for i in polygon.geoms:
-                if isinstance(i, Polygon):
-                    inputs.append(i)
-                elif isinstance(i, MultiPolygon):
-                    inputs += i.geoms
+        all_inputs += objects_to_polygons(polygon)
+    return all_inputs
+
+def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
+    import cam.geometry
+    alltps = []
+    all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
+    for polygon in all_inputs:
         tps = []
-        for polygon in inputs:
-            step = tool.diameter * tool.stepover
-            if zigzag:
-                arc_dir = cam.geometry.ArcDir.Closest
-            else:
-                arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
-            with pyvlock:
-                if from_outside:
-                    tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
-                else:
-                    tp = cam.geometry.InsidePocket(polygon, step, arc_dir, generate=True)
-            generator = tp._get_arcs(100)
-            try:
-                while not geom.is_calculation_cancelled():
-                    progress = max(0, min(1000, 1000 * next(generator)))
-                    geom.set_calculation_progress(progress, 1000)
-            except StopIteration:
-                pass
-            hsm_path = tp.path
-            gen_path = []
+        step = tool.diameter * tool.stepover
+        if zigzag:
+            arc_dir = cam.geometry.ArcDir.Closest
+        else:
+            arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
+        with pyvlock:
             if from_outside:
-                x, y = hsm_path[0].start.x, hsm_path[0].start.y
-                rt = 0
-                x -= rt
+                tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
             else:
-                x, y = tp.start_point.x, tp.start_point.y
-                rt = tp.start_radius
-            r = 0
-            c = geom.CandidateCircle(x, y, rt)
-            a = 0
-            min_helix_dia = tool.min_helix_diameter
-            max_helix_dia = 2 * rt
-            if min_helix_dia <= max_helix_dia:
-                r = 0.5 * min_helix_dia
-            else:
-                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
-            pitch = tool.diameter * tool.stepover
-            if False:
-                # Old method, uses concentric circles, marginally better tested but has direction changes
-                while r < rt:
-                    r = min(rt, r + pitch)
-                    c = geom.CandidateCircle(x, y, r)
-                    cp = c.at_angle(a)
-                    gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
-            else:
-                rdiff = rt - r
-                if rdiff:
-                    turns = math.ceil(rdiff / pitch)
-                    pitch = rdiff / turns
-                    # Number of arcs per circle
-                    res = 4
-                    slice = 2 * math.pi / res
-                    dr = pitch / (2 * math.sin(slice / 2) * res)
-                    sa = math.pi / res + math.pi / 2 + a
-                    xc0 = x - dr * math.cos(sa)
-                    yc0 = y - dr * math.sin(sa)
-                    for i in range(res * turns + 1):
-                        t1 = slice * i
-                        c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
-                        cp1 = c.at_angle(t1 + a)
-                        cp2 = c.at_angle(t1 + a + slice)
-                        gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
-                c = geom.CandidateCircle(x, y, rt)
+                tp = cam.geometry.InsidePocket(polygon, step, arc_dir, generate=True)
+        generator = tp._get_arcs(100)
+        try:
+            while not geom.is_calculation_cancelled():
+                progress = max(0, min(1000, 1000 * next(generator)))
+                geom.set_calculation_progress(progress, 1000)
+        except StopIteration:
+            pass
+        hsm_path = tp.path
+        gen_path = []
+        if from_outside:
+            x, y = hsm_path[0].start.x, hsm_path[0].start.y
+            rt = 0
+            x -= rt
+        else:
+            x, y = tp.start_point.x, tp.start_point.y
+            rt = tp.start_radius
+        r = 0
+        c = geom.CandidateCircle(x, y, rt)
+        a = 0
+        min_helix_dia = tool.min_helix_diameter
+        max_helix_dia = 2 * rt
+        if min_helix_dia <= max_helix_dia:
+            r = 0.5 * min_helix_dia
+        else:
+            raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
+        pitch = tool.diameter * tool.stepover
+        if False:
+            # Old method, uses concentric circles, marginally better tested but has direction changes
+            while r < rt:
+                r = min(rt, r + pitch)
+                c = geom.CandidateCircle(x, y, r)
                 cp = c.at_angle(a)
                 gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
+        else:
+            rdiff = rt - r
+            if rdiff:
+                turns = math.ceil(rdiff / pitch)
+                pitch = rdiff / turns
+                # Number of arcs per circle
+                res = 4
+                slice = 2 * math.pi / res
+                dr = pitch / (2 * math.sin(slice / 2) * res)
+                sa = math.pi / res + math.pi / 2 + a
+                xc0 = x - dr * math.cos(sa)
+                yc0 = y - dr * math.sin(sa)
+                for i in range(res * turns + 1):
+                    t1 = slice * i
+                    c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
+                    cp1 = c.at_angle(t1 + a)
+                    cp2 = c.at_angle(t1 + a + slice)
+                    gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
+            c = geom.CandidateCircle(x, y, rt)
+            cp = c.at_angle(a)
+            gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
 
-            lastpt = None
-            for item in hsm_path:
-                if isinstance(item, cam.geometry.LineData):
-                    if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
-                        if geom.Path(gen_path, False).length():
-                            tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
-                        gen_path = []
-                        lastpt = None
-                    else:
-                        gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
-                        lastpt = geom.PathPoint(item.end.x, item.end.y)
-                elif isinstance(item, cam.geometry.ArcData):
-                    steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
-                    cc = geom.CandidateCircle(item.origin.x, item.origin.y, item.radius)
-                    sa = math.pi / 2 - item.start_angle
-                    span = -item.span_angle
-                    osp = geom.PathPoint(item.start.x, item.start.y)
-                    sp = cc.at_angle(sa)
-                    ep = cc.at_angle(sa + span)
-                    oep = geom.PathPoint(item.end.x, item.end.y)
-                    #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
-                    assert geom.dist(osp, sp) < 0.1
-                    assert geom.dist(oep, ep) < 0.1
-                    # Fix slight inaccuracies with line segments
-                    if geom.dist(osp, sp) >= 0.0005:
-                        gen_path.append(osp)
-                    gen_path += [sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span)]
-                    if geom.dist(ep, oep) >= 0.0005:
-                        gen_path.append(oep)
-                    lastpt = oep
-            if geom.Path(gen_path, False).length():
-                tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
-                tps.append(tpo)
-            if tps and min_helix_dia <= max_helix_dia:
-                tps[0].helical_entry = process.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
-            # Add a final pass around the perimeter
-            def ls2path(ls):
-                return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
-            for i in inputs:
-                tps.append(toolpath.Toolpath(ls2path(i.exterior), tool))
-                for h in i.interiors:
-                    tps.append(toolpath.Toolpath(ls2path(h), tool))
+        lastpt = None
+        for item in hsm_path:
+            if isinstance(item, cam.geometry.LineData):
+                if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
+                    if geom.Path(gen_path, False).length():
+                        tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
+                    gen_path = []
+                    lastpt = None
+                else:
+                    gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
+                    lastpt = geom.PathPoint(item.end.x, item.end.y)
+            elif isinstance(item, cam.geometry.ArcData):
+                steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
+                cc = geom.CandidateCircle(item.origin.x, item.origin.y, item.radius)
+                sa = math.pi / 2 - item.start_angle
+                span = -item.span_angle
+                osp = geom.PathPoint(item.start.x, item.start.y)
+                sp = cc.at_angle(sa)
+                ep = cc.at_angle(sa + span)
+                oep = geom.PathPoint(item.end.x, item.end.y)
+                #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
+                assert geom.dist(osp, sp) < 0.1
+                assert geom.dist(oep, ep) < 0.1
+                # Fix slight inaccuracies with line segments
+                if geom.dist(osp, sp) >= 0.0005:
+                    gen_path.append(osp)
+                gen_path += [sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span)]
+                if geom.dist(ep, oep) >= 0.0005:
+                    gen_path.append(oep)
+                lastpt = oep
+        if geom.Path(gen_path, False).length():
+            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
+            tps.append(tpo)
+        if tps and min_helix_dia <= max_helix_dia:
+            tps[0].helical_entry = process.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+        # Add a final pass around the perimeter
+        def ls2path(ls):
+            return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
+        tps.append(toolpath.Toolpath(ls2path(polygon.exterior), tool))
+        for h in polygon.interiors:
+            tps.append(toolpath.Toolpath(ls2path(h), tool))
         alltps += tps
     return toolpath.Toolpaths(alltps)
+
+def shape_to_object(shape, tool, displace=0, from_outside=False):
+    from shapely.geometry import MultiPolygon
+    inputs = shape_to_polygons(shape, tool, displace, from_outside)
+    if len(inputs) == 1:
+        return inputs[0]
+    else:
+        return MultiPolygon(inputs)
+
+def refine_shape(shape, previous, current):
+    alltps = []
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
+    previous_tool = milling_tool.FakeTool(previous)
+    previous_toolpath = shape_to_object(shape, previous_tool)
+    # This is the actual shape that has been milled by the previous tool
+    previous_outcome = previous_toolpath.buffer((previous - current) / 2)
+    unmilled = entire_shape.difference(previous_outcome)
+    unmilled_polygons = objects_to_polygons(unmilled)
+    output_shapes = []
+    for polygon in unmilled_polygons:
+        #polygon = polygon.buffer(current / 2).intersection(entire_shape)
+        if polygon.buffer(-current / 2):
+            exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+            interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
+            output_shapes.append(process.Shape(exterior, True, interiors))
+    return output_shapes

@@ -1,6 +1,10 @@
 from math import *
 from geom import *
 
+class FakeTool(object):
+    def __init__(self, diameter):
+        self.diameter = diameter
+
 class Tool(object):
     def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None):
         self.diameter = diameter

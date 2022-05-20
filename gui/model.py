@@ -15,6 +15,7 @@ import process
 import gcodegen
 import view
 import cam.dogbone
+import cam.pocket
 from milling_tool import *
 
 from . import canvas, inventory
@@ -825,6 +826,7 @@ class OperationType(EnumClass):
     INTERPOLATED_HOLE = 5
     DRILLED_HOLE = 6
     OUTSIDE_PEEL = 7
+    REFINE = 8
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -833,6 +835,7 @@ class OperationType(EnumClass):
         (INTERPOLATED_HOLE, "H-Hole"),
         (DRILLED_HOLE, "Drill"),
         (OUTSIDE_PEEL, "Outside peel"),
+        (REFINE, "Refine"),
     ]
 
 class CutterAdapter(object):
@@ -1001,7 +1004,7 @@ class PresetDerivedAttributes(object):
             elif self.hfeed < 0.1 or self.hfeed > 10000:
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
-                if self.operation.operation == OperationType.POCKET or self.operation.operation == OperationType.OUTSIDE_PEEL:
+                if self.operation.operation == OperationType.POCKET or self.operation.operation == OperationType.OUTSIDE_PEEL or self.operation.operation == OperationType.REFINE:
                     if self.stepover is None:
                         errors.append("Horizontal stepover is not set")
                     else:
@@ -1046,7 +1049,8 @@ class WorkerThread(threading.Thread):
             if isinstance(self.worker_func, list):
                 # XXXKF this gives pretty bad progress reporting
                 for fn in self.worker_func:
-                    fn()
+                    if fn is not None:
+                        fn()
             else:
                 self.worker_func()
         except Exception as e:
@@ -1120,11 +1124,13 @@ class OperationTreeItem(CAMTreeItem):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
-        has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL)
+        has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE)
         has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
         if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'dogbones']:
             return False
-        if not has_islands and name in ['islands', 'pocket_strategy']:
+        if not has_islands and name == 'pocket_strategy':
+            return False
+        if not self.areIslandsEditable() and name == 'islands':
             return False
         if not has_stepover and name in ['stepover', 'eh_diameter']:
             return False
@@ -1145,7 +1151,7 @@ class OperationTreeItem(CAMTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
-                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE]
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE]
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
@@ -1313,7 +1319,7 @@ class OperationTreeItem(CAMTreeItem):
                 return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
             else:
                 return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
-        elif self.operation == OperationType.POCKET:
+        elif self.operation == OperationType.POCKET or self.operation == OperationType.REFINE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.pocket(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL or pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
@@ -1332,6 +1338,8 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
+    def refineShape(self, shape, previous, current):
+        return cam.pocket.refine_shape(shape, previous, current)
     def updateCAMWork(self):
         try:
             errors = []
@@ -1370,6 +1378,19 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
+            if self.operation == OperationType.REFINE:
+                if isinstance(self.shape, list):
+                    raise ValueError("Refine not yet supported for text")
+                diameter_plus = self.cutter.diameter + 2 * self.offset
+                prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
+                if prev_diameter is None:
+                    raise ValueError("No matching milling operation to refine")
+                if islands:
+                    for island in islands:
+                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                        if item.closed:
+                            self.shape.add_island(item.boundary)
+                self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus)
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
@@ -1815,6 +1836,21 @@ class DocumentModel(QObject):
                 operation : OperationTreeItem = cycle.child(j)
                 res.append(func(operation))
         return res
+    def largerDiameterForShape(self, shape, min_size):
+        candidates = []
+        for operation in self.forEachOperation(lambda operation: operation):
+            diameter_plus = operation.cutter.diameter + 2 * operation.offset
+            if (operation.shape_id is shape.shape_id) and (diameter_plus > min_size):
+                candidates.append((diameter_plus, operation))
+        if not candidates:
+            return None, None, None
+        islands = None
+        candidates = list(sorted(candidates, key = lambda item: item[0]))
+        for diameter_plus, operation in candidates:
+            if operation.areIslandsEditable() and operation.islands:
+                islands = operation.islands
+                break
+        return candidates[0][0], candidates[0][1], islands
     def operDataChanged(self, topLeft, bottomRight, roles):
         if not roles or (10 in roles):
             changedOpers = False
