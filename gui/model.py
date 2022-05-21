@@ -1295,6 +1295,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.error = str(self.worker.exception)
             self.worker = None
             self.document.operationsUpdated.emit()
+            self.emitDataChanged()
         if self.worker is not None:
             return self.worker.progress
     def cancelWorker(self):
