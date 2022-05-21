@@ -319,44 +319,45 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         else:
             x, y = tp.start_point.x, tp.start_point.y
             rt = tp.start_radius
-        r = 0
-        c = geom.CandidateCircle(x, y, rt)
-        a = 0
-        min_helix_dia = tool.min_helix_diameter
-        max_helix_dia = 2 * rt
-        if min_helix_dia <= max_helix_dia:
-            r = 0.5 * min_helix_dia
-        else:
-            raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
-        pitch = tool.diameter * tool.stepover
-        if False:
-            # Old method, uses concentric circles, marginally better tested but has direction changes
-            while r < rt:
-                r = min(rt, r + pitch)
-                c = geom.CandidateCircle(x, y, r)
+        if not from_outside:
+            r = 0
+            c = geom.CandidateCircle(x, y, rt)
+            a = 0
+            min_helix_dia = tool.min_helix_diameter
+            max_helix_dia = 2 * rt
+            if min_helix_dia <= max_helix_dia:
+                r = 0.5 * min_helix_dia
+            else:
+                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
+            pitch = tool.diameter * tool.stepover
+            if False:
+                # Old method, uses concentric circles, marginally better tested but has direction changes
+                while r < rt:
+                    r = min(rt, r + pitch)
+                    c = geom.CandidateCircle(x, y, r)
+                    cp = c.at_angle(a)
+                    gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
+            else:
+                rdiff = rt - r
+                if rdiff:
+                    turns = math.ceil(rdiff / pitch)
+                    pitch = rdiff / turns
+                    # Number of arcs per circle
+                    res = 4
+                    slice = 2 * math.pi / res
+                    dr = pitch / (2 * math.sin(slice / 2) * res)
+                    sa = math.pi / res + math.pi / 2 + a
+                    xc0 = x - dr * math.cos(sa)
+                    yc0 = y - dr * math.sin(sa)
+                    for i in range(res * turns + 1):
+                        t1 = slice * i
+                        c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
+                        cp1 = c.at_angle(t1 + a)
+                        cp2 = c.at_angle(t1 + a + slice)
+                        gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
+                c = geom.CandidateCircle(x, y, rt)
                 cp = c.at_angle(a)
                 gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
-        else:
-            rdiff = rt - r
-            if rdiff:
-                turns = math.ceil(rdiff / pitch)
-                pitch = rdiff / turns
-                # Number of arcs per circle
-                res = 4
-                slice = 2 * math.pi / res
-                dr = pitch / (2 * math.sin(slice / 2) * res)
-                sa = math.pi / res + math.pi / 2 + a
-                xc0 = x - dr * math.cos(sa)
-                yc0 = y - dr * math.sin(sa)
-                for i in range(res * turns + 1):
-                    t1 = slice * i
-                    c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
-                    cp1 = c.at_angle(t1 + a)
-                    cp2 = c.at_angle(t1 + a + slice)
-                    gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
-            c = geom.CandidateCircle(x, y, rt)
-            cp = c.at_angle(a)
-            gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
 
         lastpt = None
         for item in hsm_path:
@@ -376,11 +377,15 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 span = -item.span_angle
                 osp = geom.PathPoint(item.start.x, item.start.y)
                 sp = cc.at_angle(sa)
-                ep = cc.at_angle(sa + span)
+                ep = cc.at_angle(math.pi / 2 - (item.start_angle + item.span_angle))
                 oep = geom.PathPoint(item.end.x, item.end.y)
                 #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
-                assert geom.dist(osp, sp) < 0.1
-                assert geom.dist(oep, ep) < 0.1
+                #assert geom.dist(osp, sp) < 0.1
+                if geom.dist(sp, osp) >= 0.1:
+                    print ("Excessive difference in start point coordinates", sp, osp, geom.dist(osp, sp))
+                if geom.dist(ep, oep) >= 0.1:
+                    print ("Excessive difference in end point coordinates", ep, oep, geom.dist(oep, ep), (sa + span) % (2 * math.pi), cc.angle(oep) % (2 * math.pi), item.radius, cc.dist(oep))
+                #assert geom.dist(oep, ep) < 0.1
                 # Fix slight inaccuracies with line segments
                 if geom.dist(osp, sp) >= 0.0005:
                     gen_path.append(osp)
@@ -391,7 +396,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         if geom.Path(gen_path, False).length():
             tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
             tps.append(tpo)
-        if tps and min_helix_dia <= max_helix_dia:
+        if not from_outside and tps and min_helix_dia <= max_helix_dia:
             tps[0].helical_entry = process.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
         # Add a final pass around the perimeter
         def ls2path(ls):
