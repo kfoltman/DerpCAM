@@ -179,6 +179,7 @@ class DrawingViewer(view.PathViewer):
         shape = op.orig_shape.translated(*translation).toShape()
         p = shape.boundary + shape.boundary[0:1]
         path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
         view.addPolylineToPath(path, p)
         for p in shape.islands:
             path2 = QPainterPath()
