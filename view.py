@@ -154,10 +154,6 @@ class LineDrawingOp(object):
         self.bounds = bounds
         self.darken = darken
     def paint(self, qp, transform, drawingArea, is_draft, scale):
-        if self.darken:
-            qp.setCompositionMode(QPainter.CompositionMode_Darken)
-        else:
-            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
         bounds = transform.mapRect(self.bounds)
         if bounds.intersects(drawingArea):
             # Skip all the thick lines when drawing during an interactive
@@ -170,6 +166,10 @@ class LineDrawingOp(object):
             if is_draft and is_slow:
                 return
             qp.setPen(pen)
+            if self.darken:
+                qp.setCompositionMode(QPainter.CompositionMode_Darken)
+            else:
+                qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
             # Do not anti-alias very long segments
             if is_slow:
                 qp.setRenderHint(QPainter.Antialiasing, False)
@@ -179,6 +179,7 @@ class LineDrawingOp(object):
                 qp.drawPath(self.path)
             if is_slow:
                 qp.setRenderHint(QPainter.Antialiasing, True)
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
 class FillDrawingOp(object):
     def __init__(self, brush, path, bounds, darken):

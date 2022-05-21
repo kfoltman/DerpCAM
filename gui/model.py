@@ -294,6 +294,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         self.origin = origin
         self.style = style
         self.text = text
+        self.closed = True
         self.createPaths()
     def properties(self):
         return [ self.prop_x, self.prop_y, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle ]

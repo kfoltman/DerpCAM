@@ -175,7 +175,8 @@ class DrawingViewer(view.PathViewer):
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
-        shape = op.orig_shape.toShape()
+        translation = (-op.document.drawing.x_offset, -op.document.drawing.y_offset)
+        shape = op.orig_shape.translated(*translation).toShape()
         p = shape.boundary + shape.boundary[0:1]
         path = QPainterPath()
         view.addPolylineToPath(path, p)
@@ -183,6 +184,12 @@ class DrawingViewer(view.PathViewer):
             path2 = QPainterPath()
             view.addPolylineToPath(path2, p + p[0:1])
             path = path.subtracted(path2)
+        for island in op.islands:
+            shape = op.document.drawing.itemById(island).translated(*translation).toShape()
+            if shape.closed:
+                path2 = QPainterPath()
+                view.addPolylineToPath(path2, shape.boundary + shape.boundary[0:1])
+                path = path.subtracted(path2)
         transform = self.drawingTransform()
         brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
         brush.setTransform(transform.inverted()[0])
