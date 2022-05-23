@@ -6,8 +6,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import geom
 import gui.settings
 
-from PyQt5.QtCore import QSettings
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtTest import QTest
 
 app = QApplication(sys.argv)
 
@@ -29,6 +30,9 @@ class ConfigDialogTest(unittest.TestCase):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
         self.checkCheckbox('simplify_lines', 'simplifyLinesCheck')
         self.checkCheckbox('draw_arrows', 'drawArrowsCheck')
+    def testEditBoxes(self):
+        self.checkDirEditbox('input_directory', 'inputDirEdit')
+        self.checkDirEditbox('gcode_directory', 'gcodeDirEdit')
     def createDialog(self):
         self.dlg = gui.settings.PreferencesDialog(None, self.settings)
         self.dlg.initUI()
@@ -36,6 +40,96 @@ class ConfigDialogTest(unittest.TestCase):
         self.createDialog()
         self.assertEqual(self.dlg.resolutionSpin.text(), str(self.settings.resolution))
         self.assertEqual(self.dlg.gridSpin.text(), str(self.settings.grid_resolution))
+    def checkDirEditbox(self, config_attr, widget_attr):
+        self.checkEditbox(config_attr, widget_attr, check_last=True)
+        value = '/dirtest'
+
+        def verifyDlg(dlg):
+            self.assertEqual(dlg.fileMode(), QFileDialog.FileMode.Directory)
+            self.assertEqual(dlg.directory().absolutePath(), value)
+            passed.append(True)
+            return True # accept the dialog
+        QFileDialog.exec_ = verifyDlg
+        # Set directly
+        passed = []
+        setattr(self.settings, config_attr, value)
+        self.createDialog()
+        QTest.keyClick(getattr(self.dlg, widget_attr).selectButton, Qt.Key.Key_Space)
+        self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+        self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+        self.assertTrue(passed)
+        # Set via last value
+        passed = []
+        setattr(self.settings, config_attr, '')
+        setattr(self.settings, f'last_{config_attr}', value)
+        self.createDialog()
+        QTest.keyClick(getattr(self.dlg, widget_attr).selectButton, Qt.Key.Key_Space)
+        self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+        self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+        self.assertTrue(passed)
+        # Set via last value while main value is not empty
+        passed = []
+        setattr(self.settings, config_attr, value)
+        setattr(self.settings, f'last_{config_attr}', 'distraction')
+        self.createDialog()
+        QTest.keyClick(getattr(self.dlg, widget_attr).selectButton, Qt.Key.Key_Space)
+        self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+        self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+        self.assertTrue(passed)
+    def checkEditbox(self, config_attr, widget_attr, check_last=False):
+        new_value = 'testing'
+        for value in ('first', 'second'):
+            setattr(self.settings, config_attr, value)
+            if check_last:
+                def_value = f'default value/{value}'
+                setattr(self.settings, f'last_{config_attr}', def_value)
+            self.settings.save()
+            self.createDialog()
+            if check_last:
+                self.assertEqual(getattr(self.dlg, widget_attr).default_value, def_value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+            self.dlg.accept()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
+            # OK with a change
+            self.settings.load()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
+            self.createDialog()
+            self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+            getattr(self.dlg, widget_attr).edit.setText(new_value)
+            self.dlg.accept()
+            self.assertEqual(getattr(self.settings, config_attr), new_value, config_attr)
+            # OK with a change - using setValue
+            self.settings.load()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
+            self.createDialog()
+            self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+            getattr(self.dlg, widget_attr).setValue(new_value, '123')
+            self.assertEqual(getattr(self.dlg, widget_attr).default_value, '123')
+            self.dlg.accept()
+            self.assertEqual(getattr(self.settings, config_attr), new_value, config_attr)
+            # OK with a change - using keyClicks
+            self.settings.load()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
+            self.createDialog()
+            self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+            # Shift-Home to erase the old value
+            QTest.keyClick(getattr(self.dlg, widget_attr).edit, Qt.Key.Key_Home, Qt.ShiftModifier)
+            QTest.keyClicks(getattr(self.dlg, widget_attr).edit, new_value)
+            self.dlg.accept()
+            self.assertEqual(getattr(self.settings, config_attr), new_value, config_attr)
+            # Cancel with a change
+            self.settings.load()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
+            self.createDialog()
+            self.assertEqual(getattr(self.dlg, widget_attr).value(), value, widget_attr)
+            self.assertEqual(getattr(self.dlg, widget_attr).edit.text(), value, widget_attr)
+            getattr(self.dlg, widget_attr).edit.setText(new_value)
+            self.dlg.reject()
+            self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
     def checkSpinbox(self, config_attr, widget_attr, values, geometry_setting=None):
         for value, new_value in values:
             setattr(self.settings, config_attr, value)
