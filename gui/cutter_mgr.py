@@ -89,7 +89,8 @@ class CutterListWidget(QTreeWidget):
         currentItem = None
         if tb_obj is current_item:
             currentItem = cutter
-        for j in tb.presets:
+        presets = list(sorted(tb.presets, key=lambda preset: preset.name))
+        for j in presets:
             preset = QTreeWidgetItem(["Preset", j.name, j.description_only()])
             preset.is_global = is_global
             self.setItemFont(preset, self.italic_font)
@@ -136,7 +137,8 @@ class SelectCutterDialog(QDialog):
     def setTitle(self):
         self.setWindowTitle("Select a tool and a preset for the operation")
         self.prompt = "&Select or create a cutter and an optional preset to use for the cutting operation"
-    def getCutters(self):
+    @staticmethod
+    def getCutters():
         return sorted(inventory.inventory.toolbits, key=lambda item: (item.cutter_type_priority, item.name))
     def cutterList(self):
         return CutterListWidget(self, self.getCutters, self.document, self.cutter_type)
@@ -146,10 +148,6 @@ class SelectCutterDialog(QDialog):
         self.form = QFormLayout(self)
         label = QLabel(self.prompt)
         self.form.addRow(label)
-        #self.selectRadio = QRadioButton(self.prompt, self)
-        #self.selectRadio.setChecked(True)
-        #self.selectRadio.clicked.connect(lambda: self.tools.setFocus(Qt.ShortcutFocusReason))
-        #self.form.addRow(self.selectRadio)
         self.tools = self.cutterList()
         label.setBuddy(self.tools)
         self.tools.doubleClicked.connect(self.accept)
@@ -352,8 +350,8 @@ class CreateEditCutterDialog(QDialog):
         if self.edit_cutter:
             self.nameEdit.setText(self.edit_cutter.name)
             self.flutesEdit.setText(str(self.edit_cutter.flutes))
-            self.diameterEdit.setText(str(self.edit_cutter.diameter))
-            self.lengthEdit.setText(str(self.edit_cutter.length) if self.edit_cutter.length else "")
+            self.diameterEdit.setText(inventory.Format.cutter_dia(self.edit_cutter.diameter))
+            self.lengthEdit.setText(inventory.Format.cutter_length(self.edit_cutter.length) if self.edit_cutter.length else "")
             if isinstance(self.edit_cutter, inventory.EndMillCutter):
                 self.emRadio.setChecked(True)
             elif isinstance(self.edit_cutter, inventory.DrillBitCutter):
@@ -376,7 +374,10 @@ class CreateEditCutterDialog(QDialog):
             return
         try:
             if self.flutesEdit.text() != '':
-                flutes = float(self.flutesEdit.text())
+                try:
+                    flutes = float(self.flutesEdit.text())
+                except ValueError:
+                    flutes = -1
                 if flutes < 1 or flutes > 100:
                     raise ValueError("Invalid number of flutes")
             else:
@@ -406,14 +407,10 @@ class CreateEditCutterDialog(QDialog):
             QMessageBox.critical(self, None, "Cutter length is specified but not a valid number")
             self.lengthEdit.setFocus()
             return
-        if self.nameEdit.text() == "":
-            QMessageBox.critical(self, None, "Cutter must have a name")
-            self.nameEdit.setFocus()
-            return
         if self.emRadio.isChecked():
             self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.carbide, diameter, self.length, flutes)
         if self.drillRadio.isChecked():
-            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, self.length)
+            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, self.length, flutes)
         QDialog.accept(self)
 
 class CreateEditPresetDialog(propsheet.BaseCreateEditDialog):

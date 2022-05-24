@@ -72,6 +72,10 @@ class IdSequence(object):
             IdSequence.last_id = id + 1
         IdSequence.objects[id] = who
         return id
+    @staticmethod
+    def nukeAll():
+        IdSequence.last_id = 999
+        IdSequence.objects = {}
 
 class EncodedProperty(object):
     def __init__(self, name):
