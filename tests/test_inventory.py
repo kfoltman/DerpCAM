@@ -24,6 +24,11 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(gui.inventory.DrillBitCutter.preset_type, gui.inventory.DrillBitPreset)
         self.assertEqual(gui.inventory.DrillBitCutter.cutter_type_name, "Drill bit")
         self.assertEqual(gui.inventory.DrillBitCutter.cutter_type_priority, 2)
+    def testGetByName(self):
+        self.assertIsNone(std_cutters.toolbitByName("cheapo 2F 2.5/12", gui.inventory.DrillBitCutter))
+        self.assertIsNone(std_cutters.toolbitByName("2mm HSS", gui.inventory.EndMillCutter))
+        self.assertIsInstance(std_cutters.toolbitByName("cheapo 2F 2.5/12", gui.inventory.EndMillCutter), gui.inventory.EndMillCutter)
+        self.assertIsInstance(std_cutters.toolbitByName("2mm HSS", gui.inventory.DrillBitCutter), gui.inventory.DrillBitCutter)
     def testPropagation(self):
         self.checkPropagationForToolbit("2mm HSS", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("2mm HSS", "Wood-untested", attr_values=[("rpm", 3), ("vfeed", 30), ("maxdoc", 1)])
