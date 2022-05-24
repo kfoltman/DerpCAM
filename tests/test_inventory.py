@@ -17,6 +17,13 @@ class InventoryTest(unittest.TestCase):
         self.test_dir = tempfile.TemporaryDirectory()
     def tearDown(self):
         self.test_dir.cleanup()
+    def testClasses(self):
+        self.assertEqual(gui.inventory.EndMillCutter.preset_type, gui.inventory.EndMillPreset)
+        self.assertEqual(gui.inventory.EndMillCutter.cutter_type_name, "End mill")
+        self.assertEqual(gui.inventory.EndMillCutter.cutter_type_priority, 1)
+        self.assertEqual(gui.inventory.DrillBitCutter.preset_type, gui.inventory.DrillBitPreset)
+        self.assertEqual(gui.inventory.DrillBitCutter.cutter_type_name, "Drill bit")
+        self.assertEqual(gui.inventory.DrillBitCutter.cutter_type_priority, 2)
     def testPropagation(self):
         self.checkPropagationForToolbit("2mm HSS", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("2mm HSS", "Wood-untested", attr_values=[("rpm", 3), ("vfeed", 30), ("maxdoc", 1)])
@@ -33,6 +40,16 @@ class InventoryTest(unittest.TestCase):
         p1, p2 = self.checkPropagation(preset, attr_values)
         self.assertEqual(p1.toolbit, em)
         self.assertEqual(p2.toolbit, em)
+        name = preset_name + "-test"
+        self.assertIs(em.addPreset(None, name, **dict(attr_values)), em)
+        preset2 = em.presetByName(name)
+        self.assertEqual(preset2.toolbit, em)
+        self.assertIsNotNone(preset2.id)
+        self.assertNotEqual(preset2.id, 0)
+        for key, value in attr_values:
+            self.assertEqual(getattr(preset2, key), value)
+        em.deletePreset(preset2)
+        self.assertIsNone(em.presetByName(name))
     def checkPropagation(self, em, attr_values):
         em2 = em.newInstance()
         self.assertIsNot(em2, em)
@@ -97,8 +114,10 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(toolbit.flutes, flutes)
         self.assertEqual(toolbit.length, length)
         self.assertIn(name + ":", toolbit.description())
+        self.assertNotIn(name + ":", toolbit.description_only())
         self.assertIn(substr, toolbit.description())
         self.assertIn(substr, toolbit.description_only())
+        self.assertNotIn(substr, toolbit.name)
     def checkPreset(self, inventory, tool_name, preset_name, substrings, **attribs):
         toolbit = inventory.toolbitByName(tool_name)
         self.assertIsNotNone(toolbit)
