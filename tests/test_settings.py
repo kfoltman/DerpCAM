@@ -42,7 +42,7 @@ class ConfigDialogTest(unittest.TestCase):
         self.assertEqual(self.dlg.gridSpin.text(), str(self.settings.grid_resolution))
     def checkDirEditbox(self, config_attr, widget_attr):
         self.checkEditbox(config_attr, widget_attr, check_last=True)
-        value = '/dirtest'
+        value = '/tmp'
 
         def verifyDlg(dlg):
             self.assertEqual(dlg.fileMode(), QFileDialog.FileMode.Directory)
