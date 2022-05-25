@@ -11,6 +11,12 @@ from PyQt5.QtTest import QTest
 
 app = QApplication(sys.argv)
 
+saves = 0
+def incSaveCount():
+    global saves
+    saves += 1
+gui.cutter_mgr.saveInventory = incSaveCount
+
 class CutterMgrTestBase(unittest.TestCase):
     def setUp(self):
         gui.inventory.IdSequence.nukeAll()
@@ -25,8 +31,35 @@ class CutterMgrTestBase(unittest.TestCase):
         widget.setFocus()
         for i in range(count):
             QTest.keyClick(widget, Qt.Key.Key_Backspace)
-    def expectError(self, expectedMsg, passed):
-        QMessageBox.critical = lambda parent, title, msg: passed.append(True) if msg == expectedMsg else self.assertTrue(False, f"Unexpected error dialog: {msg}, expected: {expectedMsg}")
+
+class ExpectError(object):
+    def __init__(self, test, expectedMsg):
+        self.test = test
+        self.passed = False
+        self.expectedMsg = expectedMsg
+    def critical(self, parent, title, msg):
+        if msg == self.expectedMsg:
+            self.passed = True
+        else:
+            self.test.assertEqual(msg, self.expectedMsg)
+    def __enter__(self):
+        self.old_critical = QMessageBox.critical
+        QMessageBox.critical = lambda parent, title, msg: self.critical(parent, title, msg)
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.test.assertTrue(self.passed, f"Expected exception not thrown: {self.expectedMsg}")
+        QMessageBox.critical = self.old_critical
+
+class ExpectNoError(object):
+    def __init__(self, test):
+        self.test = test
+        self.passed = True
+    def critical(self, parent, title, msg):
+        self.test.assertTrue(False, msg)
+    def __enter__(self):
+        self.old_critical = QMessageBox.critical
+        QMessageBox.critical = lambda parent, title, msg: self.critical(parent, title, msg)
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        QMessageBox.critical = self.old_critical
 
 class CutterListTest(CutterMgrTestBase):
     def testCutterListWidget(self):
@@ -36,7 +69,7 @@ class CutterListTest(CutterMgrTestBase):
         self.verifyProjectCutter("cheapo 2F 2.5/12", gui.inventory.EndMillCutter)
     def verifyProjectCutter(self, cutter_name, cutter_type):
         toolbits_func = gui.cutter_mgr.SelectCutterDialog.getCutters
-        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type)
+        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
         cycle = self.document.opAddCutter(tool_data)
         widget = gui.cutter_mgr.CutterListWidget(None, toolbits_func, self.document, cutter_type, inventory_only=False)
         self.assertEqual(widget.headerItem().text(0), "Type")
@@ -81,9 +114,8 @@ class CutterEditDlgTest(CutterMgrTestBase):
     def testCreateCutterNoName(self):
         passed = []
         dlg = gui.cutter_mgr.CreateEditCutterDialog(None, None)
-        QMessageBox.critical = lambda parent, title, msg: msg == 'Name is required' and passed.append(True)
-        QTest.keyClick(dlg.buttonBox.button(QDialogButtonBox.Ok), Qt.Key.Key_Space)
-        self.assertTrue(passed)
+        with ExpectError(self, 'Name is required'):
+            self.clickOk(dlg)
     def testCreateCutterEM(self):
         for lengthStr in ["", "12"]:
             dlg = gui.cutter_mgr.CreateEditCutterDialog(None, None)
@@ -93,8 +125,8 @@ class CutterEditDlgTest(CutterMgrTestBase):
             self.backspaces(dlg.flutesEdit, 1)
             QTest.keyClicks(dlg.flutesEdit, "4")
             QTest.keyClick(dlg.emRadio, " ")
-            QMessageBox.critical = lambda parent, title, msg: self.assertTrue(False, f"Unexpected error dialog: {msg}")
-            QTest.keyClick(dlg.buttonBox.button(QDialogButtonBox.Ok), Qt.Key.Key_Space)
+            with ExpectNoError(self):
+                self.clickOk(dlg)
             self.assertTrue(dlg.cutter)
             self.assertIsInstance(dlg.cutter, gui.inventory.EndMillCutter)
             self.assertEqual(dlg.cutter.name, "New endmill")
@@ -110,8 +142,8 @@ class CutterEditDlgTest(CutterMgrTestBase):
             QTest.keyClicks(dlg.flutesEdit, "6")
             QTest.keyClick(dlg.drillRadio, " ")
             QTest.keyClicks(dlg.lengthEdit, lengthStr)
-            QMessageBox.critical = lambda parent, title, msg: self.assertTrue(False, f"Unexpected error dialog: {msg}")
-            QTest.keyClick(dlg.buttonBox.button(QDialogButtonBox.Ok), Qt.Key.Key_Space)
+            with ExpectNoError(self):
+                self.clickOk(dlg)
             self.assertTrue(dlg.cutter)
             self.assertIsInstance(dlg.cutter, gui.inventory.DrillBitCutter)
             self.assertEqual(dlg.cutter.name, "New drill bit")
@@ -126,24 +158,18 @@ class CutterEditDlgTest(CutterMgrTestBase):
             QTest.keyClicks(dlg.lengthEdit, "bad")
             QTest.keyClicks(dlg.flutesEdit, "bad")
             QTest.keyClick(getattr(dlg, variant), " ")
-            passed = []
-            self.expectError('Invalid number of flutes', passed)
-            self.clickOk(dlg)
-            self.assertTrue(passed)
+            with ExpectError(self, 'Invalid number of flutes'):
+                self.clickOk(dlg)
             self.backspaces(dlg.flutesEdit, 4)
             QTest.keyClicks(dlg.flutesEdit, "4")
 
-            passed = []
-            self.expectError('Cutter diameter is not valid', passed)
-            self.clickOk(dlg)
-            self.assertTrue(passed)
+            with ExpectError(self, 'Cutter diameter is not valid'):
+                self.clickOk(dlg)
             self.backspaces(dlg.diameterEdit, 3)
             QTest.keyClicks(dlg.diameterEdit, "3.175")
 
-            passed = []
-            self.expectError('Cutter length is specified but not a valid number', passed)
-            self.clickOk(dlg)
-            self.assertTrue(passed)
+            with ExpectError(self, 'Cutter length is specified but not a valid number'):
+                self.clickOk(dlg)
             self.backspaces(dlg.lengthEdit, 3)
             QTest.keyClicks(dlg.lengthEdit, "15")
 
@@ -205,7 +231,7 @@ class CutterListDialogTest(CutterMgrTestBase):
     def testBrowseProject(self):
         cutter_name = "cheapo 2F 3.2/15"
         cutter_type = gui.inventory.EndMillCutter
-        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type)
+        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
         cycle = self.document.opAddCutter(tool_data)
 
         dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
@@ -216,22 +242,27 @@ class CutterListDialogTest(CutterMgrTestBase):
     def testEditCutterDB(self):
         self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", gui.inventory.DrillBitCutter, "2mm HSS drill bit, L=8mm")
     def verifyEditCutter(self, cutter_name, new_cutter_name, cutter_type, expected_str):
-        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type)
+        tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
+        self.assertIsNotNone(tool_data)
         cycle = self.document.opAddCutter(tool_data)
         def fakeExec(editDlg):
             editDlg.nameEdit.setText(new_cutter_name)
             editDlg.diameterEdit.setText("2")
             editDlg.flutesEdit.setText("4")
             editDlg.lengthEdit.setText("8")
-            editDlg.accept()
+            self.clickOk(editDlg)
             return True
         for variant in ['project', 'inventory']:
             dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
             parent = getattr(dlg.tools, f"{variant}_toolbits")
             tool_item = self.findCutterItem(dlg, parent, cutter_name)
+            self.assertIsNotNone(tool_item)
             dlg.tools.setCurrentItem(tool_item)
             gui.cutter_mgr.CreateEditCutterDialog.exec_ = fakeExec
+            self.assertTrue(dlg.editButton.isEnabled())
+            old_saves = saves
             QTest.keyClick(dlg.editButton, Qt.Key.Key_Space)
+            self.assertEqual(saves, old_saves + 1 if variant == 'inventory' else old_saves)
             del gui.cutter_mgr.CreateEditCutterDialog.exec_
             tool_item = self.findCutterItem(dlg, parent, cutter_name)
             self.assertIsNone(tool_item)
