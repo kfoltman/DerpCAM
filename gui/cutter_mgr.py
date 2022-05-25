@@ -62,14 +62,18 @@ class CutterListWidget(QTreeWidget):
         if self.project_toolbits is not None:
             self.project_toolbits.takeChildren()
         self.inventory_toolbits.takeChildren()
+        currentItem = None
         if not self.inventory_only:
             for cycle in self.document.allCycles():
-                self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item)
+                currentItem = self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item) or currentItem
             #self.addVirtualToolbit(self.project_toolbits, "Create a new cutter for this project only")
         for tb in self.toolbits_func():
-            self.addToolbit(self.inventory_toolbits, tb, tb, current_item)
+            currentItem = self.addToolbit(self.inventory_toolbits, tb, tb, current_item) or currentItem
         #self.addVirtualToolbit(self.inventory_toolbits, "Create a new cutter in the inventory")
         self.expandAll()
+        if currentItem:
+            self.setCurrentItem(currentItem)
+            self.scrollToItem(currentItem)
     def addVirtualToolbit(self, parent, command):
         cutter = QTreeWidgetItem([command])
         cutter.setFirstColumnSpanned(True)
@@ -106,8 +110,7 @@ class CutterListWidget(QTreeWidget):
             addnew.setForeground(2, QColor(128, 128, 128))
             cutter.addChild(addnew)
         output_list.addChild(cutter)
-        if currentItem is not None:
-            self.setCurrentItem(currentItem)
+        return currentItem
     def setItemFont(self, item, font):
         for i in range(3):
             item.setFont(i, font)
