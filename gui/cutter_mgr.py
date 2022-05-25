@@ -187,15 +187,15 @@ class SelectCutterDialog(QDialog):
         if item is None:
             setButtons(None, None, None)
         elif item is self.tools.project_toolbits:
-            setButtons("&Add a cutter (project)...", None, None)
+            setButtons("&Add cutter (project)...", None, None)
         elif item is self.tools.inventory_toolbits:
-            setButtons("&Add a cutter (inventory)...", None, None)
+            setButtons("&Add cutter (inventory)...", None, None)
         elif isinstance(item.content, inventory.CutterBase):
-            setButtons("&Create preset...", "&Modify cutter...", "&Delete cutter")
+            setButtons("&Add preset...", "&Modify cutter...", "&Delete cutter")
         elif isinstance(item.content, model.CycleTreeItem):
-            setButtons("&Create preset...", "&Modify cutter...", "&Delete cycle/cutter")
+            setButtons("&Add preset...", "&Modify cutter...", "&Delete cycle/cutter")
         elif isinstance(item.content, tuple):
-            setButtons("&Clone preset...", "&Modify preset...", "&Delete preset")
+            setButtons("&Duplicate preset...", "&Modify preset...", "&Delete preset")
         else:
             setButtons(None, None, None)
         self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(self.tools.selectedItem() is not None)
@@ -424,7 +424,7 @@ class CreateEditPresetDialog(propsheet.BaseCreateEditDialog):
         propsheet.BaseCreateEditDialog.__init__(self, parent, title, values)
     def initUI(self):
         propsheet.BaseCreateEditDialog.initUI(self)
-        self.prop_controls[model.ToolPresetTreeItem.prop_name].textEdited.connect(self.updateAcceptButton)
+        self.prop_controls[model.ToolPresetTreeItem.prop_name].textChanged.connect(self.updateAcceptButton)
         self.updateAcceptButton()
     def updateAcceptButton(self):
         name = self.prop_controls[model.ToolPresetTreeItem.prop_name].text()

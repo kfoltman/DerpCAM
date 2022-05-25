@@ -3,6 +3,7 @@ import sys
 import unittest
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import gui.model
 import gui.inventory
 import gui.cutter_mgr
 from PyQt5.QtCore import Qt
@@ -26,6 +27,7 @@ class CutterMgrTestBase(unittest.TestCase):
     def tearDown(self):
         del self.document
     def clickOk(self, dlg):
+        self.assertTrue(dlg.buttonBox.button(QDialogButtonBox.Ok).isEnabled())
         QTest.keyClick(dlg.buttonBox.button(QDialogButtonBox.Ok), Qt.Key.Key_Space)
     def backspaces(self, widget, count):
         widget.setFocus()
@@ -344,6 +346,48 @@ class CutterListDialogTest(CutterMgrTestBase):
                 else:
                     self.assertEqual(self.document.allCycles() != [], answer == QMessageBox.No)
                     self.assertEqual(cutter_name in self.document.project_toolbits, answer == QMessageBox.No)
+    def testAddCutterEM(self):
+        self.verifyAddCutter("New endmill", gui.inventory.EndMillCutter)
+    def testAddCutterDB(self):
+        self.verifyAddCutter("New drill bit", gui.inventory.DrillBitCutter)
+    def verifyAddCutter(self, cutter_name, cutter_type):
+        preset_name = "Test preset"
+        def fakeExecCutter(addDlg):
+            addDlg.nameEdit.setText(cutter_name)
+            addDlg.diameterEdit.setText("2")
+            addDlg.flutesEdit.setText("3")
+            addDlg.lengthEdit.setText("12")
+            self.clickOk(addDlg)
+            return True
+        def fakeExecPreset(addDlg):
+            addDlg.prop_controls[gui.model.ToolPresetTreeItem.prop_name].setText(preset_name)
+            self.clickOk(addDlg)
+            self.assertIsNotNone(addDlg.result)
+            return True
+        for variant in ['project', 'inventory']:
+            dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
+            parent = getattr(dlg.tools, f"{variant}_toolbits")
+            dlg.tools.setCurrentItem(parent)
+            self.assertTrue(dlg.newButton.isEnabled())
+            gui.cutter_mgr.CreateEditCutterDialog.exec_ = fakeExecCutter
+            QTest.keyClick(dlg.newButton, Qt.Key.Key_Space)
+            del gui.cutter_mgr.CreateEditCutterDialog.exec_
+            tool_item = self.findCutterItem(parent, cutter_name)
+            self.assertIsNotNone(tool_item)
+            self.assertIs(dlg.tools.selectedItem(), tool_item.content)
+            cutter = tool_item.content.cutter if variant == 'project' else tool_item.content
+            self.assertEqual(cutter.diameter, 2)
+            self.assertEqual(cutter.flutes, 3)
+            self.assertEqual(cutter.length, 12)
+            if variant == 'inventory':
+                self.assertIsNotNone(gui.inventory.inventory.toolbitByName(cutter_name))
+            else:
+                self.assertIsNotNone(self.document.project_toolbits[cutter_name])
+            self.assertTrue(dlg.newButton.isEnabled())
+            gui.cutter_mgr.CreateEditPresetDialog.exec_ = fakeExecPreset
+            QTest.keyClick(dlg.newButton, Qt.Key.Key_Space)
+            del gui.cutter_mgr.CreateEditPresetDialog.exec_
+            
     def findCutterItem(self, parent, cutter_name):
         for i in range(parent.childCount()):
             tool_item = parent.child(i)
@@ -360,22 +404,22 @@ class CutterListDialogTest(CutterMgrTestBase):
         parent = getattr(tools, f"{where}_toolbits")
         tools.setCurrentItem(parent)
         self.verifyButtonState(dlg, True, False, False)
-        self.verifyButtonTexts(dlg, f"&Add a cutter ({where})...", "Modify...", "Delete")
+        self.verifyButtonTexts(dlg, f"&Add cutter ({where})...", "Modify...", "Delete")
         for i in range(parent.childCount()):
             tool_item = parent.child(i)
             tools.setCurrentItem(tool_item)
             self.assertEqual(tool_item.is_global, where == 'inventory')
             self.verifyButtonState(dlg, True, True, True)
             if where == 'inventory':
-                self.verifyButtonTexts(dlg, f"&Create preset...", "&Modify cutter...", "&Delete cutter")
+                self.verifyButtonTexts(dlg, f"&Add preset...", "&Modify cutter...", "&Delete cutter")
             else:
-                self.verifyButtonTexts(dlg, f"&Create preset...", "&Modify cutter...", "&Delete cycle/cutter")
+                self.verifyButtonTexts(dlg, f"&Add preset...", "&Modify cutter...", "&Delete cycle/cutter")
             for j in range(tool_item.childCount()):
                 preset_item = tool_item.child(j)
                 tools.setCurrentItem(preset_item)
                 self.assertEqual(preset_item.is_global, where == 'inventory')
                 self.verifyButtonState(dlg, True, True, True)
-                self.verifyButtonTexts(dlg, f"&Clone preset...", "&Modify preset...", "&Delete preset")                
+                self.verifyButtonTexts(dlg, f"&Duplicate preset...", "&Modify preset...", "&Delete preset")
     def verifyButtonState(self, dlg, newEnabled, editEnabled, deleteEnabled):
         self.assertEqual(dlg.newButton.isEnabled(), newEnabled)
         self.assertEqual(dlg.editButton.isEnabled(), editEnabled)
