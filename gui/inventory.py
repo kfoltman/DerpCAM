@@ -73,6 +73,9 @@ class IdSequence(object):
         IdSequence.objects[id] = who
         return id
     @staticmethod
+    def unregister(who):
+        del IdSequence.objects[who.id]
+    @staticmethod
     def nukeAll():
         IdSequence.last_id = 999
         IdSequence.objects = {}
@@ -198,6 +201,7 @@ class CutterBase(Serializable):
         return None
     def deletePreset(self, preset):
         del self.presets[self.presets.index(preset)]
+        IdSequence.unregister(preset)
         
 class MillDirection(EnumClass):
     CONVENTIONAL = 0
@@ -371,5 +375,8 @@ class Inventory(object):
         f = open(os.path.join(dirname, filename), "w")
         json.dump(res, f, indent=2)
         f.close()
+    def deleteCutter(self, cutter):
+        del self.toolbits[self.toolbits.index(cutter)]
+        IdSequence.unregister(cutter)
 
 inventory = Inventory()

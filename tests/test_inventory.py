@@ -10,13 +10,14 @@ MillDirection = gui.inventory.MillDirection
 PocketStrategy = gui.inventory.PocketStrategy
 
 std_cutters = gui.inventory.Inventory()
-std_cutters.createStdCutters()
 
 class InventoryTest(unittest.TestCase):
     def setUp(self):
+        std_cutters.createStdCutters()
         self.test_dir = tempfile.TemporaryDirectory()
     def tearDown(self):
         self.test_dir.cleanup()
+        gui.inventory.IdSequence.nukeAll()
     def testClasses(self):
         self.assertEqual(gui.inventory.EndMillCutter.preset_type, gui.inventory.EndMillPreset)
         self.assertEqual(gui.inventory.EndMillCutter.cutter_type_name, "End mill")
@@ -29,6 +30,11 @@ class InventoryTest(unittest.TestCase):
         self.assertIsNone(std_cutters.toolbitByName("2mm HSS", gui.inventory.EndMillCutter))
         self.assertIsInstance(std_cutters.toolbitByName("cheapo 2F 2.5/12", gui.inventory.EndMillCutter), gui.inventory.EndMillCutter)
         self.assertIsInstance(std_cutters.toolbitByName("2mm HSS", gui.inventory.DrillBitCutter), gui.inventory.DrillBitCutter)
+    def testDelete(self):
+        std_cutters.deleteCutter(std_cutters.toolbitByName("cheapo 2F 2.5/12", gui.inventory.EndMillCutter))
+        std_cutters.deleteCutter(std_cutters.toolbitByName("2mm HSS", gui.inventory.DrillBitCutter))
+        self.assertIsNone(std_cutters.toolbitByName("cheapo 2F 2.5/12", gui.inventory.EndMillCutter))
+        self.assertIsNone(std_cutters.toolbitByName("2mm HSS", gui.inventory.DrillBitCutter))
     def testPropagation(self):
         self.checkPropagationForToolbit("2mm HSS", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("2mm HSS", "Wood-untested", attr_values=[("rpm", 3), ("vfeed", 30), ("maxdoc", 1)])

@@ -61,6 +61,25 @@ class ExpectNoError(object):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         QMessageBox.critical = self.old_critical
 
+class ExpectQuestion(object):
+    def __init__(self, test, snippet, answer):
+        self.test = test
+        self.passed = False
+        self.answer = answer
+        self.snippet = snippet
+    def question(self, parent, title, msg):
+        if self.snippet in msg:
+            self.passed = True
+        else:
+            self.test.assertIn(self.snippet, msg)
+        return self.answer
+    def __enter__(self):
+        self.old_question = QMessageBox.question
+        QMessageBox.question = lambda parent, title, msg: self.question(parent, title, msg)
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.test.assertTrue(self.passed, f"Expected question not asked: {self.snippet}")
+        QMessageBox.question = self.question
+
 class CutterListTest(CutterMgrTestBase):
     def testCutterListWidget(self):
         self.verifyInventoryCutterList(gui.inventory.EndMillCutter)
@@ -228,7 +247,7 @@ class CutterListDialogTest(CutterMgrTestBase):
     def testBrowseInventory(self):
         dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
         self.verifyButtonUpdates(dlg, "inventory")
-    def testBrowseProject(self):
+    def testButtonUpdates(self):
         cutter_name = "cheapo 2F 3.2/15"
         cutter_type = gui.inventory.EndMillCutter
         tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
@@ -255,7 +274,7 @@ class CutterListDialogTest(CutterMgrTestBase):
         for variant in ['project', 'inventory']:
             dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
             parent = getattr(dlg.tools, f"{variant}_toolbits")
-            tool_item = self.findCutterItem(dlg, parent, cutter_name)
+            tool_item = self.findCutterItem(parent, cutter_name)
             self.assertIsNotNone(tool_item)
             dlg.tools.setCurrentItem(tool_item)
             gui.cutter_mgr.CreateEditCutterDialog.exec_ = fakeExec
@@ -264,20 +283,78 @@ class CutterListDialogTest(CutterMgrTestBase):
             QTest.keyClick(dlg.editButton, Qt.Key.Key_Space)
             self.assertEqual(saves, old_saves + 1 if variant == 'inventory' else old_saves)
             del gui.cutter_mgr.CreateEditCutterDialog.exec_
-            tool_item = self.findCutterItem(dlg, parent, cutter_name)
+            tool_item = self.findCutterItem(parent, cutter_name)
             self.assertIsNone(tool_item)
-            tool_item = self.findCutterItem(dlg, parent, new_cutter_name)
+            tool_item = self.findCutterItem(parent, new_cutter_name)
             self.assertIsNotNone(tool_item)
             content = tool_item.content if variant == 'inventory' else tool_item.content.cutter
             self.assertEqual(content.diameter, 2)
             self.assertEqual(content.flutes, 4)
             self.assertEqual(content.length, 8)
             self.assertIn(expected_str, content.description())
-    def findCutterItem(self, dlg, parent, cutter_name):
+    def testDeleteCutterEM(self):
+        self.verifyDeleteCutter("cheapo 2F 3.2/15", "Wood-finishing", gui.inventory.EndMillCutter)
+    def testDeleteCutterDB(self):
+        self.verifyDeleteCutter("3mm HSS", "Wood-untested", gui.inventory.DrillBitCutter)
+    def verifyDeleteCutter(self, cutter_name, preset_name, cutter_type):
+        orig_tool = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type)
+        self.assertIsNotNone(orig_tool)
+        tool_copy = orig_tool.newInstance()
+        self.assertIsNotNone(tool_copy)
+        cycle = self.document.opAddCutter(tool_copy)
+        self.document.opAddLibraryPreset(orig_tool.presetByName(preset_name))
+        for variant in ['project', 'inventory']:
+            dlg = gui.cutter_mgr.SelectCutterDialog(None, self.document)
+            parent = getattr(dlg.tools, f"{variant}_toolbits")
+            tool_item = self.findCutterItem(parent, cutter_name)
+            self.assertIsNotNone(tool_item)
+            preset_item = self.findPresetItem(tool_item, preset_name)
+            self.assertIsNotNone(preset_item)
+            dlg.tools.setCurrentItem(preset_item)
+            self.assertTrue(dlg.deleteButton.isEnabled())
+            for answer in [QMessageBox.No, QMessageBox.Yes]:
+                msg = "This will delete the preset from the "
+                msg += "project" if variant == 'project' else "global inventory"
+                old_saves = saves
+                with ExpectQuestion(self, msg, answer):
+                    QTest.keyClick(dlg.deleteButton, Qt.Key.Key_Space)
+                self.assertEqual(saves, old_saves + 1 if variant == 'inventory' and answer == QMessageBox.Yes else old_saves)
+                # this invalidates the tool_item/preset_item due to refresh
+                tool_item = self.findCutterItem(parent, cutter_name)
+                preset_item = self.findPresetItem(tool_item, preset_name)
+                self.assertEqual(preset_item is not None, answer == QMessageBox.No)
+                if variant == 'inventory':
+                    self.assertEqual(gui.inventory.inventory.toolbitByName(cutter_name).presetByName(preset_name) is not None, answer == QMessageBox.No)
+                else:
+                    self.assertEqual(self.document.project_toolbits[cutter_name].presetByName(preset_name) is not None, answer == QMessageBox.No)
+            tool_item = self.findCutterItem(parent, cutter_name)
+            self.assertIsNotNone(tool_item)
+            dlg.tools.setCurrentItem(tool_item)
+            self.assertTrue(dlg.deleteButton.isEnabled())
+            for answer in [QMessageBox.No, QMessageBox.Yes]:
+                msg = "This will delete the cutter"
+                old_saves = saves
+                with ExpectQuestion(self, msg, answer):
+                    QTest.keyClick(dlg.deleteButton, Qt.Key.Key_Space)
+                self.assertEqual(saves, old_saves + 1 if variant == 'inventory' and answer == QMessageBox.Yes else old_saves)
+                tool_item = self.findCutterItem(parent, cutter_name)
+                self.assertEqual(tool_item is not None, answer == QMessageBox.No)
+                if variant == 'inventory':
+                    self.assertEqual(gui.inventory.inventory.toolbitByName(cutter_name) is not None, answer == QMessageBox.No)
+                else:
+                    self.assertEqual(self.document.allCycles() != [], answer == QMessageBox.No)
+                    self.assertEqual(cutter_name in self.document.project_toolbits, answer == QMessageBox.No)
+    def findCutterItem(self, parent, cutter_name):
         for i in range(parent.childCount()):
             tool_item = parent.child(i)
             if tool_item.data(1, Qt.DisplayRole) == cutter_name:
                 return tool_item
+    def findPresetItem(self, tool_item, preset_name):
+        # Same as for tools, but might change in future
+        for i in range(tool_item.childCount()):
+            preset_item = tool_item.child(i)
+            if preset_item.data(1, Qt.DisplayRole) == preset_name:
+                return preset_item
     def verifyButtonUpdates(self, dlg, where):
         tools = dlg.tools
         parent = getattr(tools, f"{where}_toolbits")

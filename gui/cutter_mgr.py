@@ -282,7 +282,7 @@ class SelectCutterDialog(QDialog):
         if is_global:
             cutter = cutter_or_cycle
             if QMessageBox.question(self, "Delete inventory cutter", "This will delete the cutter from the global inventory. Continue?") == QMessageBox.Yes:
-                inventory.deleteCutter(cutter)
+                inventory.inventory.deleteCutter(cutter)
                 self.document.opUnlinkInventoryCutter(cutter)
                 saveInventory()
                 self.tools.refreshCutters(None)
