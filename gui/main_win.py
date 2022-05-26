@@ -20,6 +20,7 @@ class CAMMainWindow(QMainWindow):
         QMainWindow.__init__(self)
         self.document = document
         self.configSettings = config
+        self.resetZoomNeeded = False
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:
@@ -109,7 +110,6 @@ class CAMMainWindow(QMainWindow):
         else:
             self.setWindowFilePath("unnamed project")
         self.refreshNeeded = False
-        self.resetZoomNeeded = False
         self.idleTimer = self.startTimer(100)
     def cleanFlagChanged(self, clean):
         self.setWindowModified(not clean)
@@ -120,6 +120,7 @@ class CAMMainWindow(QMainWindow):
                 self.viewer.repaint()
             if self.refreshNeeded:
                 self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
+                self.resetZoomNeeded = False
                 self.refreshNeeded = False
             return
         QMainWindow.timerEvent(self, event)
@@ -164,13 +165,13 @@ class CAMMainWindow(QMainWindow):
         elif type(item) == model.DrawingTreeItem or isinstance(item, model.DrawingItemTreeItem):
             self.drawingChanged()
         self.propsDW.updatePropertiesFor(item)
-    def scheduleMajorRedraw(self):
+    def scheduleMajorRedraw(self, resetZoomNeeded=False):
         self.refreshNeeded = True
-        self.resetZoomNeeded = True
+        self.resetZoomNeeded = self.resetZoomNeeded or resetZoomNeeded
     def materialChanged(self):
         self.propsDW.updateProperties()
         self.document.startUpdateCAM()
-        self.scheduleMajorRedraw()
+        self.scheduleMajorRedraw(True)
     def toolChanged(self):
         self.propsDW.updateProperties()
         self.document.startUpdateCAM()
@@ -180,7 +181,7 @@ class CAMMainWindow(QMainWindow):
         self.scheduleMajorRedraw()
     def drawingChanged(self):
         self.document.startUpdateCAM()
-        self.scheduleMajorRedraw()
+        self.scheduleMajorRedraw(True)
     def operChanged(self):
         self.propsDW.updateProperties()
         self.scheduleMajorRedraw()
