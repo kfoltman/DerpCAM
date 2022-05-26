@@ -274,21 +274,14 @@ class CAMObjectTreeDockWidget(QDockWidget):
         assert False
     def operationMove(self, selection, direction):
         mode, items = selection
-        itemsToMove = []
-        for item in items:
-            if hasattr(item, 'reorderItem'):
-                itemsToMove.append(item)
-        itemsToMove = list(sorted(itemsToMove, key=lambda item: -item.row() * direction))
+        indexes = self.document.opMoveItems(items, direction)
+        if not indexes:
+            return
         newSelection = QItemSelection()
-        lastIndex = None
-        for item in itemsToMove:
-            index = item.reorderItem(direction)
-            if index is not None:
-                lastIndex = index
-                newSelection.select(index, index)
+        for index in indexes:
+            newSelection.select(index, index)
         tree = self.activeTree()
-        if lastIndex is not None:
-            tree.selectionModel().setCurrentIndex(lastIndex, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
+        tree.selectionModel().setCurrentIndex(indexes[-1], QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
         tree.selectionModel().select(newSelection, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Current)
     def operationMoveUp(self):
         self.operationMove(self.activeSelection(), -1)
@@ -303,9 +296,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if mode != 'o' or not items:
             return
         oldState = model.CycleTreeItem.listCheckState(items)
-        newState = Qt.CheckState.Checked if oldState != Qt.CheckState.Checked else Qt.CheckState.Unchecked
-        for i in items:
-            i.setCheckState(newState)
+        changes = [(i, oldState != Qt.CheckState.Checked) for i in items]
+        self.document.opChangeActive(changes)
     def operationHoldingTabs(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
     def operationIslands(self):

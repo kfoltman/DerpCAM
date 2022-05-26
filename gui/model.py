@@ -1100,7 +1100,8 @@ class OperationTreeItem(CAMTreeItem):
         self.worker = None
         self.startUpdateCAM()
     def resetProperties(self):
-        self.setCheckState(True)
+        self.active = True
+        self.updateCheckState()
         self.cutter = None
         self.tool_preset = None
         self.operation = OperationType.OUTSIDE_CONTOUR
@@ -1113,6 +1114,8 @@ class OperationTreeItem(CAMTreeItem):
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
         PresetDerivedAttributes.resetPresetDerivedValues(self)
+    def updateCheckState(self):
+        self.setCheckState(Qt.CheckState.Checked if self.active else Qt.CheckState.Unchecked)
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
@@ -1163,7 +1166,7 @@ class OperationTreeItem(CAMTreeItem):
         return getattr(pda, name, None)
     def store(self):
         dump = CAMTreeItem.store(self)
-        dump['active'] = self.checkState() != Qt.CheckState.Unchecked
+        dump['active'] = self.active
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
@@ -1174,7 +1177,8 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set(PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
-        self.setCheckState(Qt.CheckState.Checked if dump.get('active', True) else Qt.CheckState.Unchecked)
+        self.active = dump.get('active', True)
+        self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
@@ -1284,7 +1288,7 @@ class OperationTreeItem(CAMTreeItem):
             if not self.cutter:
                 self.error = "Cutter not set"
                 return
-            if self.checkState() == Qt.CheckState.Unchecked:
+            if not self.active:
                 # Operation not enabled
                 return
             self.updateCAMWork()
@@ -1446,6 +1450,18 @@ class OperationsModel(QStandardItemModel):
         self.takeRow(row)
         return row
 
+class MultipleItemUndoContext(object):
+    def __init__(self, document, items, title_func):
+        self.document = document
+        self.items = items
+        self.title_func = title_func
+    def __enter__(self):
+        if self.items and len(self.items) > 1:
+            self.document.undoStack.beginMacro(self.title_func(len(self.items)))
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if self.items and len(self.items) > 1:
+            self.document.undoStack.endMacro()
+
 class AddOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         if isinstance(item, OperationTreeItem):
@@ -1542,6 +1558,25 @@ class PropertySetUndoCommand(QUndoCommand):
         self.property.setData(self.subject, self.old_value)
     def redo(self):
         self.property.setData(self.subject, self.new_value)
+
+class ActiveSetUndoCommand(QUndoCommand):
+    def __init__(self, changes):
+        QUndoCommand.__init__(self, "Toggle active status")
+        self.changes = changes
+    def undo(self):
+        self.applyChanges(True)
+    def redo(self):
+        self.applyChanges(False)
+    def applyChanges(self, reverse):
+        changedOpers = {}
+        for item, state in self.changes:
+            changedOpers[item.parent().row()] = item.parent()
+            item.active = state ^ reverse
+            item.updateCheckState()
+        for item, state in self.changes:
+            item.startUpdateCAM()
+        for parent in changedOpers.values():
+            parent.updateCheckState()
 
 class MoveItemUndoCommand(QUndoCommand):
     def __init__(self, oldParent, child, newParent, pos):
@@ -1656,7 +1691,6 @@ class DocumentModel(QObject):
     drawingImported = pyqtSignal([str])
     def __init__(self):
         QObject.__init__(self)
-        self.blah = False
         self.undoStack = QUndoStack(self)
         self.material = WorkpieceTreeItem(self)
         self.makeMachineParams()
@@ -1854,30 +1888,30 @@ class DocumentModel(QObject):
                 break
         return candidates[0][0], candidates[0][1], islands
     def operDataChanged(self, topLeft, bottomRight, roles):
-        if not roles or (10 in roles):
-            changedOpers = False
+        if not roles or (Qt.CheckStateRole in roles):
+            changes = []
             for row in range(topLeft.row(), bottomRight.row() + 1):
                 item = topLeft.model().itemFromIndex(topLeft.siblingAtRow(row))
                 if isinstance(item, OperationTreeItem):
-                    if (item.checkState() == Qt.CheckState.Unchecked and item.cam is not None) or (item.checkState() != Qt.CheckState.Unchecked and item.cam is None):
-                        changedOpers = True
-                        item.startUpdateCAM()
+                    active = item.checkState() != Qt.CheckState.Unchecked
+                    if active != item.active:
+                        changes.append((item, active))
                 if isinstance(item, CycleTreeItem):
-                    reqState = item.checkState()
-                    itemState = item.operCheckState()
+                    reqState = item.checkState() != Qt.CheckState.Unchecked
+                    itemState = item.operCheckState() != Qt.CheckState.Unchecked
                     if reqState != itemState:
                         for i in item.items():
-                            i.setCheckState(reqState)
-            if changedOpers:
-                item.parent().setCheckState(item.parent().operCheckState())
+                            changes.append((i, reqState))
+            if changes:
+                self.opChangeActive(changes)
     def operRowsInserted(self, parent, first, last):
         item = self.operModel.itemFromIndex(parent)
         if isinstance(item, CycleTreeItem):
-            item.setCheckState(item.operCheckState())
+            item.updateCheckState()
     def operRowsRemoved(self, parent, first, last):
         item = self.operModel.itemFromIndex(parent)
         if isinstance(item, CycleTreeItem):
-            item.setCheckState(item.operCheckState())
+            item.updateCheckState()
     def startUpdateCAM(self, preset=None):
         self.makeMachineParams()
         if preset is None:
@@ -2026,9 +2060,7 @@ class DocumentModel(QObject):
             cycle = self.current_cutter_cycle
             if cycle is None:
                 raise ValueError("Cutter not selected")
-        if len(shapeIds) > 1:
-            self.undoStack.beginMacro("Create multiple " + OperationType.toString(operationType))
-        try:
+        with MultipleItemUndoContext(self, shapeIds, lambda count: f"Create {count} of {OperationType.toString(operationType)}"):
             indexes = []
             rowCount = cycle.rowCount()
             for i in shapeIds:
@@ -2040,31 +2072,36 @@ class DocumentModel(QObject):
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
                 rowCount += 1
-        finally:
-            if len(shapeIds) > 1:
-                self.undoStack.endMacro()
         return rowCount, cycle, indexes
     def opChangeProperty(self, property, changes):
-        if len(changes) > 1:
-            self.undoStack.beginMacro("Set " + property.name)
-        try:
+        with MultipleItemUndoContext(self, changes, lambda count: f"Set {property.name} on {count} items"):
             for subject, value in changes:
                 self.undoStack.push(PropertySetUndoCommand(property, subject, property.getData(subject), value))
-        finally:
-            if len(changes) > 1:
-                self.undoStack.endMacro()
+    def opChangeActive(self, changes):
+        self.undoStack.push(ActiveSetUndoCommand(changes))
     def opDeleteOperations(self, items):
-        if len(items) > 1:
-            self.undoStack.beginMacro("Delete %d operations" % (len(items), ))
-        try:
+        with MultipleItemUndoContext(self, items, lambda count: f"Delete {count} operations"):
             for item in items:
                 parent, row = self.operModel.findItem(item)
                 self.undoStack.push(DeleteOperationUndoCommand(self, item, parent, row))
-        finally:
-            if len(items) > 1:
-                self.undoStack.endMacro()
     def opMoveItem(self, oldParent, child, newParent, pos):
         self.undoStack.push(MoveItemUndoCommand(oldParent, child, newParent, pos))
+    def opMoveItems(self, items, direction):
+        itemsToMove = []
+        for item in items:
+            if hasattr(item, 'reorderItem'):
+                itemsToMove.append(item)
+        if not itemsToMove:
+            return
+        indexes = []
+        itemsToMove = list(sorted(itemsToMove, key=lambda item: -item.row() * direction))
+        dir_text = "down" if direction > 0 else "up"
+        with MultipleItemUndoContext(self, itemsToMove, lambda count: f"Move {count} operations {dir_text}"):
+            for item in itemsToMove:
+                index = item.reorderItem(direction)
+                if index is not None:
+                    indexes.append(index)
+        return indexes
     def opDeletePreset(self, preset):
         self.undoStack.beginMacro(f"Delete preset: {preset.name}")
         try:
