@@ -1897,11 +1897,13 @@ class DocumentModel(QObject):
                     if active != item.active:
                         changes.append((item, active))
                 if isinstance(item, CycleTreeItem):
-                    reqState = item.checkState() != Qt.CheckState.Unchecked
-                    itemState = item.operCheckState() != Qt.CheckState.Unchecked
+                    reqState = item.checkState()
+                    itemState = item.operCheckState()
                     if reqState != itemState:
+                        reqActive = reqState != Qt.CheckState.Unchecked
                         for i in item.items():
-                            changes.append((i, reqState))
+                            if i.active != reqActive:
+                                changes.append((i, reqActive))
             if changes:
                 self.opChangeActive(changes)
     def operRowsInserted(self, parent, first, last):
