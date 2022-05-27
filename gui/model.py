@@ -1098,6 +1098,7 @@ class OperationTreeItem(CAMTreeItem):
         self.error = None
         self.warning = None
         self.worker = None
+        self.prev_diameter = None
         self.startUpdateCAM()
     def resetProperties(self):
         self.active = True
@@ -1389,6 +1390,7 @@ class OperationTreeItem(CAMTreeItem):
                     raise ValueError("Refine not yet supported for text")
                 diameter_plus = self.cutter.diameter + 2 * self.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
+                self.prev_diameter = prev_diameter
                 if prev_diameter is None:
                     raise ValueError("No matching milling operation to refine")
                 if islands:
@@ -1397,6 +1399,8 @@ class OperationTreeItem(CAMTreeItem):
                         if item.closed:
                             self.shape.add_island(item.boundary)
                 self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus)
+            else:
+                self.prev_diameter = None
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
@@ -1700,6 +1704,7 @@ class DocumentModel(QObject):
         self.current_cutter_cycle = None
         self.project_toolbits = {}
         self.default_preset_by_tool = {}
+        self.shapes_to_revisit = set()
         self.progress_dialog_displayed = False
         self.update_suspended = None
         self.update_suspended_dirty = False
@@ -1715,6 +1720,7 @@ class DocumentModel(QObject):
         self.operModel.dataChanged.connect(self.operDataChanged)
         self.operModel.rowsInserted.connect(self.operRowsInserted)
         self.operModel.rowsRemoved.connect(self.operRowsRemoved)
+        self.operModel.rowsAboutToBeRemoved.connect(self.operRowsAboutToBeRemoved)
 
     def reinitDocument(self):
         self.undoStack.clear()
@@ -1906,14 +1912,43 @@ class DocumentModel(QObject):
                                 changes.append((i, reqActive))
             if changes:
                 self.opChangeActive(changes)
+        if not roles or (Qt.DisplayRole in roles):
+            shape_ids = set()
+            for row in range(topLeft.row(), bottomRight.row() + 1):
+                item = topLeft.model().itemFromIndex(topLeft.siblingAtRow(row))
+                if isinstance(item, OperationTreeItem):
+                    shape_ids.add(item.shape_id)
+            self.updateRefineOps(shape_ids)
     def operRowsInserted(self, parent, first, last):
         item = self.operModel.itemFromIndex(parent)
         if isinstance(item, CycleTreeItem):
             item.updateCheckState()
+            self.updateRefineOps(self.shapesForOperationRange(item, first, last))
+    def operRowsAboutToBeRemoved(self, parent, first, last):
+        item = self.operModel.itemFromIndex(parent)
+        if isinstance(item, CycleTreeItem):
+            self.shapes_to_revisit |= self.shapesForOperationRange(item, first, last)
     def operRowsRemoved(self, parent, first, last):
         item = self.operModel.itemFromIndex(parent)
         if isinstance(item, CycleTreeItem):
             item.updateCheckState()
+        if self.shapes_to_revisit:
+            self.updateRefineOps(self.shapes_to_revisit)
+            self.shapes_to_revisit = set()
+    def shapesForOperationRange(self, parent, first, last):
+        shape_ids = set()
+        for row in range(first, last + 1):
+            item = parent.child(row)
+            shape_ids.add(item.shape_id)
+        return shape_ids
+    def updateRefineOps(self, shape_ids):
+        self.forEachOperation(lambda item: self.updateRefineOp(item, shape_ids))
+    def updateRefineOp(self, operation, shape_ids):
+        if operation.operation == OperationType.REFINE and operation.shape_id in shape_ids and operation.orig_shape:
+            diameter_plus = operation.cutter.diameter + 2 * operation.offset
+            prev_diameter, prev_operation, islands = self.largerDiameterForShape(operation.orig_shape, diameter_plus)
+            if prev_diameter != operation.prev_diameter:
+                operation.startUpdateCAM()
     def startUpdateCAM(self, preset=None):
         self.makeMachineParams()
         if preset is None:
