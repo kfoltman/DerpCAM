@@ -36,7 +36,7 @@ def sort_polygons(polygons):
     return output
 
 def text_to_shapes(x, y, width, height, text, font_family, size, weight, italic):
-    font = QFont(font_family, size * GeometrySettings.RESOLUTION, weight, italic)
+    font = QFont(font_family, int(size * GeometrySettings.RESOLUTION), weight, italic)
     metrics = QFontMetrics(font)
     twidth = metrics.horizontalAdvance(text) / GeometrySettings.RESOLUTION
     theight = metrics.height() / GeometrySettings.RESOLUTION

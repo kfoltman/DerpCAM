@@ -378,7 +378,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         scale = GeometrySettings.RESOLUTION
         if self.style.height * scale > 1000:
             scale = 1000 / self.style.height
-        font = QFont(self.style.font_name, self.style.height * scale, 400, False)
+        font = QFont(self.style.font_name, int(self.style.height * scale), 400, False)
         metrics = QFontMetrics(font)
         twidth = metrics.horizontalAdvance(self.text) / scale
         x, y = self.origin.x, self.origin.y

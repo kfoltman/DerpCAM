@@ -53,7 +53,9 @@ class OperationsRenderer(object):
                 b = max_bounds(b, opb)
         return b
     def penColInt(self, r, g, b, a, diameter):
-        return QPen(QColor(255 + (r - 255) * a / 255, 255 + (g - 255) * a / 255, 255 + (b - 255) * a / 255), diameter)
+        def c2w(v):
+            return int(255 + (v - 255) * a / 255)
+        return QPen(QColor(c2w(r), c2w(g), c2w(b)), diameter)
     def toolPen(self, path, alpha=255, isHighlighted=False):
         if isinstance(isHighlighted, tuple):
             pen = self.penColInt(*isHighlighted, alpha, path.tool.diameter)
