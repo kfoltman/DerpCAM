@@ -318,8 +318,8 @@ class CAMPropertiesDockWidget(QDockWidget):
         self.propsheet.setObjects([])
     def updateProperties(self):
         self.propsheet.refreshAll()
-    def updatePropertiesFor(self, object):
-        if object in self.propsheet.objects:
+    def updatePropertiesFor(self, objects):
+        if set(objects) & set(self.propsheet.objects):
             self.propsheet.refreshAll()
     def setSelection(self, selection):
         properties = []

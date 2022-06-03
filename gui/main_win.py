@@ -52,8 +52,7 @@ class CAMMainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
         self.propsDW = dock.CAMPropertiesDockWidget(self.document)
         self.document.undoStack.cleanChanged.connect(self.cleanFlagChanged)
-        self.document.shapeModel.dataChanged.connect(self.shapeModelChanged)
-        self.document.operModel.dataChanged.connect(self.operChanged)
+        self.document.propertyChanged.connect(self.itemPropertyChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
@@ -110,7 +109,8 @@ class CAMMainWindow(QMainWindow):
         else:
             self.setWindowFilePath("unnamed project")
         self.refreshNeeded = False
-        self.idleTimer = self.startTimer(100)
+        self.newCAMNeeded = False
+        self.idleTimer = self.startTimer(500)
     def cleanFlagChanged(self, clean):
         self.setWindowModified(not clean)
     def timerEvent(self, event):
@@ -122,8 +122,13 @@ class CAMMainWindow(QMainWindow):
                 self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
                 self.resetZoomNeeded = False
                 self.refreshNeeded = False
+            if self.newCAMNeeded:
+                self.newCAMNeeded = False
+                self.document.startUpdateCAM()
             return
         QMainWindow.timerEvent(self, event)
+    def scheduleCAMUpdate(self):
+        self.newCAMNeeded = True
     def noOperationTouched(self):
         self.viewer.flashHighlight(None)
     def operationTouched(self, item):
@@ -154,37 +159,14 @@ class CAMMainWindow(QMainWindow):
         self.updateSelection()
         if self.document.setOperSelection(self.projectDW.operSelection()):
             self.viewer.repaint()
-    def shapeModelChanged(self, index):
-        item = self.document.shapeModel.itemFromIndex(index)
-        if type(item) == model.WorkpieceTreeItem:
-            self.materialChanged()
-        elif type(item) == model.ToolTreeItem:
-            self.toolChanged()
-        elif type(item) == model.ToolPresetTreeItem:
-            self.toolPresetChanged()
-        elif type(item) == model.DrawingTreeItem or isinstance(item, model.DrawingItemTreeItem):
-            self.drawingChanged()
-        self.propsDW.updatePropertiesFor(item)
     def scheduleMajorRedraw(self, resetZoomNeeded=False):
         self.refreshNeeded = True
         self.resetZoomNeeded = self.resetZoomNeeded or resetZoomNeeded
-    def materialChanged(self):
-        self.propsDW.updateProperties()
-        self.document.startUpdateCAM()
-        self.scheduleMajorRedraw(True)
-    def toolChanged(self):
-        self.propsDW.updateProperties()
-        self.document.startUpdateCAM()
-        self.scheduleMajorRedraw()
-    def toolPresetChanged(self):
-        self.propsDW.updateProperties()
-        self.scheduleMajorRedraw()
-    def drawingChanged(self):
-        self.document.startUpdateCAM()
-        self.scheduleMajorRedraw(True)
-    def operChanged(self):
-        self.propsDW.updateProperties()
-        self.scheduleMajorRedraw()
+    def itemPropertyChanged(self, item, name):
+        self.propsDW.updatePropertiesFor(item.invalidatedObjects(model.InvalidateAspect.PROPERTIES))
+        ## Do not re-zoom when tools or presets updated, not much risk of things going off-screen etc.
+        self.scheduleMajorRedraw(not isinstance(item, (model.ToolTreeItem, model.ToolPresetTreeItem)))
+        self.scheduleCAMUpdate()
     def operInserted(self):
         self.scheduleMajorRedraw()
     def operRemoved(self):
@@ -224,7 +206,7 @@ class CAMMainWindow(QMainWindow):
         dlg.initUI()
         if dlg.exec():
             self.configSettings.update()
-            self.document.startUpdateCAM()
+            self.scheduleCAMUpdate()
             self.viewer.renderDrawing()
             self.viewer.repaint()
             #self.viewer.majorUpdate()

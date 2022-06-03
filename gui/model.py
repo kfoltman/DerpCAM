@@ -30,16 +30,16 @@ Format = inventory.Format
 
 debug_inventory_matching = False
 
-def overrides(*data):
-    for i in data:
-        if i is not None:
-            return i
+class InvalidateAspect:
+    PROPERTIES = 1
 
 class CAMTreeItem(QStandardItem):
     def __init__(self, document, name=None):
         QStandardItem.__init__(self, name)
         self.document = document
         self.setEditable(False)
+    def emitPropertyChanged(self, name=""):
+        self.document.propertyChanged.emit(self, name)
     def format_item_as(self, role, def_value, bold=None, italic=None, color=None):
         if role == Qt.FontRole:
             font = QFont()
@@ -103,6 +103,12 @@ class CAMTreeItem(QStandardItem):
         while i < self.rowCount():
             yield self.child(i)
             i += 1
+    def __hash__(self):
+        return id(self)
+    def __eq__(self, other):
+        return other is self
+    def __ne__(self, other):
+        return other is not self
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -154,11 +160,13 @@ class DrawingItemTreeItem(CAMTreeItem):
         klass.next_drawing_item_id = max(item.shape_id + 1, klass.next_drawing_item_id)
         return item
     def onPropertyValueSet(self, name):
-        self.emitDataChanged()
+        self.emitPropertyChanged(name)
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(self.textDescription())
         return CAMTreeItem.data(self, role)
+    def invalidatedObjects(self, aspect):
+        return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_x = FloatEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
@@ -195,7 +203,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             self.r = value / 2.0
         else:
             assert False, "Unknown property: " + name
-        self.emitDataChanged()
+        self.emitPropertyChanged(name)
     def calcBounds(self):
         self.bounds = (self.centre.x - self.r, self.centre.y - self.r,
             self.centre.x + self.r, self.centre.y + self.r)
@@ -340,7 +348,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         else:
             assert False, "Unknown property: " + name
         self.createPaths()
-        self.emitDataChanged()
+        self.emitPropertyChanged(name)
     def translated(self, dx, dy):
         tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.style, self.text, self.untransformed)
         tti.shape_id = self.shape_id
@@ -419,7 +427,8 @@ class DrawingTreeItem(CAMListTreeItem):
     def resetProperties(self):
         self.x_offset = 0
         self.y_offset = 0
-        self.emitDataChanged()
+        self.emitPropertyChanged("x_offset")
+        self.emitPropertyChanged("y_offset")
     def bounds(self):
         b = None
         for item in self.items():
@@ -570,7 +579,11 @@ class DrawingTreeItem(CAMListTreeItem):
     def translation(self):
         return (-self.x_offset, -self.y_offset)
     def onPropertyValueSet(self, name):
-        self.emitDataChanged()
+        self.emitPropertyChanged(name)
+    def invalidatedObjects(self, aspect):
+        # Changing things like X/Y invalidates all operations (XXXKF needs
+        # to distinguish between operation's input and output)
+        return set([self] + self.document.allOperations())
         
 class CAMListTreeItemWithChildren(CAMListTreeItem):
     def __init__(self, document, title):
@@ -648,7 +661,7 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
             return [self.prop_name, self.prop_diameter, self.prop_length]
         return []
     def resetProperties(self):
-        self.emitDataChanged()
+        self.emitPropertyChanged()
     def getPropertyValue(self, name):
         return getattr(self.inventory_tool, name)
     def setPropertyValue(self, name, value):
@@ -659,7 +672,10 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
             setattr(self.inventory_tool, name, value)
         else:
             assert False, "Unknown attribute: " + repr(name)
-        self.emitDataChanged()
+        self.emitPropertyChanged(name)
+    def invalidatedObjects(self, aspect):
+        # Need to refresh properties for any default or calculated values updated
+        return set([self] + self.document.allOperations(lambda item: item.cutter is self.inventory_tool))
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
@@ -685,7 +701,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         self.setEditable(False)
         self.resetProperties()
     def resetProperties(self):
-        self.emitDataChanged()
+        self.emitPropertyChanged()
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant("Preset: " + self.inventory_preset.description())
@@ -771,10 +787,13 @@ class ToolPresetTreeItem(CAMTreeItem):
             assert False, "Unknown attribute: " + repr(name)
         if name in ['stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
             # There are other things that might require a recalculation, but do not result in visible changes
-            self.document.startUpdateCAM(preset=self)
-        self.emitDataChanged()
+            self.document.startUpdateCAM(subset=self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
+        self.emitPropertyChanged(name)
     def returnKeyPressed(self):
         self.document.selectPresetAsDefault(self.inventory_preset.toolbit, self.inventory_preset)
+    def invalidatedObjects(self, aspect):
+        # Need to refresh properties for any default or calculated values updated
+        return set([self] + self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
 
 class MaterialType(EnumClass):
     WOOD = 0
@@ -801,7 +820,7 @@ class WorkpieceTreeItem(CAMTreeItem):
         self.thickness = 3
         self.clearance = 5
         self.safe_entry_z = 1
-        self.emitDataChanged()
+        self.emitPropertyChanged()
     def properties(self):
         return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
     def data(self, role):
@@ -816,8 +835,10 @@ class WorkpieceTreeItem(CAMTreeItem):
         #    self.document.make_tool()
         if name in ('clearance', 'safe_entry_z'):
             self.document.makeMachineParams()
-        self.emitDataChanged()
-
+        self.emitPropertyChanged(name)
+    def invalidatedObjects(self, aspect):
+        # Depth of cut, mostly XXXKF might check for default value
+        return set([self] + self.document.allOperations())
 
 class OperationType(EnumClass):
     OUTSIDE_CONTOUR = 1
@@ -936,6 +957,8 @@ class CycleTreeItem(CAMTreeItem):
                         break
                 else:
                     child.tool_preset = None
+    def invalidatedObjects(self, aspect):
+        return set([self] + self.document.allOperations(lambda item: item.parent() is self))
 
 def not_none(*args):
     for i in args:
@@ -1038,7 +1061,7 @@ class PresetDerivedAttributes(object):
     def resetPresetDerivedValues(klass, target):
         for attr in klass.attrs_all:
             setattr(target, attr.name, None)
-        target.emitDataChanged()
+        target.emitPropertyChanged()
 
 class WorkerThread(threading.Thread):
     def __init__(self, workerFunc):
@@ -1442,6 +1465,11 @@ class OperationTreeItem(CAMTreeItem):
                     return self.index()
                 parentRow += 1
             return None
+    def invalidatedObjects(self, aspect):
+        if self.operation != OperationType.REFINE:
+            return set([self])
+        # XXXKF this only matters for output, so disregard for now
+        return set([self])
 
 class OperationsModel(QStandardItemModel):
     def __init__(self, document):
@@ -1686,6 +1714,7 @@ class RevertToolUndoCommand(BaseRevertUndoCommand):
         self.updateTo(tool.base_object)
 
 class DocumentModel(QObject):
+    propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
@@ -1870,6 +1899,15 @@ class DocumentModel(QObject):
         self.filename = None
         self.drawing_filename = fn
         self.drawing.importDrawing(fn)
+    def allOperations(self, func=None):
+        res = []
+        for i in range(self.operModel.rowCount()):
+            cycle : CycleTreeItem = self.operModel.item(i)
+            for j in range(cycle.rowCount()):
+                operation : OperationTreeItem = cycle.child(j)
+                if func is None or func(operation):
+                    res.append(operation)
+        return res
     def forEachOperation(self, func):
         res = []
         for i in range(self.operModel.rowCount()):
@@ -1949,12 +1987,12 @@ class DocumentModel(QObject):
             prev_diameter, prev_operation, islands = self.largerDiameterForShape(operation.orig_shape, diameter_plus)
             if prev_diameter != operation.prev_diameter:
                 operation.startUpdateCAM()
-    def startUpdateCAM(self, preset=None):
+    def startUpdateCAM(self, subset=None):
         self.makeMachineParams()
-        if preset is None:
+        if subset is None:
             self.forEachOperation(lambda item: item.startUpdateCAM())
         else:
-            self.forEachOperation(lambda item: item.startUpdateCAM() if item.tool_preset is preset.inventory_preset else None)
+            self.forEachOperation(lambda item: item.startUpdateCAM() if item in subset else None)
     def cancelAllWorkers(self):
         self.forEachOperation(lambda item: item.cancelWorker())
     def pollForUpdateCAM(self):
