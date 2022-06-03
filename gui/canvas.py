@@ -207,7 +207,7 @@ class DrawingViewer(view.PathViewer):
                 modeText = "Click on outlines to toggle exclusion of areas from the pocket"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.drawText(QRect(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
+            qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
             if self.mode == DrawingUIMode.MODE_TABS:
                 qp.setPen(QPen(QColor(255, 0, 0), 0))
                 for tab in self.mode_item.user_tabs:
@@ -223,10 +223,10 @@ class DrawingViewer(view.PathViewer):
             if progress is not None:
                 qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
                 qp.setPen(QPen(QColor(128, 0, 0), 0))
-                qp.fillRect(QRect(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
-                qp.fillRect(QRect(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
-                qp.drawRect(QRect(38, 35, 242, 55))
-                qp.drawText(QRect(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
+                qp.fillRect(QRectF(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
+                qp.fillRect(QRectF(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
+                qp.drawRect(QRectF(38, 35, 242, 55))
+                qp.drawText(QRectF(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
     def keyPressEvent(self, e):
         if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
             self.exitEditMode()
