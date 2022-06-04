@@ -4,44 +4,63 @@ from PyQt5.QtWidgets import *
 
 from geom import GeometrySettings
 
+class ConfigSetting(object):
+    def __init__(self, attr_name, setting_pathname, def_value):
+        self.attr_name = attr_name
+        self.setting_pathname = setting_pathname
+        self.def_value = def_value
+    def init(self, target):
+        setattr(target, self.attr_name, self.def_value)
+    def load(self, settings, target):
+        if settings.contains(self.setting_pathname):
+            setattr(target, self.attr_name, self.from_setting(settings.value(self.setting_pathname)))
+    def save(self, settings, source):
+        settings.setValue(self.setting_pathname, self.to_setting(getattr(source, self.attr_name)))
+    def from_setting(self, cfgvalue):
+        return str(cfgvalue)
+    def to_setting(self, value):
+        return str(value)
+
+class IntConfigSetting(ConfigSetting):
+    def from_setting(self, cfgvalue):
+        return int(cfgvalue)
+    def to_setting(self, value):
+        return str(value)
+
+class BoolConfigSetting(ConfigSetting):
+    def from_setting(self, cfgvalue):
+        return cfgvalue == 'true'
+    def to_setting(self, value):
+        return 'true' if value else 'false'
+
 class ConfigSettings(object):
+    setting_list = [
+        IntConfigSetting('resolution', 'geometry/resolution', GeometrySettings.RESOLUTION),
+        BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
+        BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
+        BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
+        IntConfigSetting('grid_resolution', 'display/grid_resolution', 50),
+        ConfigSetting('input_directory', 'paths/input', ''),
+        ConfigSetting('last_input_directory', 'paths/last_input', ''),
+        ConfigSetting('gcode_directory', 'paths/gcode', ''),
+        ConfigSetting('last_gcode_directory', 'paths/last_gcode', ''),
+    ]
     def __init__(self):
         self.settings = self.createSettingsObj()
-        self.resolution = GeometrySettings.RESOLUTION
-        self.simplify_arcs = GeometrySettings.simplify_arcs
-        self.simplify_lines = GeometrySettings.simplify_lines
-        self.draw_arrows = GeometrySettings.draw_arrows
-        self.grid_resolution = 50
-        self.input_directory = ''
-        self.gcode_directory = ''
-        self.last_input_directory = ''
-        self.last_gcode_directory = ''
+        for i in self.setting_list:
+            i.init(self)
         self.load()
     def createSettingsObj(self):
         return QSettings("kfoltman", "DerpCAM")
     def load(self):
         settings = self.settings
         settings.sync()
-        self.resolution = int(settings.value("geometry/resolution", self.resolution))
-        self.simplify_arcs = settings.value("geometry/simplify_arcs", self.simplify_arcs) == 'true'
-        self.simplify_lines = settings.value("geometry/simplify_lines", self.simplify_lines) == 'true'
-        self.draw_arrows = settings.value("display/draw_arrows", self.draw_arrows) == 'true'
-        self.grid_resolution = int(settings.value("display/grid_resolution", self.grid_resolution))
-        self.input_directory = settings.value("paths/input", self.input_directory)
-        self.last_input_directory = settings.value("paths/last_input", self.last_input_directory)
-        self.gcode_directory = settings.value("paths/gcode", self.gcode_directory)
-        self.last_gcode_directory = settings.value("paths/last_gcode", self.last_gcode_directory)
+        for i in self.setting_list:
+            i.load(settings, self)
     def save(self):
         settings = self.settings
-        settings.setValue("geometry/resolution", self.resolution)
-        settings.setValue("geometry/simplify_arcs", "true" if self.simplify_arcs else "false")
-        settings.setValue("geometry/simplify_lines", "true" if self.simplify_lines else "false")
-        settings.setValue("display/draw_arrows", "true" if self.draw_arrows else "false")
-        settings.setValue("display/grid_resolution", self.grid_resolution)
-        settings.setValue("paths/input", self.input_directory)
-        settings.setValue("paths/last_input", self.last_input_directory)
-        settings.setValue("paths/gcode", self.gcode_directory)
-        settings.setValue("paths/last_gcode", self.last_gcode_directory)
+        for i in self.setting_list:
+            i.save(settings, self)
         settings.sync()
     def update(self):
         GeometrySettings.RESOLUTION = self.resolution
