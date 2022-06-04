@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import geom
 import gui.inventory
 import gui.model
+import gui.settings
 
 from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtWidgets import QApplication
@@ -68,10 +69,11 @@ testDocument2 = {
 }
 
 app = QApplication(sys.argv)
+config_settings = gui.settings.ConfigSettings()
 
 class DocumentTest(unittest.TestCase):
     def setUp(self):
-        self.document = gui.model.DocumentModel()
+        self.document = gui.model.DocumentModel(config_settings)
     def tearDown(self):
         del self.document
     def testEmptyDoc(self):
@@ -441,7 +443,7 @@ class DocumentTest(unittest.TestCase):
 
 class DrawingTest(unittest.TestCase):
     def setUp(self):
-        self.document = gui.model.DocumentModel()
+        self.document = gui.model.DocumentModel(config_settings)
         self.document.load(testDocument2)
         self.drawing = self.document.drawing
         self.selection = list(self.drawing.items())
@@ -476,7 +478,7 @@ class DrawingTest(unittest.TestCase):
 
 class PDATest(unittest.TestCase):
     def setUp(self):
-        self.document = gui.model.DocumentModel()
+        self.document = gui.model.DocumentModel(config_settings)
     def testToPresetEM(self):
         op = gui.model.OperationTreeItem(self.document)
         op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)

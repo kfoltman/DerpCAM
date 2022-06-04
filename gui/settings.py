@@ -53,6 +53,8 @@ class ConfigSettings(object):
         ConfigSetting('last_input_directory', 'paths/last_input', ''),
         ConfigSetting('gcode_directory', 'paths/gcode', ''),
         ConfigSetting('last_gcode_directory', 'paths/last_gcode', ''),
+        FloatConfigSetting('clearance_z', 'defaults/clearance_z', 5, 2),
+        FloatConfigSetting('safe_entry_z', 'defaults/safe_entry_z', 1, 2),
     ]
     def __init__(self):
         self.settings = self.createSettingsObj()
@@ -114,52 +116,62 @@ class PreferencesDialog(QDialog):
         self.outerForm = QFormLayout(self)
         self.tabs = QTabWidget()
 
+        def floatSpin(vmin, vmax, decs, value, tooltip):
+            res = QDoubleSpinBox()
+            res.setRange(vmin, vmax)
+            res.setDecimals(decs)
+            res.setValue(value)
+            res.setToolTip(tooltip)
+            vlongest = max(len(str(vmin)), len(str(vmax)))
+            digits = vlongest + decs + (1 if decs else 0)
+            spinWidth = QFontMetrics(res.font()).size(Qt.TextSingleLine, "9999" + ("9" * digits)).width()
+            res.setMaximumWidth(spinWidth)
+            return res
+
         self.widgetCAM = QWidget()
         self.formCAM = QFormLayout(self.widgetCAM)
-        self.resolutionSpin = QDoubleSpinBox()
-        self.resolutionSpin.setRange(10, 200)
-        self.resolutionSpin.setDecimals(1)
-        self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs")
-        self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
-        self.drawArrowsCheck = QCheckBox("Draw &arrows on toolpaths (experimental)")
-        self.gridSpin = QDoubleSpinBox()
-        self.gridSpin.setRange(0, 1000)
-        self.gridSpin.setDecimals(2)
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        self.inputDirEdit = DirectorySelector()
-        self.gcodeDirEdit = DirectorySelector()
+        self.resolutionSpin = floatSpin(10, 200, 1, self.config.resolution, "Resolution of the internal raster for path computation. More = slower but more accurate.")
         self.formCAM.addRow("&Resolution (pixels per mm):", self.resolutionSpin)
+        self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs")
         self.formCAM.addRow(self.simplifyArcsCheck)
+        self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.formCAM.addRow(self.simplifyLinesCheck)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
-        self.formDisplay.addRow(self.drawArrowsCheck)
+        self.gridSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
         self.formDisplay.addRow("&Display grid (mm):", self.gridSpin)
+        self.drawArrowsCheck = QCheckBox("Draw &arrows on toolpaths (experimental)")
+        self.formDisplay.addRow(self.drawArrowsCheck)
 
         self.widgetPaths = QWidget()
         self.formPaths = QFormLayout(self.widgetPaths)
+        self.inputDirEdit = DirectorySelector()
         self.formPaths.addRow("&Input directory:", self.inputDirEdit)
+        self.gcodeDirEdit = DirectorySelector()
         self.formPaths.addRow("&Gcode directory:", self.gcodeDirEdit)
+
+        self.widgetDefaults = QWidget()
+        self.formDefaults = QFormLayout(self.widgetDefaults)
+        self.clearanceZSpin = floatSpin(-100, 100, 2, self.config.clearance_z, "Z coordinate at which horizontal rapid moves are performed, assumed safe from collision with workholding")
+        self.formDefaults.addRow("&Clearance Z:", self.clearanceZSpin)
+        self.safeEntryZSpin = floatSpin(-100, 100, 2, self.config.safe_entry_z, "Z coordinate above which vertical rapid moves are safe, slightly above the top of the material")
+        self.formDefaults.addRow("&Safe entry Z:", self.safeEntryZSpin)
 
         self.tabs.addTab(self.widgetCAM, "&CAM")
         self.tabs.addTab(self.widgetDisplay, "&Display")
         self.tabs.addTab(self.widgetPaths, "&Paths")
+        self.tabs.addTab(self.widgetDefaults, "D&efaults")
 
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
         self.outerForm.addRow(self.tabs)
         self.outerForm.addRow(self.buttonBox)
 
-        spinWidth = QFontMetrics(self.resolutionSpin.font()).size(Qt.TextSingleLine, "999999").width()
-        self.resolutionSpin.setMaximumWidth(spinWidth)
-        spinWidth = QFontMetrics(self.resolutionSpin.font()).size(Qt.TextSingleLine, "999999.99").width()
-        self.gridSpin.setMaximumWidth(spinWidth)
-        self.resolutionSpin.setValue(self.config.resolution)
         self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
         self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
         self.drawArrowsCheck.setChecked(self.config.draw_arrows)
-        self.gridSpin.setValue(self.config.grid_resolution)
         self.inputDirEdit.setValue(self.config.input_directory, self.config.last_input_directory)
         self.gcodeDirEdit.setValue(self.config.gcode_directory, self.config.last_gcode_directory)
         self.resolutionSpin.setFocus()
@@ -171,5 +183,7 @@ class PreferencesDialog(QDialog):
         self.config.grid_resolution = self.gridSpin.value()
         self.config.input_directory = self.inputDirEdit.value()
         self.config.gcode_directory = self.gcodeDirEdit.value()
+        self.config.clearance_z = self.clearanceZSpin.value()
+        self.config.safe_entry_z = self.safeEntryZSpin.value()
         QDialog.accept(self)
 

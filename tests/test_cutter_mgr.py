@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 from PyQt5.QtTest import QTest
 
 app = QApplication(sys.argv)
+config_settings = gui.settings.ConfigSettings()
 
 saves = 0
 def incSaveCount():
@@ -23,7 +24,7 @@ class CutterMgrTestBase(unittest.TestCase):
         gui.inventory.IdSequence.nukeAll()
         gui.inventory.inventory = gui.inventory.Inventory()
         gui.inventory.inventory.createStdCutters()
-        self.document = gui.model.DocumentModel()
+        self.document = gui.model.DocumentModel(config_settings)
     def tearDown(self):
         del self.document
     def clickOk(self, dlg):

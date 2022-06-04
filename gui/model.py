@@ -818,8 +818,8 @@ class WorkpieceTreeItem(CAMTreeItem):
     def resetProperties(self):
         self.material = MaterialType.WOOD
         self.thickness = 3
-        self.clearance = 5
-        self.safe_entry_z = 1
+        self.clearance = self.document.config_settings.clearance_z
+        self.safe_entry_z = self.document.config_settings.safe_entry_z
         self.emitPropertyChanged()
     def properties(self):
         return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
@@ -1722,8 +1722,9 @@ class DocumentModel(QObject):
     operationsUpdated = pyqtSignal([])
     projectLoaded = pyqtSignal([str])
     drawingImported = pyqtSignal([str])
-    def __init__(self):
+    def __init__(self, config_settings):
         QObject.__init__(self)
+        self.config_settings = config_settings
         self.undoStack = QUndoStack(self)
         self.material = WorkpieceTreeItem(self)
         self.makeMachineParams()

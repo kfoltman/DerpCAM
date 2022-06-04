@@ -13,10 +13,9 @@ import view
 from gui import model, cutter_mgr, main_win, settings
 import json
 
-document = model.DocumentModel()
 settings = settings.ConfigSettings()
 settings.update()
-
+document = model.DocumentModel(settings)
 
 parser = argparse.ArgumentParser(description="Generate G-Code from DXF data")
 parser.add_argument('input', type=str, help="File to load on startup", nargs='?')
