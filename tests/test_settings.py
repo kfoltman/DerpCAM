@@ -15,6 +15,7 @@ app = QApplication(sys.argv)
 class ConfigSettingsForTest(gui.settings.ConfigSettings):
     def createSettingsObj(self):
         settings = QSettings("kfoltman", "DerpCAM-test")
+        settings.clear()
         return settings
 
 class ConfigDialogTest(unittest.TestCase):
@@ -25,7 +26,7 @@ class ConfigDialogTest(unittest.TestCase):
         del self.dlg
     def testSpinboxes(self):
         self.checkSpinbox("resolution", "resolutionSpin", [(42, 33), (21, 55)], geometry_setting='RESOLUTION')
-        self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33), (21, 55)])
+        self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33.25), (21, 55)])
     def testCheckboxes(self):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
         self.checkCheckbox('simplify_lines', 'simplifyLinesCheck')
