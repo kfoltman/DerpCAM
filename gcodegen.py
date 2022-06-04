@@ -668,17 +668,12 @@ class TabbedOperation(Operation):
 class Contour(TabbedOperation):
     def tabs_width(self):
         return self.tab_extend
-    def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0, dogbones=cam.dogbone.DogboneMode.DISABLED):
+    def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0):
         assert shape.closed
         if trc_rate and extra_width:
             self.tab_extend = 8 * pi / (tool.diameter * trc_rate)
         else:
             self.tab_extend = 1
-        if dogbones != cam.dogbone.DogboneMode.DISABLED:
-            shape = cam.dogbone.add_dogbones(shape, tool, outside, dogbones)
-            if isinstance(shape, list):
-                print (shape)
-                shape = shape[0]
         #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
@@ -968,24 +963,24 @@ class Operations(object):
                 self.add(Contour(shape, outside, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
         else:
             self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
-    def outside_contour(self, shape, tabs, widen=0, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
+    def outside_contour(self, shape, tabs, widen=0, props=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen, dogbones=dogbones))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen, dogbones=dogbones))
-    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
+                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen))
+        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen))
+    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, dogbones=dogbones))
+                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
         #self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, dogbones=dogbones))
+        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, True, draft_angle_deg, layer_thickness, tabs, props)
-    def inside_contour(self, shape, tabs, widen=0, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen, dogbones=dogbones))
-    def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, dogbones=cam.dogbone.DogboneMode.DISABLED):
+    def inside_contour(self, shape, tabs, widen=0, props=None):
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen))
+    def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
         #self.add(TrochoidalContour(shape, False, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, dogbones=dogbones))
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
     def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
     def engrave(self, shape, props=None):

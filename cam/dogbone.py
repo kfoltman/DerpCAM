@@ -73,6 +73,6 @@ def add_dogbones(shape, tool, outside, mode):
     if not orientation:
         shape.boundary = geom.Path(shape.boundary, True).reverse().nodes
     if outside:
-        return process.Shape.difference(shape, *circles)
+        return process.Shape.difference2(shape, *circles)
     else:
-        return process.Shape.union(shape, *circles)
+        return process.Shape.union2(shape, *circles)

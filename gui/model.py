@@ -1154,7 +1154,7 @@ class OperationTreeItem(CAMTreeItem):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
         has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE)
         has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
-        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'dogbones']:
+        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs']:
             return False
         if not has_islands and name == 'pocket_strategy':
             return False
@@ -1164,7 +1164,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if (not has_islands or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
-        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction']:
+        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction', 'dogbones']:
             return False
         if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
@@ -1341,14 +1341,14 @@ class OperationTreeItem(CAMTreeItem):
             return
         if self.operation == OperationType.OUTSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
+                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
             else:
-                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
+                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
         elif self.operation == OperationType.INSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, dogbones=self.dogbones)
+                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
             else:
-                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, dogbones=self.dogbones)
+                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
         elif self.operation == OperationType.POCKET or self.operation == OperationType.REFINE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.pocket(shape)
@@ -1408,6 +1408,8 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
+            if self.dogbones and self.operation != OperationType.ENGRAVE:
+                self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
             if self.operation == OperationType.REFINE:
                 if isinstance(self.shape, list):
                     raise ValueError("Refine not yet supported for text")

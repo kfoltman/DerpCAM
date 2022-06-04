@@ -303,11 +303,29 @@ class Shape(object):
         res = pc.Execute(CT_UNION, GeometrySettings.fillMode, GeometrySettings.fillMode)
         return Shape._from_clipper_res(paths[0], res)
     @staticmethod
+    def union2(*paths):
+        pc = Pyclipper()
+        for path in paths:
+            pc.AddPath(PtsToIntsPos(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
+            for island in path.islands:
+                pc.AddPath(PtsToIntsNeg(island), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
+        res = pc.Execute(CT_UNION, PFT_POSITIVE, PFT_POSITIVE)
+        return Shape._from_clipper_res(paths[0], res)
+    @staticmethod
     def difference(*paths):
         pc = Pyclipper()
         for path in paths:
             pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
         res = pc.Execute(CT_DIFFERENCE, GeometrySettings.fillMode, GeometrySettings.fillMode)
+        return Shape._from_clipper_res(paths[0], res)
+    @staticmethod
+    def difference2(*paths):
+        pc = Pyclipper()
+        for path in paths:
+            pc.AddPath(PtsToIntsPos(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
+            for island in path.islands:
+                pc.AddPath(PtsToIntsNeg(island), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
+        res = pc.Execute(CT_DIFFERENCE, PFT_POSITIVE, PFT_POSITIVE)
         return Shape._from_clipper_res(paths[0], res)
     # This works on lists of points
     @staticmethod

@@ -18,8 +18,14 @@ def PtsFromInts(points, res=None):
     return [PathPoint(x / res, y / res) for x, y in points]
     
 def PtsToIntsPos(points):
-    res = [(round(x * GeometrySettings.RESOLUTION), round(y * GeometrySettings.RESOLUTION)) for x, y in points]
+    res = [(round(p.x * GeometrySettings.RESOLUTION), round(p.y * GeometrySettings.RESOLUTION)) for p in points]
     if Orientation(res) == False:
+        res = list(reversed(res))
+    return res
+
+def PtsToIntsNeg(points):
+    res = [(round(p.x * GeometrySettings.RESOLUTION), round(p.y * GeometrySettings.RESOLUTION)) for p in points]
+    if Orientation(res) == True:
         res = list(reversed(res))
     return res
 
