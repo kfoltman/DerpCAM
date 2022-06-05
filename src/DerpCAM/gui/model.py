@@ -444,7 +444,7 @@ class DrawingTreeItem(CAMListTreeItem):
         self.document.drawingImported.emit(name)
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()
-        inch_mode = False
+        inch_mode = geom.GeometrySettings.dxf_inches
         scaling = 25.4 if inch_mode else 1
         def pt(x, y):
             return geom.PathPoint(x * scaling, y * scaling)

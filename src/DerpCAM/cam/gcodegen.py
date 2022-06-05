@@ -35,7 +35,7 @@ class OperationProps(object):
 
 class Gcode(object):
     def __init__(self):
-        self.inch_mode = False
+        self.inch_mode = geom.GeometrySettings.gcode_inches
         self.gcode = []
         self.last_feed = 0
         self.last_feed_index = None

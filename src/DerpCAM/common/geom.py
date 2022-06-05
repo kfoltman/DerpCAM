@@ -8,6 +8,8 @@ class GeometrySettings:
     simplify_arcs = True
     simplify_lines = False
     draw_arrows = False
+    dxf_inches = False
+    gcode_inches = False
 
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION

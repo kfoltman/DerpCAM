@@ -33,6 +33,8 @@ class ConfigDialogTest(unittest.TestCase):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
         self.checkCheckbox('simplify_lines', 'simplifyLinesCheck')
         self.checkCheckbox('draw_arrows', 'drawArrowsCheck')
+        self.checkCheckbox('dxf_inches', 'dxfInchesCheck')
+        self.checkCheckbox('gcode_inches', 'gcodeInchesCheck')
     def testEditBoxes(self):
         self.checkDirEditbox('input_directory', 'inputDirEdit')
         self.checkDirEditbox('gcode_directory', 'gcodeDirEdit')

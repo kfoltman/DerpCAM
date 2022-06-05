@@ -55,6 +55,8 @@ class ConfigSettings(object):
         ConfigSetting('last_gcode_directory', 'paths/last_gcode', ''),
         FloatConfigSetting('clearance_z', 'defaults/clearance_z', 5, 2),
         FloatConfigSetting('safe_entry_z', 'defaults/safe_entry_z', 1, 2),
+        BoolConfigSetting('dxf_inches', 'units/dxf_inches', GeometrySettings.dxf_inches),
+        BoolConfigSetting('gcode_inches', 'units/gcode_inches', GeometrySettings.gcode_inches),
     ]
     def __init__(self):
         self.settings = self.createSettingsObj()
@@ -78,6 +80,8 @@ class ConfigSettings(object):
         GeometrySettings.simplify_arcs = self.simplify_arcs
         GeometrySettings.simplify_lines = self.simplify_lines
         GeometrySettings.draw_arrows = self.draw_arrows
+        GeometrySettings.dxf_inches = self.dxf_inches
+        GeometrySettings.gcode_inches = self.gcode_inches
 
 class DirectorySelector(QWidget):
     def __init__(self):
@@ -133,8 +137,10 @@ class PreferencesDialog(QDialog):
         self.resolutionSpin = floatSpin(10, 200, 1, self.config.resolution, "Resolution of the internal raster for path computation. More = slower but more accurate.")
         self.formCAM.addRow("&Resolution (pixels per mm):", self.resolutionSpin)
         self.simplifyArcsCheck = QCheckBox("&Convert lines to arcs")
+        self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
         self.formCAM.addRow(self.simplifyArcsCheck)
         self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
+        self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
         self.formCAM.addRow(self.simplifyLinesCheck)
 
         self.widgetDisplay = QWidget()
@@ -142,13 +148,16 @@ class PreferencesDialog(QDialog):
         self.gridSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
         self.formDisplay.addRow("&Display grid (mm):", self.gridSpin)
         self.drawArrowsCheck = QCheckBox("Draw &arrows on toolpaths (experimental)")
+        self.drawArrowsCheck.setChecked(self.config.draw_arrows)
         self.formDisplay.addRow(self.drawArrowsCheck)
 
         self.widgetPaths = QWidget()
         self.formPaths = QFormLayout(self.widgetPaths)
         self.inputDirEdit = DirectorySelector()
+        self.inputDirEdit.setValue(self.config.input_directory, self.config.last_input_directory)
         self.formPaths.addRow("&Input directory:", self.inputDirEdit)
         self.gcodeDirEdit = DirectorySelector()
+        self.gcodeDirEdit.setValue(self.config.gcode_directory, self.config.last_gcode_directory)
         self.formPaths.addRow("&Gcode directory:", self.gcodeDirEdit)
 
         self.widgetDefaults = QWidget()
@@ -158,10 +167,20 @@ class PreferencesDialog(QDialog):
         self.safeEntryZSpin = floatSpin(-100, 100, 2, self.config.safe_entry_z, "Z coordinate above which vertical rapid moves are safe, slightly above the top of the material")
         self.formDefaults.addRow("&Safe entry Z:", self.safeEntryZSpin)
 
+        self.widgetUnits = QWidget()
+        self.formUnits = QFormLayout(self.widgetUnits)
+        self.dxfInchesCheck = QCheckBox("DXF drawings use inch measurements")
+        self.dxfInchesCheck.setChecked(self.config.dxf_inches)
+        self.formUnits.addRow(self.dxfInchesCheck)
+        self.gcodeInchesCheck = QCheckBox("G-Code files use inch measurements")
+        self.gcodeInchesCheck.setChecked(self.config.gcode_inches)
+        self.formUnits.addRow(self.gcodeInchesCheck)
+
         self.tabs.addTab(self.widgetCAM, "&CAM")
         self.tabs.addTab(self.widgetDisplay, "&Display")
         self.tabs.addTab(self.widgetPaths, "&Paths")
         self.tabs.addTab(self.widgetDefaults, "D&efaults")
+        self.tabs.addTab(self.widgetUnits, "&Units")
 
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttonBox.accepted.connect(self.accept)
@@ -169,11 +188,6 @@ class PreferencesDialog(QDialog):
         self.outerForm.addRow(self.tabs)
         self.outerForm.addRow(self.buttonBox)
 
-        self.simplifyArcsCheck.setChecked(self.config.simplify_arcs)
-        self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
-        self.drawArrowsCheck.setChecked(self.config.draw_arrows)
-        self.inputDirEdit.setValue(self.config.input_directory, self.config.last_input_directory)
-        self.gcodeDirEdit.setValue(self.config.gcode_directory, self.config.last_gcode_directory)
         self.resolutionSpin.setFocus()
     def accept(self):
         self.config.resolution = self.resolutionSpin.value()
@@ -185,5 +199,7 @@ class PreferencesDialog(QDialog):
         self.config.gcode_directory = self.gcodeDirEdit.value()
         self.config.clearance_z = self.clearanceZSpin.value()
         self.config.safe_entry_z = self.safeEntryZSpin.value()
+        self.config.dxf_inches = self.dxfInchesCheck.isChecked()
+        self.config.gcode_inches = self.gcodeInchesCheck.isChecked()
         QDialog.accept(self)
 
