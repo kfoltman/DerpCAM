@@ -1,6 +1,7 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from DerpCAM.common.guiutils import GuiSettings
 
 def useFormat(format, value):
     if isinstance(format, str):
@@ -231,6 +232,38 @@ class FloatEditableProperty(EditableProperty):
         return value, self.unit
 
 class FloatDistEditableProperty(FloatEditableProperty):
+    def scaling(self):
+        if not GuiSettings.inch_mode:
+            return 1
+        if self.unit == "m/min":
+            return 1000.0 / (12 * 25.4)
+        if self.unit == "mm" or self.unit == "mm/min":
+            return 1.0 / 25.4
+        else:
+            assert False, f"Unhandled unit: {self.unit}"
+    def curUnit(self):
+        return self.altUnit() if GuiSettings.inch_mode else self.unit
+    def altUnit(self):
+        if self.unit == "mm":
+            return "in"
+        elif self.unit == "mm/min":
+            return "ipm"
+        elif self.unit == "m/min":
+            return "sfm"
+        else:
+            assert False, f"Unhandled unit: {self.unit}"
+    def toDisplayString(self, value):
+        if value is None:
+            return self.none_value
+        # XXXKF should use more significant digits for inches
+        if GuiSettings.inch_mode:
+            return f"{useFormat(self.format, value * self.scaling())} {self.altUnit()}"
+        return f"{useFormat(self.format, value)} {self.unit}"
+    def toEditString(self, value):
+        if value is None:
+            return ""
+        value *= self.scaling()
+        return EditableProperty.toEditString(self, value)
     def fromInch(self, value):
         if '/' in value:
             num, denom = value.split("/", 1)
@@ -244,13 +277,29 @@ class FloatDistEditableProperty(FloatEditableProperty):
     def validateString(self, value):
         value2 = value.replace(" ", "").lower()
         unit = self.unit
-        if self.unit == "mm/min":
+        if self.unit == "m/min":
+            if value2.endswith('sfm'):
+                unit = "sfm"
+                value = self.fromMetric(value2[:-3], 1000.0 / (12 * 25.4))
+            elif value2.endswith('m/min'):
+                unit = "m/min"
+                value = self.fromMetric(value2[:-5], 1)
+            elif GuiSettings.inch_mode:
+                unit = "sfm"
+                value = self.fromMetric(value2, 1000.0 / (12 * 25.4))
+        elif self.unit == "mm/min":
             if value2.endswith('ipm'):
                 unit = "ipm"
                 value = self.fromInch(value2[:-3])
             elif value2.endswith('in/min'):
                 unit = "ipm"
                 value = self.fromInch(value2[:-6])
+            elif value2.endswith('mm/min'):
+                unit = "mm/min"
+                value = self.fromMetric(value2[:-6], 1)
+            elif GuiSettings.inch_mode:
+                unit = "ipm"
+                value = self.fromInch(value2)
         elif self.unit == "mm":
             if value2.endswith('in'):
                 unit = "in"
@@ -258,6 +307,9 @@ class FloatDistEditableProperty(FloatEditableProperty):
             elif value2.endswith('"'):
                 unit = "in"
                 value = self.fromInch(value2[:-1])
+            elif value2.endswith('mm'):
+                unit = "mm"
+                value = self.fromMetric(value2[:-2], 1)
             elif value2.endswith('cm'):
                 unit = "cm"
                 value = self.fromMetric(value2[:-2], 10)
@@ -267,6 +319,8 @@ class FloatDistEditableProperty(FloatEditableProperty):
             elif value2.endswith('m'):
                 unit = "m"
                 value = self.fromMetric(value2[:-2], 1000)
+            elif GuiSettings.inch_mode:
+                value = self.fromInch(value2)
         return FloatEditableProperty.validateString(self, value)[0], unit
 
 class IntEditableProperty(EditableProperty):
@@ -520,11 +574,16 @@ class BaseCreateEditDialog(QDialog):
                 editor = QLineEdit()
                 if p.allow_none:
                     editor.setPlaceholderText(p.none_value)
+                scaling = 1
                 def fmt(v):
-                    return "" if v is None else useFormat(p.format, v)
+                    return "" if v is None else useFormat(p.format, v * scaling)
                 if p.min is not None or p.max is not None:
-                    if p.unit != "":
-                        self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)} {p.unit})", editor)
+                    unit = p.unit
+                    if isinstance(p, FloatDistEditableProperty):
+                        unit = p.curUnit()
+                        scaling = p.scaling()
+                    if unit != "":
+                        self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)} {unit})", editor)
                     else:
                         self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)})", editor)
                 else:
@@ -548,10 +607,7 @@ class BaseCreateEditDialog(QDialog):
             elif isinstance(p, FloatEditableProperty) or isinstance(p, IntEditableProperty):
                 if p.computed:
                     continue
-                if self.values.get(p.attribute, None) is not None:
-                    ctl.setText(useFormat(p.format, self.values.get(p.attribute, None)))
-                else:
-                    ctl.setText("")
+                ctl.setText(p.toEditString(self.values.get(p.attribute, None)))
     def propertyEditError(self, p, msg):
         ctl = self.prop_controls[p]
         QMessageBox.critical(self, None, msg)

@@ -2,6 +2,9 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
+class GuiSettings(object):
+    inch_mode = False
+
 class Format(object):
     @staticmethod
     def dp(value, dp):
