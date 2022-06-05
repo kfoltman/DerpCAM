@@ -35,6 +35,7 @@ class OperationProps(object):
 
 class Gcode(object):
     def __init__(self):
+        self.inch_mode = False
         self.gcode = []
         self.last_feed = 0
         self.last_feed_index = None
@@ -48,7 +49,8 @@ class Gcode(object):
             self.comment(comment)
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
-        self.add("G17 G21 G90 G40 G64 P%0.3f Q%0.3f" % (accuracy, accuracy))
+        unit_mode = "G20" if self.inch_mode else "G21"
+        self.add("G17 %s G90 G40 G64 P%0.3f Q%0.3f" % (unit_mode, accuracy, accuracy))
     def prompt_for_tool(self, name):
         name = name.replace("(", "<").replace(")",">")
         self.add(f"M1 ({name})")
@@ -58,9 +60,9 @@ class Gcode(object):
     def feed(self, feed):
         if feed != self.last_feed:
             if self.last_feed_index == len(self.gcode) - 1:
-                self.gcode[-1] = f"F{feed:0.2f}"
+                self.gcode[-1] = self.enc_feed(feed)
             else:
-                self.add(f"F{feed:0.2f}")
+                self.add(self.enc_feed(feed))
             self.last_feed = feed
             self.last_feed_index = len(self.gcode) - 1
     def rapid(self, x=None, y=None, z=None):
@@ -73,23 +75,33 @@ class Gcode(object):
         self.add("G3" + self.enc_coords_arc(x, y, z, i, j, k))
     def arc(self, direction, x=None, y=None, z=None, i=None, j=None, k=None):
         (self.arc_ccw if direction > 0 else self.arc_cw)(x, y, z, i, j, k)
+    def enc_feed(self, feed):
+        if self.inch_mode:
+            return f"F{feed / 25.4:0.3f}"
+        else:
+            return f"F{feed:0.2f}"
+    def enc_coord(self, letter, value):
+        if self.inch_mode:
+            return (" %s%0.4f" % (letter, value / 25.4)).rstrip("0").rstrip(".")
+        else:
+            return (" %s%0.3f" % (letter, value)).rstrip("0").rstrip(".")
     def enc_coords(self, x=None, y=None, z=None):
         res = ""
         if x is not None:
-            res += (" X%0.3f" % x)
+            res += self.enc_coord('X', x)
         if y is not None:
-            res += (" Y%0.3f" % y)
+            res += self.enc_coord('Y', y)
         if z is not None:
-            res += (" Z%0.3f" % z)
+            res += self.enc_coord('Z', z)
         return res
     def enc_coords_arc(self, x=None, y=None, z=None, i=None, j=None, k=None):
         res = self.enc_coords(x, y, z)
         if i is not None:
-            res += (" I%0.3f" % i)
+            res += self.enc_coord('I', i)
         if j is not None:
-            res += (" J%0.3f" % j)
+            res += self.enc_coord('J', j)
         if k is not None:
-            res += (" K%0.3f" % k)
+            res += self.enc_coord('K', k)
         return res
     def dwell(self, millis):
         self.add("G4 P%0.0f" % millis)
