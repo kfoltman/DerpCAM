@@ -321,12 +321,17 @@ class DrillBitCutter(CutterBase):
     
 class Inventory(object):
     def __init__(self):
-        self.cutter_materials = []
-        for name in ("HSS", "HSSCo", "carbide", "TiN", "AlTiN"):
-            material = CutterMaterial(None, name)
-            setattr(CutterMaterial, name, material)
-            self.cutter_materials.append(name)
+        self.cutter_materials = {}
+        for name in ("HSS", "HSS+TiN", "HSSCo5", "HSSCo8", "carbide", "carbide+TiN", "carbide+TiCN", "carbide+TiSiN", "carbide+AlTiN", "carbide+TiAlN", "carbide+DLC"):
+            self.addMaterial(CutterMaterial(None, name))
         self.toolbits = []
+    def addMaterial(self, material):
+        name = material.name
+        if name == 'HSS' or name == 'carbide':
+            setattr(CutterMaterial, name, material)
+        self.cutter_materials[material.name] = material
+    def materialByName(self, name):
+        return self.cutter_materials[name]
     def toolbitByName(self, name, klass=CutterBase):
         for i in self.toolbits:
             if i.name == name and isinstance(i, klass):
@@ -337,6 +342,12 @@ class Inventory(object):
         data = json.load(f)
         f.close()
         cutter_map = {}
+        cm = data.get('cutter_materials', None)
+        if cm:
+            self.cutter_materials.clear()
+            for i in data['cutter_materials']:
+                self.addMaterial(CutterMaterial.load(i))
+        self.toolbits.clear()
         for i in data['tools']:
             tool = CutterBase.load(i)
             cutter_map[tool.orig_id] = tool
@@ -347,29 +358,35 @@ class Inventory(object):
             preset.toolbit.presets.append(preset)
         return True
     def createStdCutters(self):
+        HSS = self.materialByName('HSS')
+        carbide = self.materialByName('carbide')
         self.toolbits = [
-            EndMillCutter.new(1, "cheapo 2F 3.2/15", CutterMaterial.carbide, 3.2, 15, 2)
+            EndMillCutter.new(1, "cheapo 2F 3.2/15", carbide, 3.2, 15, 2)
                 .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5)
                 .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
-            EndMillCutter.new(2, "cheapo 2F 2.5/12", CutterMaterial.carbide, 2.5, 12, 2)
+            EndMillCutter.new(2, "cheapo 2F 2.5/12", carbide, 2.5, 12, 2)
                 .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5)
                 .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
-            EndMillCutter.new(3, "cheapo 1F 3.2/15", CutterMaterial.carbide, 3.2, 15, 1)
+            EndMillCutter.new(3, "cheapo 1F 3.2/15", carbide, 3.2, 15, 1)
                 .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5),
-            EndMillCutter.new(4, "cheapo 1F 2/8", CutterMaterial.carbide, 2, 8, 1),
-            DrillBitCutter.new(50, "2mm HSS", CutterMaterial.HSS, 2, 25)
+            EndMillCutter.new(4, "cheapo 1F 2/8", carbide, 2, 8, 1),
+            DrillBitCutter.new(50, "2mm HSS", HSS, 2, 25)
                 .addPreset(200, "Wood-untested", 10000, 100, 6),
-            DrillBitCutter.new(51, "3mm HSS", CutterMaterial.HSS, 3, 41)
+            DrillBitCutter.new(51, "3mm HSS", HSS, 3, 41)
                 .addPreset(201, "Wood-untested", 7000, 100, 6),
-            DrillBitCutter.new(52, "4mm HSS", CutterMaterial.HSS, 4, 54)
+            DrillBitCutter.new(52, "4mm HSS", HSS, 4, 54)
                 .addPreset(202, "Wood-untested", 5000, 100, 6),
-            DrillBitCutter.new(53, "5mm HSS", CutterMaterial.HSS, 5, 62)
+            DrillBitCutter.new(53, "5mm HSS", HSS, 5, 62)
                 .addPreset(203, "Wood-untested", 4000, 100, 6),
-            DrillBitCutter.new(54, "6mm HSS", CutterMaterial.HSS, 6, 70)
+            DrillBitCutter.new(54, "6mm HSS", HSS, 6, 70)
                 .addPreset(204, "Wood-untested", 3000, 100, 6),
         ]
     def writeTo(self, dirname, filename):
-        res = { 'tools' : [ i.store() for i in self.toolbits ], 'presets' : [ j.store() for i in self.toolbits for j in i.presets ] }
+        res = {
+            'cutter_materials' : [ i.store() for i in self.cutter_materials.values() ],
+            'tools' : [ i.store() for i in self.toolbits ],
+            'presets' : [ j.store() for i in self.toolbits for j in i.presets ]
+        }
         if not os.path.exists(dirname):
             os.makedirs(dirname)
         f = open(os.path.join(dirname, filename), "w")

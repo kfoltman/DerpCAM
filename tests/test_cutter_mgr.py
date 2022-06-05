@@ -260,16 +260,17 @@ class CutterListDialogTest(CutterMgrTestBase):
         self.verifyButtonUpdates(dlg, "inventory")
         self.verifyButtonUpdates(dlg, "project")
     def testEditCutterEM(self):
-        self.verifyEditCutter("cheapo 2F 3.2/15", "pricey 4F 2/8", gui.inventory.EndMillCutter, "\u23002 L8 carbide end mill")
+        self.verifyEditCutter("cheapo 2F 3.2/15", "pricey 4F 2/8", "carbide+TiN", gui.inventory.EndMillCutter, "\u23002 L8 carbide+TiN end mill")
     def testEditCutterDB(self):
-        self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", gui.inventory.DrillBitCutter, "2mm HSS drill bit, L=8mm")
-    def verifyEditCutter(self, cutter_name, new_cutter_name, cutter_type, expected_str):
+        self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", "HSSCo5", gui.inventory.DrillBitCutter, "2mm HSSCo5 drill bit, L=8mm")
+    def verifyEditCutter(self, cutter_name, new_cutter_name, new_material, cutter_type, expected_str):
         tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
         self.assertIsNotNone(tool_data)
         cycle = self.document.opAddCutter(tool_data)
         def fakeExec(editDlg):
             editDlg.nameEdit.setText(new_cutter_name)
             editDlg.diameterEdit.setText("2")
+            editDlg.materialCombo.setCurrentText(new_material)
             editDlg.flutesEdit.setText("4")
             editDlg.lengthEdit.setText("8")
             self.clickOk(editDlg)

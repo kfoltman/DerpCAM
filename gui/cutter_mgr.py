@@ -340,6 +340,10 @@ class CreateEditCutterDialog(QDialog):
         self.drillRadio = QRadioButton("&Drill bit", self)
         hbox.addWidget(self.drillRadio)
         self.form.addRow(hbox)
+        self.materialCombo = QComboBox()
+        for item in sorted(inventory.inventory.cutter_materials.keys()):
+            self.materialCombo.addItem(item, item)
+        self.form.addRow("Material", self.materialCombo)
         self.diameterEdit = QLineEdit()
         self.form.addRow("Diameter", self.diameterEdit)
         self.flutesEdit = QLineEdit()
@@ -352,8 +356,9 @@ class CreateEditCutterDialog(QDialog):
         self.form.addRow(self.buttonBox)
         if self.edit_cutter:
             self.nameEdit.setText(self.edit_cutter.name)
-            self.flutesEdit.setText(str(self.edit_cutter.flutes))
+            self.materialCombo.setCurrentText(self.edit_cutter.material.name)
             self.diameterEdit.setText(inventory.Format.cutter_dia(self.edit_cutter.diameter))
+            self.flutesEdit.setText(str(self.edit_cutter.flutes))
             self.lengthEdit.setText(inventory.Format.cutter_length(self.edit_cutter.length) if self.edit_cutter.length else "")
             if isinstance(self.edit_cutter, inventory.EndMillCutter):
                 self.emRadio.setChecked(True)
@@ -410,10 +415,11 @@ class CreateEditCutterDialog(QDialog):
             QMessageBox.critical(self, None, "Cutter length is specified but not a valid number")
             self.lengthEdit.setFocus()
             return
+        material = inventory.inventory.materialByName(self.materialCombo.currentData())
         if self.emRadio.isChecked():
-            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.carbide, diameter, self.length, flutes)
+            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes)
         if self.drillRadio.isChecked():
-            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), inventory.CutterMaterial.HSS, diameter, self.length, flutes)
+            self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes)
         QDialog.accept(self)
 
 class CreateEditPresetDialog(propsheet.BaseCreateEditDialog):
