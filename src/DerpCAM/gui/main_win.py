@@ -7,7 +7,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.common import view
+from DerpCAM.common import guiutils
 from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr
 
 OperationType = model.OperationType
@@ -263,7 +263,8 @@ class CAMMainWindow(QMainWindow):
     def drillHole(self):
         self.millSelectedShapes(OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
-        self.coordLabel.setText("X=%0.2f Y=%0.2f" % (x, y))
+        Format = guiutils.Format
+        self.coordLabel.setText(f"X={Format.coord(x)}{Format.coord_unit()} Y={Format.coord(y)}{Format.coord_unit()}")
     def canvasMouseLeave(self):
         self.coordLabel.setText("")
     def onDrawingImportedOrProjectLoaded(self, fn):
@@ -329,7 +330,7 @@ class CAMMainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, None, str(e))
             return
-        with view.Spinner():
+        with Spinner():
             self.document.startUpdateCAM()
             if not self.document.waitForUpdateCAM():
                 return

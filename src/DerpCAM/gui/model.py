@@ -10,10 +10,10 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.common import geom, view
+from DerpCAM.common import geom
+from DerpCAM.common.guiutils import Format, Spinner, is_gui_application
 from DerpCAM import cam
 from DerpCAM.cam import dogbone, gcodegen, shapes, milling_tool
-from DerpCAM.cam.milling_tool import *
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
@@ -22,8 +22,6 @@ from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
 
 import ezdxf
 import json
-
-Format = inventory.Format
 
 debug_inventory_matching = False
 
@@ -144,12 +142,12 @@ class DrawingItemTreeItem(CAMTreeItem):
     def load(klass, document, dump):
         rtype = dump['_type']
         if rtype == 'DrawingPolyline' or rtype == 'DrawingPolylineTreeItem':
-            points = [PathNode.from_tuple(i) for i in dump['points']]
+            points = [geom.PathNode.from_tuple(i) for i in dump['points']]
             item = DrawingPolylineTreeItem(document, points, dump.get('closed', True))
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
-            item = DrawingCircleTreeItem(document, PathPoint(dump['cx'], dump['cy']), dump['r'])
+            item = DrawingCircleTreeItem(document, geom.PathPoint(dump['cx'], dump['cy']), dump['r'])
         elif rtype == 'DrawingTextTreeItem':
-            item = DrawingTextTreeItem(document, PathPoint(dump['x'], dump['y']),
+            item = DrawingTextTreeItem(document, geom.PathPoint(dump['x'], dump['y']),
                 DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font']), dump['text'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
@@ -191,9 +189,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             assert False, "Unknown property: " + name
     def setPropertyValue(self, name, value):
         if name == 'x':
-            self.centre = PathPoint(value, self.centre.y)
+            self.centre = geom.PathPoint(value, self.centre.y)
         elif name == 'y':
-            self.centre = PathPoint(self.centre.x, value)
+            self.centre = geom.PathPoint(self.centre.x, value)
         elif name == 'radius':
             self.r = value
         elif name == 'diameter':
@@ -207,7 +205,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def distanceTo(self, pt):
         return abs(dist(self.centre, pt) - self.r)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), circle(self.centre.x, self.centre.y, self.r), True)
+        path.addLines(self.penForPath(path, modeData), geom.circle(self.centre.x, self.centre.y, self.r), True)
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
@@ -255,7 +253,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+        path.addLines(self.penForPath(path, modeData), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def label(self):
         if len(self.points) == 2:
             if self.points[1].is_point():
@@ -274,7 +272,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx), Format.coord(c.cy), Format.coord(c.r), arc.sstart * 180 / pi, arc.sspan * 180 / pi)
         return self.label() + f"{Format.point_tuple(self.bounds[:2])}-{Format.point_tuple(self.bounds[2:])}"
     def toShape(self):
-        return shapes.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
+        return shapes.Shape(geom.CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
         
 class DrawingTextStyle(object):
     def __init__(self, height, width, halign, valign, angle, font_name):
@@ -374,13 +372,13 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             xcoords = [p.x for p in i.nodes if p.is_point()]
             ycoords = [p.y for p in i.nodes if p.is_point()]
             bounds.append((min(xcoords), min(ycoords), max(xcoords), max(ycoords)))
-        self.bounds = max_bounds(*bounds)
+        self.bounds = geom.max_bounds(*bounds)
     def label(self):
         return "Text%d" % self.shape_id
     def textDescription(self):
         return f"{self.label()}: {self.text}"
     def createPaths(self):
-        scale = GeometrySettings.RESOLUTION
+        scale = geom.GeometrySettings.RESOLUTION
         if self.style.height * scale > 1000:
             scale = 1000 / self.style.height
         font = QFont(self.style.font_name, int(self.style.height * scale), 400, False)
@@ -404,7 +402,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         self.paths = []
         for i in polygons:
             #polyline = DrawingPolylineTreeItem(self.document, )
-            self.paths.append(geom.Path([PathPoint(p.x() * self.style.width / scale + x, -p.y() / scale + y) for p in i], True))
+            self.paths.append(geom.Path([geom.PathPoint(p.x() * self.style.width / scale + x, -p.y() / scale + y) for p in i], True))
         self.calcBounds()
 
 class CAMListTreeItem(CAMTreeItem):
@@ -432,7 +430,7 @@ class DrawingTreeItem(CAMListTreeItem):
             if b is None:
                 b = item.bounds
             else:
-                b = max_bounds(b, item.bounds)
+                b = geom.max_bounds(b, item.bounds)
         if b is None:
             return (-1, -1, 1, 1)
         margin = 5
@@ -447,27 +445,27 @@ class DrawingTreeItem(CAMListTreeItem):
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()
         if dxftype == 'LWPOLYLINE':
-            points, closed = dxf_polyline_to_points(entity)
+            points, closed = geom.dxf_polyline_to_points(entity)
             self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
-            self.addItem(DrawingPolylineTreeItem(self.document, [PathPoint(start[0], start[1]), PathPoint(end[0], end[1])], False))
+            self.addItem(DrawingPolylineTreeItem(self.document, [geom.PathPoint(start[0], start[1]), geom.PathPoint(end[0], end[1])], False))
         elif dxftype == 'CIRCLE':
-            centre = PathPoint(entity.dxf.center[0], entity.dxf.center[1])
+            centre = geom.PathPoint(entity.dxf.center[0], entity.dxf.center[1])
             self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
         elif dxftype == 'ARC':
-            start = PathPoint(entity.start_point[0], entity.start_point[1])
-            end = PathPoint(entity.end_point[0], entity.end_point[1])
+            start = geom.PathPoint(entity.start_point[0], entity.start_point[1])
+            end = geom.PathPoint(entity.end_point[0], entity.end_point[1])
             centre = tuple(entity.dxf.center)[0:2]
-            c = CandidateCircle(*centre, entity.dxf.radius)
-            sangle = entity.dxf.start_angle * pi / 180
-            eangle = entity.dxf.end_angle * pi / 180
+            c = geom.CandidateCircle(*centre, entity.dxf.radius)
+            sangle = entity.dxf.start_angle * math.pi / 180
+            eangle = entity.dxf.end_angle * math.pi / 180
             if eangle < sangle:
-                sspan = eangle - sangle + 2 * pi
+                sspan = eangle - sangle + 2 * math.pi
             else:
                 sspan = eangle - sangle
-            points = [start, PathArc( start, end, c, 50, sangle, sspan)]
+            points = [start, geom.PathArc( start, end, c, 50, sangle, sspan)]
             self.addItem(DrawingPolylineTreeItem(self.document, points, False))
         elif dxftype == 'TEXT':
             font = "OpenSans"
@@ -490,11 +488,11 @@ class DrawingTreeItem(CAMListTreeItem):
                 if j.shape_id == shape_id:
                     return j
     def objectsNear(self, pos, margin):
-        xy = PathPoint(pos.x() + self.x_offset, pos.y() + self.y_offset)
+        xy = geom.PathPoint(pos.x() + self.x_offset, pos.y() + self.y_offset)
         found = []
         mindist = margin
         for item in self.items():
-            if point_inside_bounds(expand_bounds(item.bounds, margin), xy):
+            if point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
                 distance = item.distanceTo(xy)
                 if distance is not None and distance < margin:
                     mindist = min(mindist, distance)
@@ -510,7 +508,7 @@ class DrawingTreeItem(CAMListTreeItem):
         bounds = (xs, ys, xe, ye)
         found = []
         for item in self.items():
-            if inside_bounds(item.bounds, bounds):
+            if geom.inside_bounds(item.bounds, bounds):
                 found.append(item)
         return found
     def parseSelection(self, selection, operType):
@@ -744,7 +742,7 @@ class ToolPresetTreeItem(CAMTreeItem):
             if present:
                 return value
         elif name == 'surf_speed':
-            return self.inventory_preset.toolbit.diameter * pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
+            return self.inventory_preset.toolbit.diameter * math.pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
         elif name == 'chipload':
             return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
         else:
@@ -768,7 +766,7 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         elif name == 'surf_speed':
             if value:
-                rpm = value * 1000 / (self.inventory_preset.toolbit.diameter * pi)
+                rpm = value * 1000 / (self.inventory_preset.toolbit.diameter * math.pi)
                 if rpm >= self.prop_rpm.min and rpm <= self.prop_rpm.max:
                     self.inventory_preset.rpm = rpm
             else:
@@ -798,10 +796,10 @@ class MaterialType(EnumClass):
     ALU = 2
     STEEL = 3
     descriptions = [
-        (WOOD, "Wood/MDF", material_wood),
-        (PLASTICS, "Plastics", material_plastics),
-        (ALU, "Aluminium", material_aluminium),
-        (STEEL, "Mild steel", material_mildsteel),
+        (WOOD, "Wood/MDF", milling_tool.material_wood),
+        (PLASTICS, "Plastics", milling_tool.material_plastics),
+        (ALU, "Aluminium", milling_tool.material_aluminium),
+        (STEEL, "Mild steel", milling_tool.material_mildsteel),
     ]
 
 class WorkpieceTreeItem(CAMTreeItem):
@@ -1199,7 +1197,7 @@ class OperationTreeItem(CAMTreeItem):
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
-        self.user_tabs = set(PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
+        self.user_tabs = set(geom.PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
         self.active = dump.get('active', True)
         self.updateCheckState()
     def properties(self):
@@ -1301,7 +1299,7 @@ class OperationTreeItem(CAMTreeItem):
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
     def startUpdateCAM(self):
-        with view.Spinner():
+        with Spinner():
             self.updateOrigShape()
             self.error = None
             self.warning = None
@@ -1401,11 +1399,11 @@ class OperationTreeItem(CAMTreeItem):
             if errors:
                 raise ValueError("\n".join(errors))
             if isinstance(self.cutter, inventory.EndMillCutter):
-                tool = Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
+                tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset, zigzag, pda.axis_angle * pi / 180)
+                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset, zigzag, pda.axis_angle * math.pi / 180)
             else:
-                tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
+                tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
                 self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
@@ -1795,7 +1793,7 @@ class DocumentModel(QObject):
             material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
             tool = data['tool']
             prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'])
-            std_tool = standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, carbide_uncoated).clone_with_overrides(
+            std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, milling_tool.carbide_uncoated).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
@@ -2010,7 +2008,7 @@ class DocumentModel(QObject):
     def waitForUpdateCAM(self):
         if self.pollForUpdateCAM() is None:
             return True
-        if view.is_gui_application():
+        if is_gui_application():
             try:
                 self.progress_dialog_displayed = True
                 progress = QProgressDialog()
@@ -2105,7 +2103,7 @@ class DocumentModel(QObject):
         if was_suspended is not None:
             was_suspended.startUpdateCAM()
     def exportGcode(self, fn):
-        with view.Spinner():
+        with Spinner():
             OpExporter(self).write(fn)
     def opAddCutter(self, cutter: inventory.CutterBase):
         cycle = CycleTreeItem(self, cutter)

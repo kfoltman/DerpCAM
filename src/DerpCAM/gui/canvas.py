@@ -2,7 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from DerpCAM.common.geom import *
-from DerpCAM.common import view
+from DerpCAM.common import view, guiutils
 from DerpCAM.cam import toolpath
 from DerpCAM.gui import settings
 
@@ -18,7 +18,7 @@ class DocumentRenderer(object):
         return max_bounds((0, 0, 1, 1), self.document.drawing.bounds())
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
-        with view.Spinner():
+        with guiutils.Spinner():
             if False and owner.mode == DrawingUIMode.MODE_ISLANDS:
                 # This works, but doesn't look particularly good
                 if owner.mode_item.renderer:

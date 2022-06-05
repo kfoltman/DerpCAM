@@ -2,6 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from .geom import *
+from .guiutils import Spinner
 from DerpCAM.cam import gcodegen
 from DerpCAM.cam import toolpath
 import sys
@@ -9,17 +10,6 @@ import time
 
 interpolate_all_arcs = False
 draw_arrows_for_rapids = True
-
-def is_gui_application():
-    return isinstance(QCoreApplication.instance(), QGuiApplication)
-
-class Spinner(object):
-    def __enter__(self):
-        if is_gui_application():
-            QGuiApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        if is_gui_application():
-            QGuiApplication.restoreOverrideCursor()
 
 def addPolylineToPath(path, polyline):
     path.moveTo(polyline[0].x, polyline[0].y)

@@ -6,6 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
+from DerpCAM.common.guiutils import Format
 from . import inventory, model, propsheet
 
 class CutterListWidget(QTreeWidget):
@@ -357,9 +358,9 @@ class CreateEditCutterDialog(QDialog):
         if self.edit_cutter:
             self.nameEdit.setText(self.edit_cutter.name)
             self.materialCombo.setCurrentText(self.edit_cutter.material.name)
-            self.diameterEdit.setText(inventory.Format.cutter_dia(self.edit_cutter.diameter))
+            self.diameterEdit.setText(Format.cutter_dia(self.edit_cutter.diameter))
             self.flutesEdit.setText(str(self.edit_cutter.flutes))
-            self.lengthEdit.setText(inventory.Format.cutter_length(self.edit_cutter.length) if self.edit_cutter.length else "")
+            self.lengthEdit.setText(Format.cutter_length(self.edit_cutter.length) if self.edit_cutter.length else "")
             if isinstance(self.edit_cutter, inventory.EndMillCutter):
                 self.emRadio.setChecked(True)
             elif isinstance(self.edit_cutter, inventory.DrillBitCutter):

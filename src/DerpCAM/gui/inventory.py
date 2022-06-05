@@ -1,54 +1,8 @@
 from .propsheet import EnumClass
+from DerpCAM.common.guiutils import Format
 import os
 import json
 import sys
-
-class Format(object):
-    @staticmethod
-    def dp(value, dp):
-        s = f"%0.{dp}f" % (value,)
-        if '.' in s:
-            s = s.rstrip("0").rstrip(".")
-        return s
-    @staticmethod
-    def cutter_dia(value):
-        return Format.dp(value, 3)
-    @staticmethod
-    def cutter_length(value):
-        return Format.dp(value, 2)
-    @staticmethod
-    def depth_of_cut(value):
-        return Format.dp(value, 3)
-    @staticmethod
-    def feed(value):
-        return Format.dp(value, 1)
-    @staticmethod
-    def rpm(value):
-        return Format.dp(value, 1)
-    @staticmethod
-    def surf_speed(value):
-        return Format.dp(value, 2)
-    @staticmethod
-    def chipload(value):
-        return Format.dp(value, 4)
-    @staticmethod
-    def coord(value):
-        return Format.dp(value, 3)
-    @staticmethod
-    def point(value):
-        return f"({Format.coord(value.x)}, {Format.coord(value.y)})"
-    @staticmethod
-    def point_tuple(value):
-        return f"({Format.coord(value[0])}, {Format.coord(value[1])})"
-    @staticmethod
-    def angle(value):
-        return Format.dp(value, 2)
-    @staticmethod
-    def percent(value):
-        return Format.dp(value, 2)
-    @staticmethod
-    def as_percent(value):
-        return Format.dp(value * 100, 2) + "%"
 
 class IdSequence(object):
     last_id = 999
