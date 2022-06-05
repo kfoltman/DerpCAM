@@ -1164,7 +1164,9 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if (not has_islands or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
-        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction', 'dogbones']:
+        if self.operation in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE) and name == 'dogbones':
+            return False
+        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction']:
             return False
         if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
@@ -1408,7 +1410,7 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 tool = Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
-            if self.dogbones and self.operation != OperationType.ENGRAVE:
+            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
                 self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
             if self.operation == OperationType.REFINE:
                 if isinstance(self.shape, list):
