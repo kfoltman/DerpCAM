@@ -33,8 +33,8 @@ class EditableProperty(object):
         return useFormat(self.format, value)
     def toDisplayString(self, value):
         return self.toEditString(value)
-    def validate(self, value):
-        return value
+    def validateString(self, value):
+        return value, None
     def createEditor(self, parent, item, objects):
         return None
     def setEditorData(self, editor, value):
@@ -53,7 +53,7 @@ class SetEditableProperty(EditableProperty):
             return f"{len(value)} items"
         else:
             return self.format_func(value)
-    def validate(self, value):
+    def validateString(self, value):
         raise ValueError("Manual entry not supported")
     def isEditable(self):
         return self.edit_func is not None
@@ -144,13 +144,13 @@ class EnumEditableProperty(EditableProperty):
         self.none_value = none_value
     def toEditString(self, value):
         return self.enum_class.toString(value) or str(value)
-    def validate(self, value):
+    def validateString(self, value):
         for data in self.enum_class.descriptions:
             id, description = data[0 : 2]
             if value == id or value == description:
-                return id
+                return id, None
         if self.allow_none and (value is None or value == self.none_value):
-            return None
+            return None, None
         raise ValueError("Incorrect value: %s" % (value))
     def createEditor(self, parent, item, objects):
         widget = QListWidget(parent)
@@ -220,15 +220,54 @@ class FloatEditableProperty(EditableProperty):
         if value is None:
             return self.none_value
         return f"{useFormat(self.format, value)} {self.unit}"
-    def validate(self, value):
+    def validateString(self, value):
         if value == "" and self.allow_none:
-            return None
+            return None, None
         value = float(value)
         if self.min is not None and value < self.min:
             value = self.min
         if self.max is not None and value > self.max:
             value = self.max
-        return value
+        return value, self.unit
+
+class FloatDistEditableProperty(FloatEditableProperty):
+    def fromInch(self, value):
+        if '/' in value:
+            num, denom = value.split("/", 1)
+            return str(float(num) * 25.4 / float(denom))
+        return str(float(value) * 25.4)
+    def fromMetric(self, value, multiplier):
+        if '/' in value:
+            num, denom = value.split("/", 1)
+            return str(float(num) * multiplier / float(denom))
+        return str(float(value) * multiplier)
+    def validateString(self, value):
+        value2 = value.replace(" ", "").lower()
+        unit = self.unit
+        if self.unit == "mm/min":
+            if value2.endswith('ipm'):
+                unit = "ipm"
+                value = self.fromInch(value2[:-3])
+            elif value2.endswith('in/min'):
+                unit = "ipm"
+                value = self.fromInch(value2[:-6])
+        elif self.unit == "mm":
+            if value2.endswith('in'):
+                unit = "in"
+                value = self.fromInch(value2[:-2])
+            elif value2.endswith('"'):
+                unit = "in"
+                value = self.fromInch(value2[:-1])
+            elif value2.endswith('cm'):
+                unit = "cm"
+                value = self.fromMetric(value2[:-2], 10)
+            elif value2.endswith('dm'):
+                unit = "dm"
+                value = self.fromMetric(value2[:-2], 100)
+            elif value2.endswith('m'):
+                unit = "m"
+                value = self.fromMetric(value2[:-2], 1000)
+        return FloatEditableProperty.validateString(self, value)[0], unit
 
 class IntEditableProperty(EditableProperty):
     def __init__(self, name, attribute, format = "%d", min = None, max = None, allow_none = False, none_value = "none"):
@@ -245,7 +284,7 @@ class IntEditableProperty(EditableProperty):
         if value is None:
             return self.none_value
         return useFormat(self.format, value)
-    def validate(self, value):
+    def validateString(self, value):
         if value == "" and self.allow_none:
             return None
         value = int(value)
@@ -263,7 +302,7 @@ class StringEditableProperty(EditableProperty):
         return value
     def toDisplayString(self, value):
         return value
-    def validate(self, value):
+    def validateString(self, value):
         if value == "" and not self.allow_empty:
             raise ValueError("Empty value not permitted")
         return value
@@ -374,7 +413,7 @@ class PropertySheetWidget(QTableWidget):
         prop = self.properties[row]
         changes = []
         try:
-            value = prop.validate(newValueText)
+            value, unit = prop.validateString(newValueText)
             for o in self.objects:
                 if value != prop.getData(o):
                     changes.append((o, value))
@@ -537,16 +576,9 @@ class BaseCreateEditDialog(QDialog):
                 value = None
                 if text != '' and text != p.none_value:
                     try:
-                        if isinstance(p, FloatEditableProperty):
-                            value = float(text)
-                        else:
-                            value = int(text)
+                        value, unit = p.validateString(text)
                     except ValueError as e:
-                        return self.propertyEditError(p, f"Value of {p.name} is not a valid number")
-                    if p.min is not None and value < p.min:
-                        return self.propertyEditError(p, f"Value of {p.name} is below a minimum of {p.min}")
-                    if p.max is not None and value > p.max:
-                        return self.propertyEditError(p, f"Value of {p.name} is above a maximum of {p.min}")
+                        return self.propertyEditError(p, f"Invalid value of {p.name}: {str(e)}")
                 result[p.attribute] = value
         self.result = self.processResult(result)
         if self.result is None:

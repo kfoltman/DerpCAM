@@ -17,8 +17,8 @@ from DerpCAM.cam import dogbone, gcodegen, shapes, milling_tool
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
-    EnumEditableProperty, SetEditableProperty, RefEditableProperty, StringEditableProperty, \
-    FontEditableProperty
+    FloatDistEditableProperty, EnumEditableProperty, SetEditableProperty, \
+    RefEditableProperty, StringEditableProperty, FontEditableProperty
 
 import ezdxf
 import json
@@ -164,10 +164,10 @@ class DrawingItemTreeItem(CAMTreeItem):
         return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
-    prop_x = FloatEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
-    prop_y = FloatEditableProperty("Centre Y", "y", Format.coord, unit="mm", allow_none=False)
-    prop_dia = FloatEditableProperty("Diameter", "diameter", Format.coord, unit="mm", min=0, allow_none=False)
-    prop_radius = FloatEditableProperty("Radius", "radius", Format.coord, unit="mm", min=0, allow_none=False)
+    prop_x = FloatDistEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
+    prop_y = FloatDistEditableProperty("Centre Y", "y", Format.coord, unit="mm", allow_none=False)
+    prop_dia = FloatDistEditableProperty("Diameter", "diameter", Format.coord, unit="mm", min=0, allow_none=False)
+    prop_radius = FloatDistEditableProperty("Radius", "radius", Format.coord, unit="mm", min=0, allow_none=False)
     def __init__(self, document, centre, r, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.centre = centre
@@ -284,11 +284,11 @@ class DrawingTextStyle(object):
         self.font_name = font_name
 
 class DrawingTextTreeItem(DrawingItemTreeItem):
-    prop_x = FloatEditableProperty("Anchor X", "x", Format.coord, unit="mm", allow_none=False)
-    prop_y = FloatEditableProperty("Anchor Y", "y", Format.coord, unit="mm", allow_none=False)
+    prop_x = FloatDistEditableProperty("Anchor X", "x", Format.coord, unit="mm", allow_none=False)
+    prop_y = FloatDistEditableProperty("Anchor Y", "y", Format.coord, unit="mm", allow_none=False)
     prop_text = StringEditableProperty("Text", "text", False)
     prop_font = FontEditableProperty("Font face", "font")
-    prop_height = FloatEditableProperty("Font size", "height", Format.coord, min=1, unit="mm", allow_none=False)
+    prop_height = FloatDistEditableProperty("Font size", "height", Format.coord, min=1, unit="mm", allow_none=False)
     prop_width = FloatEditableProperty("Stretch", "width", Format.percent, min=10, unit="%", allow_none=False)
     prop_angle = FloatEditableProperty("Angle", "angle", Format.angle, min=-360, max=360, unit='\u00b0', allow_none=False)
     def __init__(self, document, origin, style, text, untransformed = None):
@@ -415,8 +415,8 @@ class CAMListTreeItem(CAMTreeItem):
         pass
     
 class DrawingTreeItem(CAMListTreeItem):
-    prop_x_offset = FloatEditableProperty("X offset", "x_offset", Format.coord, unit="mm")
-    prop_y_offset = FloatEditableProperty("Y offset", "y_offset", Format.coord, unit="mm")
+    prop_x_offset = FloatDistEditableProperty("X offset", "x_offset", Format.coord, unit="mm")
+    prop_y_offset = FloatDistEditableProperty("Y offset", "y_offset", Format.coord, unit="mm")
     def __init__(self, document):
         CAMListTreeItem.__init__(self, document, "Drawing")
     def resetProperties(self):
@@ -631,8 +631,8 @@ class ToolListTreeItem(CAMListTreeItemWithChildren):
 class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
-    prop_diameter = FloatEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
-    prop_length = FloatEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
+    prop_diameter = FloatDistEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
+    prop_length = FloatDistEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -678,12 +678,12 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
-    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
+    prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
     prop_rpm = FloatEditableProperty("RPM", "rpm", Format.rpm, unit="rev/min", min=0.1, max=60000, allow_none=True)
     prop_surf_speed = FloatEditableProperty("Surface speed", "surf_speed", Format.surf_speed, unit="m/min", allow_none=True, computed=True)
     prop_chipload = FloatEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True, computed=True)
-    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
@@ -808,9 +808,9 @@ class MaterialType(EnumClass):
 
 class WorkpieceTreeItem(CAMTreeItem):
     prop_material = EnumEditableProperty("Material", "material", MaterialType, allow_none=True, none_value="Unknown")
-    prop_thickness = FloatEditableProperty("Thickness", "thickness", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
-    prop_clearance = FloatEditableProperty("Clearance", "clearance", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
-    prop_safe_entry_z = FloatEditableProperty("Safe entry Z", "safe_entry_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
+    prop_thickness = FloatDistEditableProperty("Thickness", "thickness", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
+    prop_clearance = FloatDistEditableProperty("Clearance", "clearance", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
+    prop_safe_entry_z = FloatDistEditableProperty("Safe entry Z", "safe_entry_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
@@ -1088,22 +1088,22 @@ class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
     prop_preset = RefEditableProperty("Tool preset", "tool_preset", ToolPresetAdapter(), allow_none=True, none_value="<none>")
-    prop_depth = FloatEditableProperty("Depth", "depth", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full depth")
-    prop_start_depth = FloatEditableProperty("Start Depth", "start_depth", Format.depth_of_cut, unit="mm", min=0, max=100)
-    prop_tab_height = FloatEditableProperty("Tab Height", "tab_height", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full height")
+    prop_depth = FloatDistEditableProperty("Depth", "depth", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full depth")
+    prop_start_depth = FloatDistEditableProperty("Start Depth", "start_depth", Format.depth_of_cut, unit="mm", min=0, max=100)
+    prop_tab_height = FloatDistEditableProperty("Tab Height", "tab_height", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join([f"({Format.coord(i.x)}, {Format.coord(i.y)})" for i in value]), edit_func=lambda item: item.editTabLocations())
-    prop_offset = FloatEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20)
+    prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
 
-    prop_hfeed = FloatEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
-    prop_doc = FloatEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
+    prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
