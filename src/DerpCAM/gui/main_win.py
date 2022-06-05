@@ -1,17 +1,14 @@
 import argparse
+import json
 import os.path
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-import process
-import gcodegen
-import view
-from gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr
-import json
+from DerpCAM.common import view
+from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr
 
 OperationType = model.OperationType
 

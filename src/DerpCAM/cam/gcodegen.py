@@ -1,11 +1,11 @@
 import threading
-from geom import *
-import process
-import toolpath
-import cam.contour
-import cam.dogbone
-import cam.peel
-import cam.pocket
+from DerpCAM.common.geom import *
+from DerpCAM import cam
+import DerpCAM.cam.contour
+import DerpCAM.cam.peel
+import DerpCAM.cam.pocket
+
+from DerpCAM.cam import shapes, toolpath
 
 # VERY experimental feature
 debug_simplify_arcs = False
@@ -730,12 +730,12 @@ class Contour(TabbedOperation):
         points = path.nodes
         if path.has_arcs():
             points = CircleFitter.interpolate_arcs(points, False, 1)
-        offset = cam.contour.plain(process.Shape(points, True), 0, True, extension, not path.orientation())
+        offset = cam.contour.plain(shapes.Shape(points, True), 0, True, extension, not path.orientation())
         if not offset:
             raise ValueError("Empty contour")
         if len(offset) == 1:
             extension = toolpath.Toolpath(offset[0], tool)
-            if process.startWithClosestPoint(extension, points[0], tool.diameter):
+            if toolpath.startWithClosestPoint(extension, points[0], tool.diameter):
                 points = offset[0].nodes + points + points[0:1] + [offset[0].seg_start()]
                 return toolpath.Toolpath(Path(points, True), tool)
         widened = []
@@ -752,7 +752,7 @@ class TrochoidalContour(TabbedOperation):
         if not outside:
             nrad = -nrad
         contours = shape.contour(tool, outside=outside, displace=abs(nrad) + props.margin)
-        trochoidal_func = lambda contour: process.trochoidal_transform(contour, nrad, nspeed)
+        trochoidal_func = lambda contour: shapes.trochoidal_transform(contour, nrad, nspeed)
         if isinstance(tabs, int):
             newtabs = []
             for contour in contours.toolpaths:
@@ -808,7 +808,7 @@ class RetractBy(RetractSchedule):
 
 class PeckDrill(UntabbedOperation):
     def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
-        shape = process.Shape.circle(x, y, r=0.5 * tool.diameter)
+        shape = shapes.Shape.circle(x, y, r=0.5 * tool.diameter)
         self.x = x
         self.y = y
         UntabbedOperation.__init__(self, shape, tool, props)
@@ -848,12 +848,12 @@ class HelicalDrill(UntabbedOperation):
         self.y = y
         self.d = d
         self.tool = tool
-        shape = process.Shape.circle(x, y, r=0.5*self.d)
+        shape = shapes.Shape.circle(x, y, r=0.5*self.d)
         UntabbedOperation.__init__(self, shape, tool, props)
     def build_paths(self, margin):
         coords = []
         for cd in self.diameters():
-            coords += process.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary
+            coords += shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary
         return toolpath.Toolpaths([toolpath.Toolpath(Path(coords, False), self.tool)])
     def diameters(self):
         if self.d < self.min_dia:
@@ -966,12 +966,12 @@ class Operations(object):
     def outside_contour(self, shape, tabs, widen=0, props=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen))
+                self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen))
         self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen))
     def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(process.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
+                self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
         #self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
         self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):

@@ -1,7 +1,7 @@
 from pyclipper import *
 from math import *
-from geom import *
-from process import *
+from DerpCAM.common.geom import *
+from DerpCAM.cam.shapes import Shape
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 

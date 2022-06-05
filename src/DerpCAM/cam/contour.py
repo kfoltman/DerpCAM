@@ -1,10 +1,11 @@
-import geom, process, toolpath
+from DerpCAM.common import geom
+from DerpCAM.cam import shapes, toolpath
 import math
 
 def plain_clipper(shape, diameter, outside, displace, climb):
     dist = (0.5 * diameter + displace) * geom.GeometrySettings.RESOLUTION
     boundary = geom.PtsToInts(shape.boundary)
-    res = process.Shape._offset(boundary, shape.closed, dist if outside else -dist)
+    res = shapes.Shape._offset(boundary, shape.closed, dist if outside else -dist)
     if not res:
         return None
     res = [geom.SameOrientation(i, outside ^ climb) for i in res]
@@ -115,7 +116,7 @@ def pseudotrochoidise(inside, outside, diameter, stepover, circle_size, dest_ori
             arclen += res[-1].seg_end().dist(zpt)
         res.append(zpt)
         res.append(geom.PathArc(zpt, zpt, c, int(mr * geom.GeometrySettings.RESOLUTION), ma, 2 * math.pi * (1 if climb else -1)))
-        segmentation.append((outlen, outlen + arclen, process.HelicalEntry(pt2, mr2, ma, climb)))
+        segmentation.append((outlen, outlen + arclen, toolpath.HelicalEntry(pt2, mr2, ma, climb)))
         outlen += arclen
         if i == ilen:
             break
@@ -138,14 +139,14 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     def PtsFromInts(points):
         return [geom.PathPoint(x / resolution, y / resolution) for x, y in points]
 
-    res_out = process.Shape._offset(PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * resolution)
+    res_out = shapes.Shape._offset(PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * resolution)
     if not res_out:
         return None
     outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in PtsFromInts(path + path[0:1])] for path in res_out])
 
     res = []
     for i in res_out:
-        res_item = process.Shape._offset(i, True, (ddist2 if is_outside else -ddist2) * resolution)
+        res_item = shapes.Shape._offset(i, True, (ddist2 if is_outside else -ddist2) * resolution)
         if res_item:
             res += res_item
     if not res:

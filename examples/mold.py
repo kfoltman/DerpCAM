@@ -1,10 +1,4 @@
-import sys
-sys.path += '..'
-
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
+from example_common import *
 
 tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2)
 depth = -12

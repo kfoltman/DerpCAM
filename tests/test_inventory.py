@@ -2,9 +2,10 @@ import os.path
 import sys
 import tempfile
 import unittest
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
-import gui.inventory
+from DerpCAM import gui
+import DerpCAM.gui.inventory
 
 MillDirection = gui.inventory.MillDirection
 PocketStrategy = gui.inventory.PocketStrategy

@@ -1,7 +1,7 @@
-import geom, process, toolpath
+from DerpCAM.common import geom
 import math
 import pyclipper
-from . import pocket
+from . import pocket, shapes, toolpath
 
 def outside_peel(shape, tool, displace=0):
     if not shape.closed:
@@ -24,13 +24,13 @@ def outside_peel(shape, tool, displace=0):
         raise ValueError("Empty contour")
     tps_islands = []
     for path in islands_transformed_nonoverlap:
-        for ints in process.Shape._intersection(path, *boundary_transformed):
+        for ints in shapes.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
     # fixPathNesting normally expects the opposite order (inside to outside)
-    tps = list(reversed(process.fixPathNesting(list(reversed(tps)))))
-    tps = process.joinClosePathsWithCollisionCheck(tps, boundary_transformed, islands_transformed)
-    tps_islands = process.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
+    tps = list(reversed(shapes.fixPathNesting(list(reversed(tps)))))
+    tps = toolpath.joinClosePathsWithCollisionCheck(tps, boundary_transformed, islands_transformed)
+    tps_islands = toolpath.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
     geom.set_calculation_progress(expected_size, expected_size)
     return toolpath.Toolpaths(tps + tps_islands)
 

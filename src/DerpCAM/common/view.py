@@ -1,9 +1,9 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from geom import *
-import gcodegen
-import toolpath
+from .geom import *
+from DerpCAM.cam import gcodegen
+from DerpCAM.cam import toolpath
 import sys
 import time
 

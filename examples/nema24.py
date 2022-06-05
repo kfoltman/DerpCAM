@@ -1,10 +1,4 @@
-import sys
-sys.path += '..'
-
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
+from example_common import *
 
 # 47.1 or 50 depending on the model
 hole_spacing = 50

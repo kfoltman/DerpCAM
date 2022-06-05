@@ -1,10 +1,4 @@
-import sys
-sys.path += '..'
-
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
+from example_common import *
 
 width = 250
 inner_width = 240
@@ -47,7 +41,6 @@ def curve2_transform(x, y):
     y += 10 * cos((x - width / 2) / (width / 2) * pi)
     return PathPoint(x, y)
 
-from ptext import *
 init_app()
 font = "Gentium"
 label = text_to_shapes(-inner_width / 2, -length / 2, inner_width, length, "BLACKPITTS", font, 28, -1, 0)

@@ -2,10 +2,10 @@ import os
 import sys
 import unittest
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
-from geom import *
-from toolpath import Tab, Tabs
+from DerpCAM.common.geom import *
+from DerpCAM.cam.toolpath import Tab, Tabs
 
 def prepare(ranges):
     res = []

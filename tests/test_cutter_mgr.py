@@ -2,10 +2,12 @@ import os.path
 import sys
 import unittest
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import gui.model
-import gui.inventory
-import gui.cutter_mgr
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
+
+from DerpCAM import gui
+import DerpCAM.gui.model
+import DerpCAM.gui.inventory
+import DerpCAM.gui.cutter_mgr
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 from PyQt5.QtTest import QTest
@@ -433,3 +435,4 @@ class CutterListDialogTest(CutterMgrTestBase):
 
 unittest.main()
 
+del app

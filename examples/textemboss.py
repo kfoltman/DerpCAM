@@ -2,13 +2,7 @@
 # At the time being, it is mostly a benchmark case to allow future improvements
 # in areas like pocket milling or arc finding.
 
-import sys
-sys.path += '..'
-
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
+from example_common import *
 
 width = 250
 inner_width = 240
@@ -35,7 +29,6 @@ def curve_transform(x, y):
     angle = (1 - pos) * pi
     return PathPoint(r * cos(angle), r * sin(angle))
 
-from ptext import *
 init_app()
 font = "Gentium"
 label = text_to_shapes(-inner_width / 2, -length / 2, inner_width, length, "BLACKPITTS", font, 28, -1, 0)

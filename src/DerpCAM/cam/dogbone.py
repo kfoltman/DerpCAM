@@ -1,8 +1,9 @@
-import geom, process, toolpath
+from DerpCAM.common import geom
+from DerpCAM.cam import shapes, toolpath
+from DerpCAM.gui import propsheet
 import math
-import gui.propsheet
 
-class DogboneMode(gui.propsheet.EnumClass):
+class DogboneMode(propsheet.EnumClass):
     DISABLED = 0
     CORNER = 1
     LONG_EDGE = 2
@@ -49,7 +50,7 @@ def add_circle(circles, s, m, e, angle, dangle, tool, mode, orientation):
             a = angle - dangle + math.pi
     vx = d * math.cos(a)
     vy = d * math.sin(a)
-    circles.append(process.Shape.circle(m.x + vx, m.y + vy, tool.diameter * 0.5 + 2 / geom.GeometrySettings.RESOLUTION))
+    circles.append(shapes.Shape.circle(m.x + vx, m.y + vy, tool.diameter * 0.5 + 2 / geom.GeometrySettings.RESOLUTION))
 
 def add_dogbones(shape, tool, outside, mode):
     circles = []
@@ -73,6 +74,6 @@ def add_dogbones(shape, tool, outside, mode):
     if not orientation:
         shape.boundary = geom.Path(shape.boundary, True).reverse().nodes
     if outside:
-        return process.Shape.difference2(shape, *circles)
+        return shapes.Shape.difference2(shape, *circles)
     else:
-        return process.Shape.union2(shape, *circles)
+        return shapes.Shape.union2(shape, *circles)

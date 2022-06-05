@@ -6,10 +6,10 @@ else
     (cd HSM_experiment; git checkout -b development --track origin/development) || exit 1
 fi
 if [ -f HSM_experiment/src/geometry.py ]; then
-    cd cam
+    cd src/DerpCAM/cam
     for i in geometry helpers voronoi_centers; do
         rm $i.py
-        ln -s ../HSM_experiment/src/$i.py $i.py || exit 1
+        ln -s ../../../HSM_experiment/src/$i.py $i.py || exit 1
     done
     echo Files linked successfully.
 else

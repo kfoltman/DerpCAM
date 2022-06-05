@@ -1,17 +1,14 @@
 import argparse
+import json
 import os.path
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-import process
-import gcodegen
-import view
-from gui import model, cutter_mgr, main_win, settings
-import json
+from DerpCAM.gui import model, cutter_mgr, main_win, settings
 
 settings = settings.ConfigSettings()
 settings.update()

@@ -1,10 +1,10 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from geom import *
-import view
-import toolpath
-from gui import settings
+from DerpCAM.common.geom import *
+from DerpCAM.common import view
+from DerpCAM.cam import toolpath
+from DerpCAM.gui import settings
 
 class DrawingUIMode(object):
     MODE_NORMAL = 0

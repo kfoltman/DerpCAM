@@ -1,10 +1,10 @@
 import os.path
 import sys
 import unittest
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
-import geom
-import gui.settings
+from DerpCAM.common import geom
+from DerpCAM.gui import settings
 
 from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtWidgets import QApplication, QFileDialog
@@ -12,7 +12,7 @@ from PyQt5.QtTest import QTest
 
 app = QApplication(sys.argv)
 
-class ConfigSettingsForTest(gui.settings.ConfigSettings):
+class ConfigSettingsForTest(settings.ConfigSettings):
     def createSettingsObj(self):
         settings = QSettings("kfoltman", "DerpCAM-test")
         settings.clear()
@@ -37,7 +37,7 @@ class ConfigDialogTest(unittest.TestCase):
         self.checkDirEditbox('input_directory', 'inputDirEdit')
         self.checkDirEditbox('gcode_directory', 'gcodeDirEdit')
     def createDialog(self):
-        self.dlg = gui.settings.PreferencesDialog(None, self.settings)
+        self.dlg = settings.PreferencesDialog(None, self.settings)
         self.dlg.initUI()
     def verifyDialogContent(self):
         self.createDialog()
@@ -190,3 +190,5 @@ class ConfigDialogTest(unittest.TestCase):
             self.assertEqual(getattr(self.settings, config_attr), value, config_attr)
 
 unittest.main()
+
+del app

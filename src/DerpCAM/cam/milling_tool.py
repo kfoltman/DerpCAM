@@ -1,5 +1,5 @@
 from math import *
-from geom import *
+from ..common.geom import *
 
 class FakeTool(object):
     def __init__(self, diameter):

@@ -1,10 +1,5 @@
-import sys
-sys.path += '..'
+from example_common import *
 
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
 import ezdxf
 
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)

@@ -2,12 +2,13 @@ import os.path
 import sys
 import math
 import unittest
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
-import geom
-import gui.inventory
-import gui.model
-import gui.settings
+from DerpCAM.common import geom
+from DerpCAM import gui
+import DerpCAM.gui.inventory
+import DerpCAM.gui.model
+import DerpCAM.gui.settings
 
 from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtWidgets import QApplication
@@ -616,3 +617,5 @@ class OpTypeTest(unittest.TestCase):
                 assert cutter_types == gui.inventory.EndMillCutter
 
 unittest.main()
+
+del app

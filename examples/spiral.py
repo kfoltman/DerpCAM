@@ -1,10 +1,4 @@
-import sys
-sys.path += '..'
-
-from process import *
-from geom import *
-from gcodegen import *
-from view import *
+from example_common import *
 
 width = 30
 length = 60

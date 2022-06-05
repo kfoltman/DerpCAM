@@ -5,18 +5,15 @@ import threading
 import time
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+import pyclipper
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-import geom
-import pyclipper
-import process
-import gcodegen
-import view
-import cam.dogbone
-import cam.pocket
-from milling_tool import *
+from DerpCAM.common import geom, view
+from DerpCAM import cam
+from DerpCAM.cam import dogbone, gcodegen, shapes, milling_tool
+from DerpCAM.cam.milling_tool import *
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, FloatEditableProperty, \
@@ -216,7 +213,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def textDescription(self):
         return self.label() + (f" {Format.point(self.centre)} \u2300{Format.coord(2 * self.r)}")
     def toShape(self):
-        return process.Shape.circle(self.centre.x, self.centre.y, self.r)
+        return shapes.Shape.circle(self.centre.x, self.centre.y, self.r)
     def translated(self, dx, dy):
         cti = DrawingCircleTreeItem(self.document, self.centre.translated(dx, dy), self.r, self.untransformed)
         cti.shape_id = self.shape_id
@@ -277,7 +274,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx), Format.coord(c.cy), Format.coord(c.r), arc.sstart * 180 / pi, arc.sspan * 180 / pi)
         return self.label() + f"{Format.point_tuple(self.bounds[:2])}-{Format.point_tuple(self.bounds[2:])}"
     def toShape(self):
-        return process.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
+        return shapes.Shape(CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
         
 class DrawingTextStyle(object):
     def __init__(self, height, width, halign, valign, angle, font_name):
@@ -359,7 +356,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             if path.orientation():
                 shapes[-1].add_island(path.nodes)
             else:
-                shapes.append(process.Shape(path.nodes, path.closed))
+                shapes.append(shapes.Shape(path.nodes, path.closed))
         return shapes
     def renderTo(self, path, modeData):
         for i in self.paths:

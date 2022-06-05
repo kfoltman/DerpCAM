@@ -1,7 +1,7 @@
 from pyclipper import *
 from math import *
-from geom import *
-from milling_tool import *
+from ..common.geom import *
+from .milling_tool import *
 
 class Tab(object):
     def __init__(self, start, end, helical_entry=None):
@@ -256,3 +256,194 @@ class Toolpaths(object):
         return Toolpaths([tp.optimize_lines() for tp in self.toolpaths])
     def optimize(self):
         return Toolpaths([tp.optimize() for tp in self.toolpaths])
+
+def findPathNesting(tps):
+    nestings = []
+    contours = Toolpaths(tps).flattened()
+    contours = sorted(contours, key=lambda item: bounds_area(item.bounds))
+    for subtp in contours:
+        for children in nestings:
+            if inside_bounds(children[-1].bounds, subtp.bounds):
+                # subtp contains this chain of contours
+                children.append(subtp)
+                break
+        else:
+            # Doesn't contain any earlier contour, so start a nesting.
+            nestings.append([subtp])
+    return nestings
+
+def fixPathNesting(tps):
+    nestings = findPathNesting(tps)
+    res = []
+    nestings = sorted(nestings, key=len)
+    for nesting in nestings:
+        res += nesting
+    return res
+
+# XXXKF this may cut corners sometimes, need to add collision checking
+def joinClosePaths(tps):
+    def findClosest(points, lastpt, diameter):
+        mindist = None
+        closest = 0
+        for i, pt in enumerate(points):
+            if i == 0 or dist(lastpt, pt) < mindist:
+                closest = i
+                mindist = dist(lastpt, pt)
+        if closest > 0 and mindist <= diameter:
+            points = points[closest:] + points[:closest]
+        return points, mindist
+
+    tps = fixPathNesting(tps)
+    last = None
+    res = []
+    for tp in tps:
+        if isinstance(tp, Toolpaths):
+            res.append(tp)
+            last = None
+            continue
+        if last is not None and last.tool is tp.tool:
+            points = tp.path.nodes
+            found = False
+            if tp.path.closed:
+                points, mindist = findClosest(points, lastpt, tp.tool.diameter)
+                if mindist > tp.tool.diameter:
+                    # Desperate second-chance joining by retracing the already milled path
+                    # XXXKF this is rather bad, O(N^2), needs rethinking
+                    for j in range(len(last.path.nodes) - 1, 0, -1):
+                        points, mindist = findClosest(points, last.path.nodes[j], tp.tool.diameter)
+                        if mindist <= tp.tool.diameter:
+                            res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + last.path.nodes[:j - 1:-1] + points + points[0:1], False), tp.tool)
+                            last = res[-1]
+                            lastpt = last.path.nodes[-1]
+                            found = True
+                            break
+            if found:
+                continue
+            if dist(lastpt, points[0]) <= tp.tool.diameter:
+                res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
+                last = res[-1]
+                lastpt = last.path.nodes[-1]
+                continue
+        res.append(tp)
+        lastpt = tp.path.seg_end()
+        last = tp
+    return res
+
+def joinClosePathsWithCollisionCheck(tps, boundary, islands):
+    def findClosest(points, lastpt, diameter):
+        mindist = None
+        closest = 0
+        for i, pt in enumerate(points):
+            if i == 0 or dist(lastpt, pt) < mindist:
+                closest = i
+                mindist = dist(lastpt, pt)
+        if closest > 0 and mindist <= diameter:
+            points = points[closest:] + points[:closest]
+        return points, mindist
+
+    last = None
+    res = []
+    for tp in tps:
+        if isinstance(tp, Toolpaths):
+            res.append(tp)
+            last = None
+            continue
+        if last is not None and last.tool is tp.tool:
+            points = tp.path.nodes
+            found = False
+            if tp.path.closed:
+                points, mindist = findClosest(points, lastpt, tp.tool.diameter)
+                if dist(lastpt, points[0]) <= tp.tool.diameter:
+                    new_path = IntPath([lastpt, points[0]])
+                    if new_path.int_points[0] == new_path.int_points[1]:
+                        res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
+                        last = res[-1]
+                        lastpt = last.path.nodes[-1]
+                        continue
+                    # XXXKF workaround clipper bug
+                    if not boundary or not run_clipper_checkpath(CT_DIFFERENCE, subject_polys=[], clipper_polys=boundary, subject_paths=[new_path], fillMode=PFT_NONZERO):
+                        if not islands or not run_clipper_checkpath(CT_INTERSECTION, subject_polys=[], clipper_polys=islands, subject_paths=[new_path], fillMode=PFT_NONZERO):
+                            res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
+                            last = res[-1]
+                            lastpt = last.path.nodes[-1]
+                            continue
+        res.append(tp)
+        lastpt = tp.path.seg_end()
+        last = tp
+    return res
+
+def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
+    boundary_path = IntPath(boundary)
+    boundary_path = boundary_path.force_orientation(True)
+    island_paths = [IntPath(i).force_orientation(True) for i in islands]
+    for tp in toolpaths:
+        if type(tp) is Toolpaths:
+            findHelicalEntryPoints(tp.toolpaths, tool, boundary, islands, margin)
+            continue
+        candidates = [tp.path.nodes[0]]
+        if len(tp.path.nodes) > 1 and False:
+            p1 = tp.path.nodes[0]
+            p2 = tp.path.nodes[1]
+            mid = p1
+            angle = atan2(p2[1] - p1[1], p2[0] - p1[0]) + pi / 2
+            d = tool.diameter * 0.5
+            candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
+            d = tool.diameter * -0.5
+            candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
+        for start in candidates:
+            # Size of the helical entry hole
+            mr = tool.min_helix_diameter
+            d = (tool.diameter + 2 * mr) + margin
+            c = IntPath(circle(start.x, start.y, d / 2))
+            # Check if it sticks outside of the final shape
+            # XXXKF could be optimized by doing a simple bounds check first
+            if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
+                continue
+            # Check for collision with islands
+            if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
+                continue
+            tp.helical_entry = HelicalEntry(start, mr)
+            break
+
+def startWithClosestPoint(path, pt, dia):
+    mindist = None
+    mdpos = None
+    for j, pt2 in enumerate(path.path.nodes):
+        d = dist(pt, pt2)
+        if mindist is None or d < mindist:
+            mindist = d
+            mdpos = j
+    if mindist <= dia:
+        path.path.nodes = path.path.nodes[mdpos:] + path.path.nodes[:mdpos + 1]
+        return True
+    return False
+
+def mergeToolpaths(tps, new, dia):
+    if type(new) is Toolpath:
+        new = [new]
+    else:
+        new = new.toolpaths
+    if not tps:
+        tps.insert(0, Toolpaths(new))
+        return
+    last = tps[-1]
+    new2 = []
+    for i in new:
+        assert i.path.closed
+        pt = i.path.seg_start()
+        found = False
+        new_toolpaths = []
+        for l in last.toolpaths:
+            if found:
+                new_toolpaths.append(l)
+                continue
+            if startWithClosestPoint(l, pt, dia):
+                new_toolpaths.append(i)
+                new_toolpaths.append(l)
+                found = True
+            else:
+                new_toolpaths.append(l)
+        if not found:
+            new_toolpaths.append(i)
+        last.set_toolpaths(new_toolpaths)
+

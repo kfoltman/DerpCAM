@@ -1,11 +1,12 @@
-import geom, process, toolpath, milling_tool
+from DerpCAM.common import geom
+from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipper
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
     boundary = geom.PtsToInts(shape.boundary)
-    res = process.Shape._offset(boundary, shape.closed, dist if outside else -dist)
+    res = shapes.Shape._offset(boundary, shape.closed, dist if outside else -dist)
     if not res:
         return None
 
@@ -13,7 +14,7 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
         res2 = []
         for i in res:
             exp_orient = pyclipper.Orientation(i)
-            d = process.Shape._difference(geom.IntPath(i, True), *subtract, return_ints=True)
+            d = shapes.Shape._difference(geom.IntPath(i, True), *subtract, return_ints=True)
             if d:
                 res2 += [j for j in d if pyclipper.Orientation(j.int_points) == exp_orient]
         if not res2:
@@ -27,12 +28,12 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
 
 def calculate_tool_margin(shape, tool, displace):
     boundary = geom.IntPath(shape.boundary)
-    boundary_transformed = [ geom.IntPath(i, True) for i in process.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
+    boundary_transformed = [ geom.IntPath(i, True) for i in shapes.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace) * geom.GeometrySettings.RESOLUTION) ]
     islands_transformed = []
     islands_transformed_nonoverlap = []
     boundary_transformed_nonoverlap = boundary_transformed
     if shape.islands:
-        islands = process.Shape._union(*[geom.IntPath(i).force_orientation(True) for i in shape.islands])
+        islands = shapes.Shape._union(*[geom.IntPath(i).force_orientation(True) for i in shape.islands])
         for island in islands:
             pc = pyclipper.PyclipperOffset()
             pts = geom.PtsToInts(island)
@@ -46,7 +47,7 @@ def calculate_tool_margin(shape, tool, displace):
             islands_transformed += res
             islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
         if islands_transformed_nonoverlap:
-            islands_transformed_nonoverlap = process.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
+            islands_transformed_nonoverlap = shapes.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
         tree = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE,
             subject_polys=[i for i in boundary_transformed],
             clipper_polys=[i for i in islands_transformed])
@@ -64,7 +65,7 @@ def contour_parallel(shape, tool, displace=0):
     tps_islands = []
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
     for path in islands_transformed_nonoverlap:
-        for ints in process.Shape._intersection(path, *boundary_transformed):
+        for ints in shapes.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
     displace_now = displace
@@ -72,7 +73,7 @@ def contour_parallel(shape, tool, displace=0):
     # No idea why this was here given the joinClosePaths call later on is
     # already merging the island paths.
     #for island in tps_islands:
-    #    mergeToolpaths(tps, island, tool.diameter)
+    #    toolpath.mergeToolpaths(tps, island, tool.diameter)
     while True:
         if geom.is_calculation_cancelled():
             return None
@@ -81,12 +82,12 @@ def contour_parallel(shape, tool, displace=0):
         if not res:
             break
         displace_now += stepover
-        process.mergeToolpaths(tps, res, tool.diameter)
+        toolpath.mergeToolpaths(tps, res, tool.diameter)
     if len(tps) == 0:
         raise ValueError("Empty contour")
     tps = list(reversed(tps))
-    tps = process.joinClosePaths(tps_islands + tps)
-    process.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
+    tps = toolpath.joinClosePaths(tps_islands + tps)
+    toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
     return toolpath.Toolpaths(tps)
 
@@ -239,10 +240,10 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
         raise ValueError("Milled area is empty")
     # Add a final pass around the perimeter
     for b in boundary_transformed:
-        for d in process.Shape._difference(b, *islands_transformed, return_ints=True):
+        for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
             tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(d.int_points), True), tool))
     for h in islands_transformed_nonoverlap:
-        for ints in process.Shape._intersection(h, *boundary_transformed):
+        for ints in shapes.Shape._intersection(h, *boundary_transformed):
             tps.append(toolpath.Toolpath(geom.Path(ints, True), tool))
     return toolpath.Toolpaths(tps)
 
@@ -267,9 +268,9 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
     from shapely.geometry import LinearRing, Polygon
     tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
     if from_outside:
-        subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
+        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
     else:
-        subpockets = process.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
+        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
     all_inputs = []
     for subpocket in subpockets:
         boundary_offset = geom.PtsFromInts(subpocket)
@@ -277,7 +278,7 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
         polygon = Polygon(boundary)
         islands_offset = []
         for island in shape.islands:
-            island_offsets = process.Shape._offset(geom.PtsToInts(island), True, tdist)
+            island_offsets = shapes.Shape._offset(geom.PtsToInts(island), True, tdist)
             island_offsets = pyclipper.SimplifyPolygons(island_offsets)
             for island_offset in island_offsets:
                 island_offset_pts = geom.PtsFromInts(island_offset)
@@ -288,7 +289,8 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
     return all_inputs
 
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
-    import cam.geometry
+    from DerpCAM import cam
+    import DerpCAM.cam.geometry
     alltps = []
     all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
     for polygon in all_inputs:
@@ -397,7 +399,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
             tps.append(tpo)
         if not from_outside and tps and min_helix_dia <= max_helix_dia:
-            tps[0].helical_entry = process.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+            tps[0].helical_entry = toolpath.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
         # Add a final pass around the perimeter
         def ls2path(ls):
             return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
@@ -430,5 +432,5 @@ def refine_shape(shape, previous, current):
         if polygon.buffer(-current / 2):
             exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
             interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
-            output_shapes.append(process.Shape(exterior, True, interiors))
+            output_shapes.append(shapes.Shape(exterior, True, interiors))
     return output_shapes

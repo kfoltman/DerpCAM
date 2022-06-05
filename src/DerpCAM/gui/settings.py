@@ -2,7 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from geom import GeometrySettings
+from DerpCAM.common.geom import GeometrySettings
 
 class ConfigSetting(object):
     def __init__(self, attr_name, setting_pathname, def_value):
