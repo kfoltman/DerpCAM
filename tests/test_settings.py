@@ -25,8 +25,10 @@ class ConfigDialogTest(unittest.TestCase):
     def tearDown(self):
         del self.dlg
     def testSpinboxes(self):
-        self.checkSpinbox("resolution", "resolutionSpin", [(42, 33), (21, 55)], geometry_setting='RESOLUTION')
+        self.checkSpinbox("resolution", "resolutionSpin", [(42, 33.5), (21, 55)], geometry_setting='RESOLUTION')
         self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33.25), (21, 55)])
+        self.checkSpinbox("clearance_z", "clearanceZSpin", [(42, 33.25), (21, 55)])
+        self.checkSpinbox("safe_entry_z", "safeEntryZSpin", [(42, 33.25), (21, -55)])
     def testCheckboxes(self):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
         self.checkCheckbox('simplify_lines', 'simplifyLinesCheck')
