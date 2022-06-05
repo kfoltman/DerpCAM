@@ -269,7 +269,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 assert self.points[1].is_arc()
                 arc = self.points[1]
                 c = arc.c
-                return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx), Format.coord(c.cy), Format.coord(c.r), arc.sstart * 180 / pi, arc.sspan * 180 / pi)
+                return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx), Format.coord(c.cy), Format.coord(c.r), arc.sstart * 180 / math.pi, arc.sspan * 180 / math.pi)
         return self.label() + f"{Format.point_tuple(self.bounds[:2])}-{Format.point_tuple(self.bounds[2:])}"
     def toShape(self):
         return shapes.Shape(geom.CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
@@ -444,33 +444,37 @@ class DrawingTreeItem(CAMListTreeItem):
         self.document.drawingImported.emit(name)
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()
+        inch_mode = False
+        scaling = 25.4 if inch_mode else 1
+        def pt(x, y):
+            return geom.PathPoint(x * scaling, y * scaling)
         if dxftype == 'LWPOLYLINE':
-            points, closed = geom.dxf_polyline_to_points(entity)
+            points, closed = geom.dxf_polyline_to_points(entity, scaling)
             self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
-            self.addItem(DrawingPolylineTreeItem(self.document, [geom.PathPoint(start[0], start[1]), geom.PathPoint(end[0], end[1])], False))
+            self.addItem(DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False))
         elif dxftype == 'CIRCLE':
-            centre = geom.PathPoint(entity.dxf.center[0], entity.dxf.center[1])
-            self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius))
+            centre = pt(entity.dxf.center[0], entity.dxf.center[1])
+            self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius * scaling))
         elif dxftype == 'ARC':
-            start = geom.PathPoint(entity.start_point[0], entity.start_point[1])
-            end = geom.PathPoint(entity.end_point[0], entity.end_point[1])
-            centre = tuple(entity.dxf.center)[0:2]
-            c = geom.CandidateCircle(*centre, entity.dxf.radius)
+            start = pt(entity.start_point[0], entity.start_point[1])
+            end = pt(entity.end_point[0], entity.end_point[1])
+            centre = (entity.dxf.center[0] * scaling, entity.dxf.center[1] * scaling)
+            c = geom.CandidateCircle(*centre, entity.dxf.radius * scaling)
             sangle = entity.dxf.start_angle * math.pi / 180
             eangle = entity.dxf.end_angle * math.pi / 180
             if eangle < sangle:
                 sspan = eangle - sangle + 2 * math.pi
             else:
                 sspan = eangle - sangle
-            points = [start, geom.PathArc( start, end, c, 50, sangle, sspan)]
+            points = [start, geom.PathArc(start, end, c, 50, sangle, sspan)]
             self.addItem(DrawingPolylineTreeItem(self.document, points, False))
         elif dxftype == 'TEXT':
             font = "OpenSans"
-            style = DrawingTextStyle(entity.dxf.height, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font)
-            self.addItem(DrawingTextTreeItem(self.document, geom.PathPoint(entity.dxf.insert[0], entity.dxf.insert[1]), style, entity.dxf.text))
+            style = DrawingTextStyle(entity.dxf.height * scaling, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font)
+            self.addItem(DrawingTextTreeItem(self.document, pt(entity.dxf.insert[0], entity.dxf.insert[1]), style, entity.dxf.text))
         else:
             print ("Ignoring DXF entity: %s" % dxftype)
     def renderTo(self, path, modeData):

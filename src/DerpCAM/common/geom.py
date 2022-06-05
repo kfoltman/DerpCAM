@@ -882,12 +882,14 @@ def run_clipper_checkpath(operation, subject_polys=[], clipper_polys=[], subject
     tree = run_clipper_advanced(operation, subject_polys, clipper_polys, subject_paths, fillMode)
     return OpenPathsFromPolyTree(tree)
 
-def dxf_polyline_to_points(entity):
+def dxf_polyline_to_points(entity, scaling=1):
     points = []
-    lastx, lasty = entity[-1][0:2]
+    lastx = entity[-1][0] * scaling
+    lasty = entity[-1][1] * scaling
     lastbulge = entity[-1][4]
     for point in entity:
-        x, y = point[0:2]
+        x = point[0] * scaling
+        y = point[1] * scaling
         if lastbulge:
             theta = 4 * atan(lastbulge)
             dx, dy = x - lastx, y - lasty
