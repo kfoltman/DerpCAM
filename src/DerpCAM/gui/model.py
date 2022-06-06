@@ -128,7 +128,7 @@ class DrawingItemTreeItem(CAMTreeItem):
                 return self.defaultDrawingPen
             if self.shape_id in modeData[1].islands:
                 return self.selectedItemPen2Func
-            if bounds_overlap(self.bounds, modeData[1].orig_shape.bounds):
+            if geom.bounds_overlap(self.bounds, modeData[1].orig_shape.bounds):
                 return self.defaultDrawingPen
             return self.defaultGrayPen
         if modeData[0] == canvas.DrawingUIMode.MODE_TABS:
