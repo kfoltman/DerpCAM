@@ -106,7 +106,7 @@ class CAMMainWindow(QMainWindow):
         else:
             self.setWindowFilePath("unnamed project")
         self.refreshNeeded = False
-        self.newCAMNeeded = False
+        self.newCAMNeeded = set()
         self.idleTimer = self.startTimer(500)
     def cleanFlagChanged(self, clean):
         self.setWindowModified(not clean)
@@ -120,12 +120,13 @@ class CAMMainWindow(QMainWindow):
                 self.resetZoomNeeded = False
                 self.refreshNeeded = False
             if self.newCAMNeeded:
-                self.newCAMNeeded = False
-                self.document.startUpdateCAM()
+                subset = list(self.newCAMNeeded)
+                self.newCAMNeeded = set()
+                self.document.startUpdateCAM(subset)
             return
         QMainWindow.timerEvent(self, event)
-    def scheduleCAMUpdate(self):
-        self.newCAMNeeded = True
+    def scheduleCAMUpdate(self, item):
+        self.newCAMNeeded |= item
     def noOperationTouched(self):
         self.viewer.flashHighlight(None)
     def operationTouched(self, item):
@@ -163,7 +164,7 @@ class CAMMainWindow(QMainWindow):
         self.propsDW.updatePropertiesFor(item.invalidatedObjects(model.InvalidateAspect.PROPERTIES))
         ## Do not re-zoom when tools or presets updated, not much risk of things going off-screen etc.
         self.scheduleMajorRedraw(not isinstance(item, (model.ToolTreeItem, model.ToolPresetTreeItem)))
-        self.scheduleCAMUpdate()
+        self.scheduleCAMUpdate(item.invalidatedObjects(model.InvalidateAspect.CAM))
     def operInserted(self):
         self.scheduleMajorRedraw()
     def operRemoved(self):
@@ -203,7 +204,7 @@ class CAMMainWindow(QMainWindow):
         dlg.initUI()
         if dlg.exec():
             self.configSettings.update()
-            self.scheduleCAMUpdate()
+            self.document.startUpdateCAM(subset)
             self.viewer.renderDrawing()
             self.viewer.repaint()
             #self.viewer.majorUpdate()
@@ -330,7 +331,7 @@ class CAMMainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, None, str(e))
             return
-        with Spinner():
+        with guiutils.Spinner():
             self.document.startUpdateCAM()
             if not self.document.waitForUpdateCAM():
                 return

@@ -27,6 +27,7 @@ debug_inventory_matching = False
 
 class InvalidateAspect:
     PROPERTIES = 1
+    CAM = 2
 
 class CAMTreeItem(QStandardItem):
     def __init__(self, document, name=None):
@@ -161,7 +162,10 @@ class DrawingItemTreeItem(CAMTreeItem):
             return QVariant(self.textDescription())
         return CAMTreeItem.data(self, role)
     def invalidatedObjects(self, aspect):
-        return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
+        if aspect == InvalidateAspect.CAM:
+            return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
+        # Settings of operations are not affected and don't need to be refreshed
+        return set([self])
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_x = FloatDistEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
@@ -580,9 +584,10 @@ class DrawingTreeItem(CAMListTreeItem):
     def onPropertyValueSet(self, name):
         self.emitPropertyChanged(name)
     def invalidatedObjects(self, aspect):
-        # Changing things like X/Y invalidates all operations (XXXKF needs
-        # to distinguish between operation's input and output)
-        return set([self] + self.document.allOperations())
+        if aspect == InvalidateAspect.CAM:
+            return set([self] + self.document.allOperations())
+        # Properties of operations are not affected
+        return set([self])
         
 class CAMListTreeItemWithChildren(CAMListTreeItem):
     def __init__(self, document, title):
@@ -673,8 +678,9 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
             assert False, "Unknown attribute: " + repr(name)
         self.emitPropertyChanged(name)
     def invalidatedObjects(self, aspect):
-        # Need to refresh properties for any default or calculated values updated
-        return set([self] + self.document.allOperations(lambda item: item.cutter is self.inventory_tool))
+        # Need to refresh properties for any default or calculated values updated, tool name etc.
+        # Affects both properties and CAM
+        return set([self] + self.document.allOperationsPlusRefinements(lambda item: item.cutter is self.inventory_tool))
 
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
@@ -792,7 +798,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         self.document.selectPresetAsDefault(self.inventory_preset.toolbit, self.inventory_preset)
     def invalidatedObjects(self, aspect):
         # Need to refresh properties for any default or calculated values updated
-        return set([self] + self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
+        return set([self] + self.document.allOperationsPlusRefinements(lambda item: item.tool_preset is self.inventory_preset))
 
 class MaterialType(EnumClass):
     WOOD = 0
@@ -1469,9 +1475,8 @@ class OperationTreeItem(CAMTreeItem):
                 parentRow += 1
             return None
     def invalidatedObjects(self, aspect):
-        if self.operation != OperationType.REFINE:
-            return set([self])
-        # XXXKF this only matters for output, so disregard for now
+        if aspect == InvalidateAspect.CAM:
+            return set([self] + self.document.refineOpsForShapes(set([self.shape_id])))
         return set([self])
 
 class OperationsModel(QStandardItemModel):
@@ -1903,6 +1908,12 @@ class DocumentModel(QObject):
         self.filename = None
         self.drawing_filename = fn
         self.drawing.importDrawing(fn)
+    def allOperationsPlusRefinements(self, func=None):
+        ops = set(self.allOperations(func))
+        shape_ids = set([op.shape_id for op in ops])
+        for op in self.refineOpsForShapes(shape_ids):
+            ops.add(op)
+        return list(ops)
     def allOperations(self, func=None):
         res = []
         for i in range(self.operModel.rowCount()):
@@ -2093,6 +2104,8 @@ class DocumentModel(QObject):
             p = tool.child(i)
             if p.inventory_preset is preset:
                 return p
+    def refineOpsForShapes(self, shape_ids):
+        return self.allOperations(lambda item: item.operation == OperationType.REFINE and item.shape_id in shape_ids)
     def checkUpdateSuspended(self, item):
         if self.update_suspended is item:
             self.update_suspended_dirty = True
