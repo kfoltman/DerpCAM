@@ -7,7 +7,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from gui import propsheet, canvas, model, inventory, cutter_mgr
+from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr
 
 OperationType = model.OperationType
 

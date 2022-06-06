@@ -203,7 +203,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         self.bounds = (self.centre.x - self.r, self.centre.y - self.r,
             self.centre.x + self.r, self.centre.y + self.r)
     def distanceTo(self, pt):
-        return abs(dist(self.centre, pt) - self.r)
+        return abs(geom.dist(self.centre, pt) - self.r)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path, modeData), geom.circle(self.centre.x, self.centre.y, self.r), True)
     def label(self):
