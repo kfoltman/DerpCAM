@@ -340,13 +340,13 @@ class IntEditableProperty(EditableProperty):
         return useFormat(self.format, value)
     def validateString(self, value):
         if value == "" and self.allow_none:
-            return None
+            return None, None
         value = int(value)
         if self.min is not None and value < self.min:
             value = self.min
         if self.max is not None and value > self.max:
             value = self.max
-        return value
+        return value, None
 
 class StringEditableProperty(EditableProperty):
     def __init__(self, name, attribute, allow_empty):
@@ -359,7 +359,7 @@ class StringEditableProperty(EditableProperty):
     def validateString(self, value):
         if value == "" and not self.allow_empty:
             raise ValueError("Empty value not permitted")
-        return value
+        return value, None
 
 class MultipleItem(object):
     @staticmethod

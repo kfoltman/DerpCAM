@@ -243,7 +243,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def distanceTo(self, pt):
         if not self.points:
             return None
-        path = Path(self.points, self.closed)
+        path = geom.Path(self.points, self.closed)
         closest, mindist = path.closest_point(pt)
         return mindist
     def translated(self, dx, dy):
@@ -496,7 +496,7 @@ class DrawingTreeItem(CAMListTreeItem):
         found = []
         mindist = margin
         for item in self.items():
-            if point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
+            if geom.point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
                 distance = item.distanceTo(xy)
                 if distance is not None and distance < margin:
                     mindist = min(mindist, distance)
