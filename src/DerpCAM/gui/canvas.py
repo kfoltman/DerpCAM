@@ -233,7 +233,7 @@ class DrawingViewer(view.PathViewer):
         return view.PathViewer.keyPressEvent(self, e)
     def exitEditMode(self):
         item = self.mode_item
-        item.startUpdateCAM()
+        item.emitPropertyChanged()
         self.changeMode(DrawingUIMode.MODE_NORMAL, None)
         self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
