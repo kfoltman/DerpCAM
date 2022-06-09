@@ -238,13 +238,20 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
     tps = process_rows(rows, tool)
     if not tps:
         raise ValueError("Milled area is empty")
+
+    def pts2path(pts, orientation):
+        path = geom.Path(pts, True)
+        if path.orientation() != orientation:
+            return path.reverse()
+        return path
+
     # Add a final pass around the perimeter
     for b in boundary_transformed:
         for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
-            tps.append(toolpath.Toolpath(geom.Path(geom.PtsFromInts(d.int_points), True), tool))
+            tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
     for h in islands_transformed_nonoverlap:
-        for ints in shapes.Shape._intersection(h, *boundary_transformed):
-            tps.append(toolpath.Toolpath(geom.Path(ints, True), tool))
+        for pts in shapes.Shape._intersection(h, *boundary_transformed):
+            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
     return toolpath.Toolpaths(tps)
 
 pyvlock = threading.RLock()
