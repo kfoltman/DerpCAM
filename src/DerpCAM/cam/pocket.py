@@ -340,15 +340,18 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                     cp = c.at_angle(a)
                     gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
             else:
+                sign = (1 if tool.climb else -1)
                 rdiff = rt - r
                 if rdiff:
                     turns = math.ceil(rdiff / pitch)
                     pitch = rdiff / turns
                     # Number of arcs per circle
                     res = 4
-                    slice = 2 * math.pi / res
+                    slice = 2 * math.pi / res * sign
                     dr = pitch / (2 * math.sin(slice / 2) * res)
+                    dr = abs(dr)
                     sa = math.pi / res + math.pi / 2 + a
+                    sa *= sign
                     xc0 = x - dr * math.cos(sa)
                     yc0 = y - dr * math.sin(sa)
                     for i in range(res * turns + 1):
@@ -359,7 +362,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                         gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
                 c = geom.CandidateCircle(x, y, rt)
                 cp = c.at_angle(a)
-                gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
+                gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
 
         lastpt = None
         for item in hsm_path:
