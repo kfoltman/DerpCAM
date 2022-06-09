@@ -41,6 +41,10 @@ class Gcode(object):
         self.last_feed_index = None
     def add(self, line):
         self.gcode.append(line)
+    def add_dedup(self, line):
+        if self.gcode and self.gcode[-1] == line:
+            return
+        self.gcode.append(line)
     def comment(self, comment):
         comment = comment.replace("(", "<").replace(")",">")
         self.add(f"({comment})")
@@ -50,7 +54,9 @@ class Gcode(object):
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         unit_mode = "G20" if self.inch_mode else "G21"
-        self.add("G17 %s G90 G40 G64 P%0.3f Q%0.3f" % (unit_mode, accuracy, accuracy))
+        # Grbl doesn't understand G64
+        accuracy_mode = "" if GeometrySettings.grbl_output else f" G64 P{accuracy:0.3f} Q{accuracy:0.3f}"
+        self.add(f"G17 G90 G40 {unit_mode}{accuracy_mode}")
     def prompt_for_tool(self, name):
         name = name.replace("(", "<").replace(")",">")
         self.add(f"M1 ({name})")
@@ -68,7 +74,7 @@ class Gcode(object):
     def rapid(self, x=None, y=None, z=None):
         self.add("G0" + self.enc_coords(x, y, z))
     def linear(self, x=None, y=None, z=None):
-        self.add("G1" + self.enc_coords(x, y, z))
+        self.add_dedup("G1" + self.enc_coords(x, y, z))
     def arc_cw(self, x=None, y=None, z=None, i=None, j=None, k=None):
         self.add("G2" + self.enc_coords_arc(x, y, z, i, j, k))
     def arc_ccw(self, x=None, y=None, z=None, i=None, j=None, k=None):
@@ -107,12 +113,21 @@ class Gcode(object):
         self.add("G4 P%0.0f" % millis)
 
     def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
-        sx = x + r * cos(angle)
-        sy = y + r * sin(angle)
+        i = -r * cos(angle)
+        j = -r * sin(angle)
+        sx = x - i
+        sy = y - j
         self.linear(x = sx, y = sy)
         cur_z = start_z
         delta_z = end_z - start_z
-        self.arc(direction=1 if climb else -1, x = sx, i = -r * cos(angle), j = -r * sin(angle), z = cur_z + delta_z)
+        arc_dir = direction=1 if climb else -1
+        if GeometrySettings.grbl_output:
+            sx2 = x + i
+            sy2 = y + j
+            self.arc(arc_dir, x = sx2, y = sy2, i = i, j = j, z = cur_z + delta_z / 2.0)
+            self.arc(arc_dir, x = sx, y = sy, i = -i, j = -j, z = cur_z + delta_z)
+        else:
+            self.arc(arc_dir, x = sx, i = i, j = j, z = cur_z + delta_z)
 
     def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
         if new_z == old_z:
@@ -144,13 +159,20 @@ class Gcode(object):
         for lastpt, pt in PathSegmentIterator(subpath):
             if pt.is_arc() and pt.length() > 1 / GeometrySettings.RESOLUTION and pt.c.r > 1 / GeometrySettings.RESOLUTION:
                 arc = pt
-                cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
                 assert dist(lastpt, arc.p1) < 1 / GeometrySettings.RESOLUTION
+                cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
+                arc_dir = 1 if arc.sspan > 0 else -1
+                if GeometrySettings.grbl_output and abs(arc.sspan) >= 3 * pi / 2:
+                    # Grbl has some issues with full circles, so replace anything longer than a
+                    # 270 degree arc with two half-circles
+                    subarc = arc.cut(0, 0.5)[1]
+                    subtdist = tdist + subarc.length()
+                    dest_z = old_z + (new_z - old_z) * subtdist / tlength if new_z is not None else None
+                    self.arc(arc_dir, x=subarc.p2.x, y=subarc.p2.y, i=cdist.x, j=cdist.y, z=dest_z)
+                    cdist = PathPoint(subarc.c.cx - subarc.p2.x, subarc.c.cy - subarc.p2.y)
                 tdist += arc.length()
-                if new_z is not None:
-                    self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y, z=old_z + (new_z - old_z) * tdist / tlength)
-                else:
-                    self.arc(1 if arc.sspan > 0 else -1, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y)
+                dest_z = old_z + (new_z - old_z) * tdist / tlength if new_z is not None else None
+                self.arc(arc_dir, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y, z=dest_z)
             else:
                 pt = pt.seg_end() # in case this was an arc
                 if new_z is not None:

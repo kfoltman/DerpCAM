@@ -47,6 +47,7 @@ class ConfigSettings(object):
         FloatConfigSetting('resolution', 'geometry/resolution', GeometrySettings.RESOLUTION, 1),
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
+        BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
         ConfigSetting('input_directory', 'paths/input', ''),
@@ -82,6 +83,7 @@ class ConfigSettings(object):
         GeometrySettings.draw_arrows = self.draw_arrows
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
+        GeometrySettings.grbl_output = self.grbl_output
 
 class DirectorySelector(QWidget):
     def __init__(self):
@@ -142,6 +144,9 @@ class PreferencesDialog(QDialog):
         self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
         self.formCAM.addRow(self.simplifyLinesCheck)
+        self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
+        self.grblOutputCheck.setChecked(self.config.grbl_output)
+        self.formCAM.addRow(self.grblOutputCheck)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
@@ -193,6 +198,7 @@ class PreferencesDialog(QDialog):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
+        self.config.grbl_output = self.grblOutputCheck.isChecked()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
         self.config.grid_resolution = self.gridSpin.value()
         self.config.input_directory = self.inputDirEdit.value()

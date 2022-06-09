@@ -10,6 +10,7 @@ class GeometrySettings:
     draw_arrows = False
     dxf_inches = False
     gcode_inches = False
+    grbl_output = False
 
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION
