@@ -431,8 +431,12 @@ class BaseCut2D(Cut):
             else:
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z)
             self.curz = z_already_cut_here
+        plunge_penalty = subpath.tool.full_plunge_feed_ratio
+        if subpath.was_previously_cut:
+            # no plunge penalty
+            plunge_penalty = 1
         if subpath.helical_entry is not None:
-            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
+            gcode.feed(subpath.tool.hfeed * plunge_penalty)
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             if self.lastpt != subpath.path.seg_start():
@@ -441,7 +445,7 @@ class BaseCut2D(Cut):
                 gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
             assert self.lastpt is not None
         else:
-            gcode.feed(subpath.tool.hfeed * subpath.tool.full_plunge_feed_ratio)
+            gcode.feed(subpath.tool.hfeed * plunge_penalty)
             if newz < self.curz:
                 self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
             assert self.lastpt is not None

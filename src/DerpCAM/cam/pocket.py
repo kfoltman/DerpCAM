@@ -365,11 +365,13 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
 
         lastpt = None
+        was_previously_cut = False
         for item in hsm_path:
             if isinstance(item, cam.geometry.LineData):
                 if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
                     if geom.Path(gen_path, False).length():
-                        tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool))
+                        tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut))
+                    was_previously_cut = True
                     gen_path = []
                     lastpt = None
                 else:
@@ -399,16 +401,16 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                     gen_path.append(oep)
                 lastpt = oep
         if geom.Path(gen_path, False).length():
-            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool)
+            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut)
             tps.append(tpo)
         if not from_outside and tps and min_helix_dia <= max_helix_dia:
             tps[0].helical_entry = toolpath.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
         # Add a final pass around the perimeter
         def ls2path(ls):
             return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
-        tps.append(toolpath.Toolpath(ls2path(polygon.exterior), tool))
+        tps.append(toolpath.Toolpath(ls2path(polygon.exterior), tool, was_previously_cut=True))
         for h in polygon.interiors:
-            tps.append(toolpath.Toolpath(ls2path(h), tool))
+            tps.append(toolpath.Toolpath(ls2path(h), tool, was_previously_cut=True))
         alltps += tps
     return toolpath.Toolpaths(alltps)
 

@@ -63,7 +63,7 @@ class HelicalEntry(object):
         self.climb = climb
 
 class Toolpath(object):
-    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None):
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False):
         assert isinstance(path, Path)
         self.path = path
         self.tool = tool
@@ -73,6 +73,7 @@ class Toolpath(object):
         self.lines_to_arcs_cache = None
         self.optimize_lines_cache = None
         self.segmentation = segmentation
+        self.was_previously_cut = was_previously_cut
         if segmentation and helical_entry is None and segmentation[0][0] == 0 and isinstance(segmentation[0][2], HelicalEntry):
             helical_entry = segmentation[0][2]
         self.helical_entry = helical_entry
@@ -97,12 +98,12 @@ class Toolpath(object):
 
     def lines_to_arcs(self):
         if self.lines_to_arcs_cache is None:
-            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
         return self.lines_to_arcs_cache
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab)
+            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
         return self.optimize_lines_cache
 
     def optimize(self):
@@ -120,7 +121,7 @@ class Toolpath(object):
 
     def without_circles(self):
         assert self.is_tab
-        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab)
+        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
 
     def cut_by_tabs(self, tabs):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
