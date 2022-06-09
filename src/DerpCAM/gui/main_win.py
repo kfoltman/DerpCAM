@@ -204,7 +204,7 @@ class CAMMainWindow(QMainWindow):
         dlg.initUI()
         if dlg.exec():
             self.configSettings.update()
-            self.document.startUpdateCAM(subset)
+            self.document.startUpdateCAM()
             self.viewer.renderDrawing()
             self.viewer.repaint()
             #self.viewer.majorUpdate()
