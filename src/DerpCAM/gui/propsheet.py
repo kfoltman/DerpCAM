@@ -202,12 +202,13 @@ class EnumEditableProperty(EditableProperty):
         return validValues
 
 class FloatEditableProperty(EditableProperty):
-    def __init__(self, name, attribute, format, unit="", min=None, max=None, allow_none=False, none_value="none", computed=False):
+    def __init__(self, name, attribute, format, unit="", min=None, max=None, allow_none=False, none_value="none", computed=False, default_value=None):
         EditableProperty.__init__(self, name, attribute, format)
         self.min = min
         self.max = max
         self.allow_none = allow_none
         self.none_value = none_value
+        self.default_value = default_value
         self.computed = computed
         assert isinstance(unit, str)
         self.unit = unit
@@ -222,9 +223,15 @@ class FloatEditableProperty(EditableProperty):
             return self.none_value
         return f"{useFormat(self.format, value)} {self.unit}"
     def validateString(self, value):
-        if value == "" and self.allow_none:
-            return None, None
-        value = float(value)
+        if value == "":
+            if self.allow_none:
+                return None, None
+            if self.default_value is not None:
+                return self.default_value, None
+        try:
+            value = float(value)
+        except ValueError as e:
+            raise ValueError(f"'{value}' is not a valid number")
         if self.min is not None and value < self.min:
             value = self.min
         if self.max is not None and value > self.max:
