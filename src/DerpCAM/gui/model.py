@@ -1547,18 +1547,24 @@ class DeleteCycleUndoCommand(QUndoCommand):
         self.document = document
         self.cycle = cycle
         self.row = None
+        self.def_preset = None
         self.was_default = False
     def undo(self):
         self.document.operModel.invisibleRootItem().insertRow(self.row, self.cycle)
         self.document.project_toolbits[self.cycle.cutter.name] = self.cycle.cutter
         if self.was_default:
             self.document.selectCutterCycle(self.cycle)
+        if self.def_preset is not None:
+            self.document.default_preset_by_tool[self.cycle.cutter] = self.def_preset
         self.document.refreshToolList()
     def redo(self):
         self.row = self.cycle.row()
         self.was_default = self.cycle is self.document.current_cutter_cycle
+        self.def_preset = self.document.default_preset_by_tool.get(self.cycle.cutter, None)
         self.document.operModel.invisibleRootItem().takeRow(self.row)
         del self.document.project_toolbits[self.cycle.cutter.name]
+        if self.cycle.cutter in self.document.default_preset_by_tool:
+            del self.document.default_preset_by_tool[self.cycle.cutter]
         self.document.refreshToolList()
 
 class DeleteOperationUndoCommand(QUndoCommand):
@@ -1854,7 +1860,12 @@ class DocumentModel(QObject):
             self.refreshToolList()
         if 'default_presets' in data:
             for i in data['default_presets']:
-                self.default_preset_by_tool[cutter_map[i['tool_id']]] = preset_map[i['preset_id']]
+                def_tool_id = i['tool_id']
+                def_preset_id = i['preset_id']
+                if def_tool_id in cutter_map and def_preset_id in preset_map:
+                    self.default_preset_by_tool[cutter_map[def_tool_id]] = preset_map[def_preset_id]
+                else:
+                    print (f"Warning: bogus default preset entry, tool {def_tool_id}, preset {def_preset_id}")
         #self.tool.reload(data['tool'])
         self.drawing.reset()
         self.drawing.reload(data['drawing']['header'])
@@ -2172,10 +2183,13 @@ class DocumentModel(QObject):
     def opChangeActive(self, changes):
         self.undoStack.push(ActiveSetUndoCommand(changes))
     def opDeleteOperations(self, items):
-        with MultipleItemUndoContext(self, items, lambda count: f"Delete {count} operations"):
+        with MultipleItemUndoContext(self, items, lambda count: f"Delete {count} cycles/operations"):
             for item in items:
                 parent, row = self.operModel.findItem(item)
-                self.undoStack.push(DeleteOperationUndoCommand(self, item, parent, row))
+                if isinstance(item, OperationTreeItem):
+                    self.undoStack.push(DeleteOperationUndoCommand(self, item, parent, row))
+                elif isinstance(item, CycleTreeItem):
+                    self.undoStack.push(DeleteCycleUndoCommand(self, item))
     def opMoveItem(self, oldParent, child, newParent, pos):
         self.undoStack.push(MoveItemUndoCommand(oldParent, child, newParent, pos))
     def opMoveItems(self, items, direction):
