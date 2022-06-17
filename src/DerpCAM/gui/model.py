@@ -353,13 +353,13 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         tti.shape_id = self.shape_id
         return tti
     def toShape(self):
-        shapes = []
+        res = []
         for i, path in enumerate(self.paths):
             if path.orientation():
-                shapes[-1].add_island(path.nodes)
+                res[-1].add_island(path.nodes)
             else:
-                shapes.append(shapes.Shape(path.nodes, path.closed))
-        return shapes
+                res.append(shapes.Shape(path.nodes, path.closed))
+        return res
     def renderTo(self, path, modeData):
         for i in self.paths:
             path.addLines(self.penForPath(path, modeData), i.nodes, i.closed)
@@ -1416,21 +1416,31 @@ class OperationTreeItem(CAMTreeItem):
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
-                self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
-            if self.operation == OperationType.REFINE:
                 if isinstance(self.shape, list):
-                    raise ValueError("Refine not yet supported for text")
+                    res = []
+                    for i in self.shape:
+                        res.append(cam.dogbone.add_dogbones(i, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones))
+                    self.shape = res
+                else:
+                    self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
+            if self.operation == OperationType.REFINE:
                 diameter_plus = self.cutter.diameter + 2 * self.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
                 self.prev_diameter = prev_diameter
                 if prev_diameter is None:
                     raise ValueError("No matching milling operation to refine")
-                if islands:
-                    for island in islands:
-                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
-                            self.shape.add_island(item.boundary)
-                self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus)
+                if isinstance(self.shape, list):
+                    res = []
+                    for i in self.shape:
+                        res += self.refineShape(i, prev_diameter, diameter_plus)
+                    self.shape = res
+                else:
+                    if islands:
+                        for island in islands:
+                            item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                            if item.closed:
+                                self.shape.add_island(item.boundary)
+                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus)
             else:
                 self.prev_diameter = None
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
