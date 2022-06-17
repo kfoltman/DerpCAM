@@ -63,6 +63,8 @@ class Gcode(object):
         self.reset()
     def finish(self):
         self.add("M2")
+    def begin_section(self):
+        self.last_feed = None
     def feed(self, feed):
         if feed != self.last_feed:
             if self.last_feed_index == len(self.gcode) - 1:
@@ -1048,6 +1050,7 @@ class Operations(object):
         gcode.rapid(x=0, y=0)
         for operation in self.operations:
             gcode.section_info(f"Start operation: {type(operation).__name__}")
+            gcode.begin_section()
             operation.to_gcode(gcode, self.machine_params)
             gcode.section_info(f"End operation: {type(operation).__name__}")
         gcode.rapid(x=0, y=0)
