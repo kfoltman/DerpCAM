@@ -494,9 +494,12 @@ def expand_bounds(b1, amount):
     ey += amount
     return (sx, sy, ex, ey)
 
-def max_bounds(b1, *b2etc):
-    sx, sy, ex, ey = b1
-    for b2 in b2etc:
+def max_bounds(*b):
+    b = [i for i in b if i is not None]
+    if not b:
+        return None
+    sx, sy, ex, ey = b[0]
+    for b2 in b[1:]:
         sx2, sy2, ex2, ey2 = b2
         sx = min(sx, sx2)
         sy = min(sy, sy2)
