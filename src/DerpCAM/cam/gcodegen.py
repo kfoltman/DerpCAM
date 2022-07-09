@@ -714,17 +714,12 @@ class Contour(TabbedOperation):
             self.tab_extend = 8 * pi / (tool.diameter * trc_rate)
         else:
             self.tab_extend = 1
-        #contours = shape.contour(tool, outside=outside, displace=props.margin).flattened()
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
-            if contour_paths is None:
-                raise ValueError("Empty contour")
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened()
+            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened() if contour_paths else []
         else:
             contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
-            if contour_paths is None:
-                raise ValueError("Empty contour")
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened()
+            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
         if isinstance(tabs, int):
             newtabs = []
             for contour in contours:
@@ -993,6 +988,11 @@ class Operations(object):
         self.operations.append(operation)
     def add_all(self, operations):
         self.operations += operations
+    def is_nothing(self):
+        for i in self.operations:
+            if i.flattened:
+                return False
+        return True
     def contour_with_draft(self, shape, outside, draft_angle_deg, layer_thickness, tabs, props=None):
         props = props or self.props
         if tabs:

@@ -1075,8 +1075,9 @@ class PresetDerivedAttributes(object):
         target.emitPropertyChanged()
 
 class WorkerThread(threading.Thread):
-    def __init__(self, workerFunc):
+    def __init__(self, parentOp, workerFunc):
         self.worker_func = workerFunc
+        self.parent_operation = parentOp
         self.exception = None
         threading.Thread.__init__(self, target=self.threadMain)
     def threadMain(self):
@@ -1088,6 +1089,8 @@ class WorkerThread(threading.Thread):
                         fn()
             else:
                 self.worker_func()
+            if self.parent_operation.cam and self.parent_operation.cam.is_nothing():
+                self.parent_operation.addWarning("No cuts produced")
         except Exception as e:
             self.exception = e
             import traceback
@@ -1312,6 +1315,7 @@ class OperationTreeItem(CAMTreeItem):
         else:
             self.warning += "\n"
         self.warning += warning
+        self.emitDataChanged()
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
     def startUpdateCAM(self):
@@ -1457,8 +1461,8 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     threadFunc = self.operationFunc(self.shape, pda)
                 if threadFunc:
-                    self.worker = WorkerThread(threadFunc)
-                    self.worker.progress = (0, 1)
+                    self.worker = WorkerThread(self, threadFunc)
+                    self.worker.progress = (0, 1000000)
                     self.worker.cancelled = False
                     self.worker.start()
             self.error = None
