@@ -357,8 +357,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                     slice = 2 * math.pi / res * sign
                     dr = pitch / (2 * math.sin(slice / 2) * res)
                     dr = abs(dr)
-                    sa = math.pi / res + math.pi / 2 + a
-                    sa *= sign
+                    sa = (math.pi / res + math.pi / 2) * sign + a
                     xc0 = x - dr * math.cos(sa)
                     yc0 = y - dr * math.sin(sa)
                     for i in range(res * turns + 1):
