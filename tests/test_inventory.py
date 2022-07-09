@@ -41,7 +41,7 @@ class InventoryTest(unittest.TestCase):
         self.checkPropagationForPreset("2mm HSS", "Wood-untested", attr_values=[("rpm", 3), ("vfeed", 30), ("maxdoc", 1)])
         self.checkPropagationForToolbit("cheapo 2F 3.2/15", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("cheapo 2F 3.2/15", "Wood-roughing",
-            attr_values=[("rpm", 3), ("vfeed", 30), ("hfeed", 30), ("maxdoc", 1), ("stepover", 0.55), ("direction", MillDirection.CLIMB),
+            attr_values=[("rpm", 3), ("vfeed", 30), ("hfeed", 30), ("maxdoc", 1), ("offset", 0.1), ("stepover", 0.55), ("direction", MillDirection.CLIMB),
                 ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45), ('eh_diameter', 30)])
     def checkPropagationForToolbit(self, toolbit_name, attr_values):
         em = std_cutters.toolbitByName(toolbit_name)
@@ -108,7 +108,7 @@ class InventoryTest(unittest.TestCase):
         self.checkCutterAttribs(inventory, 51, "3mm HSS", 3, 2, 41, "3mm HSS drill bit, L=41mm", gui.inventory.DrillBitCutter)
         self.checkPreset(inventory, "cheapo 2F 3.2/15", "Wood-roughing",
             ['\u21943200 ', '\u21931500 ', '\u21a72 ', '\u27f760%', '\u27f324000'],
-            rpm=24000, hfeed=3200, vfeed=1500, maxdoc=2, stepover=0.6,
+            rpm=24000, hfeed=3200, vfeed=1500, maxdoc=2, offset=0, stepover=0.6,
             direction=MillDirection.CONVENTIONAL, pocket_strategy=PocketStrategy.CONTOUR_PARALLEL, extra_width=0, trc_rate=0, axis_angle=0, eh_diameter=0.5)
         self.checkPreset(inventory, "2mm HSS", "Wood-untested", ['\u27f310000', '\u2193100', '\u21a76'], rpm=10000, vfeed=100, maxdoc=6)
         self.checkPreset(inventory, "3mm HSS", "Wood-untested", ['\u27f37000', '\u2193100', '\u21a76'], rpm=7000, vfeed=100, maxdoc=6)

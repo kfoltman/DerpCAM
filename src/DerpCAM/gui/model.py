@@ -690,6 +690,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_chipload = FloatEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True, computed=True)
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, default_value=0)
     prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
@@ -732,7 +733,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed]
@@ -790,7 +791,7 @@ class ToolPresetTreeItem(CAMTreeItem):
                 self.inventory_preset.hfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
-        if name in ['stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
+        if name in ['offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
             # There are other things that might require a recalculation, but do not result in visible changes
             self.document.startUpdateCAM(subset=self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
         self.emitPropertyChanged(name)
@@ -997,6 +998,7 @@ class PresetDerivedAttributes(object):
     ]
     attrs_endmill = [
         PresetDerivedAttributeItem('hfeed'),
+        PresetDerivedAttributeItem('offset', def_value=0),
         PresetDerivedAttributeItem('stepover', preset_scale=100),
         PresetDerivedAttributeItem('extra_width', preset_scale=100, def_value=0),
         PresetDerivedAttributeItem('trc_rate', preset_scale=100, def_value=0),
@@ -1049,6 +1051,10 @@ class PresetDerivedAttributes(object):
             for attr in PresetDerivedAttributes.attrs[cutter_type].values():
                 present, value = attr.resolve(None, preset)
                 values[attr.name] = value if present is not None else None
+        else:
+            for attr in PresetDerivedAttributes.attrs[cutter_type].values():
+                if attr.def_value is not None:
+                    values[attr.name] = attr.def_value
         return values
     def toPreset(self, name):
         return self.toPresetFromAny(name, self, self.operation.cutter, type(self.operation.cutter))
@@ -1099,7 +1105,6 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_height = FloatDistEditableProperty("Tab Height", "tab_height", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join([f"({Format.coord(i.x)}, {Format.coord(i.y)})" for i in value]), edit_func=lambda item: item.editTabLocations())
-    prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, default_value=0)
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
@@ -1108,8 +1113,9 @@ class OperationTreeItem(CAMTreeItem):
 
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
+    prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, allow_none=True)
+    prop_stepover = FloatEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_extra_width = FloatEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
@@ -1213,13 +1219,13 @@ class OperationTreeItem(CAMTreeItem):
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
-            self.prop_offset,
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
             self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
+            self.prop_offset,
             self.prop_stepover, self.prop_eh_diameter,
             self.prop_trc_rate, self.prop_rpm]
     def setPropertyValue(self, name, value):
@@ -1411,10 +1417,10 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset, zigzag, pda.axis_angle * math.pi / 180)
+                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180)
             else:
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, self.offset)
+                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
                 if isinstance(self.shape, list):
                     res = []
@@ -1424,7 +1430,7 @@ class OperationTreeItem(CAMTreeItem):
                 else:
                     self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
             if self.operation == OperationType.REFINE:
-                diameter_plus = self.cutter.diameter + 2 * self.offset
+                diameter_plus = self.cutter.diameter + 2 * pda.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
                 self.prev_diameter = prev_diameter
                 if prev_diameter is None:
@@ -1821,7 +1827,7 @@ class DocumentModel(QObject):
             std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, milling_tool.carbide_uncoated).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
-                std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, std_tool.stepover,
+                std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
                 tool.get('direction', 0), 0, 0, None, 0, 0.5)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
@@ -1955,7 +1961,8 @@ class DocumentModel(QObject):
     def largerDiameterForShape(self, shape, min_size):
         candidates = []
         for operation in self.forEachOperation(lambda operation: operation):
-            diameter_plus = operation.cutter.diameter + 2 * operation.offset
+            pda = PresetDerivedAttributes(item)
+            diameter_plus = operation.cutter.diameter + 2 * pda.offset
             if (operation.shape_id is shape.shape_id) and (diameter_plus > min_size):
                 candidates.append((diameter_plus, operation))
         if not candidates:

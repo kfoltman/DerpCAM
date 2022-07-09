@@ -21,7 +21,7 @@ testDocument1 = {
     ],
     "tool_presets": [
         { "_type": "EndMillPreset", "id": 1037, "name" : "test preset", "toolbit": 1036,
-          "rpm": 16000, "hfeed": 500, "vfeed": 100, "maxdoc": 0.5, "stepover": 0.4, "direction": 1, "extra_width": 0.15, "trc_rate": 0.9,
+          "rpm": 16000, "hfeed": 500, "vfeed": 100, "maxdoc": 0.5, "stepover": 0.4, "offset" : 0, "direction": 1, "extra_width": 0.15, "trc_rate": 0.9,
           "pocket_strategy" : 2, "axis_angle" : 45},
     ],
     "default_presets": [ { "tool_id": 1036, "preset_id": 1037 } ],
@@ -102,6 +102,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(presetItem.getPropertyValue('vfeed'), 100)
         self.assertEqual(presetItem.getPropertyValue('hfeed'), 500)
         self.assertEqual(presetItem.getPropertyValue('doc'), 0.5)
+        self.assertEqual(presetItem.getPropertyValue('offset'), 0)
         self.assertEqual(presetItem.getPropertyValue('stepover'), 40)
         self.assertEqual(presetItem.getPropertyValue('extra_width'), 15)
         self.assertEqual(presetItem.getPropertyValue('trc_rate'), 90)
@@ -168,6 +169,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(preset.vfeed, 100)
         self.assertEqual(preset.hfeed, 500)
         self.assertEqual(preset.maxdoc, 0.5)
+        self.assertEqual(preset.offset, 0)
         self.assertEqual(preset.stepover, 0.4)
         self.assertEqual(preset.extra_width, 0.15)
         self.assertEqual(preset.trc_rate, 0.9)
@@ -255,6 +257,7 @@ class DocumentTest(unittest.TestCase):
         self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 rev/min")
         self.verifyPropertyOp(preset, "hfeed", 500, 750, "500 mm/min")
         self.verifyPropertyOp(preset, "vfeed", 100, 150, "100 mm/min")
+        self.verifyPropertyOp(preset, "offset", 0, 0.2, "0 mm")
         self.verifyPropertyOp(preset, "stepover", 40, 60, "40 %")
         self.verifyPropertyOp(preset, "direction", 1, 0, "Climb")
         self.verifyPropertyOp(preset, "extra_width", 15, 50, "15 %")
@@ -488,6 +491,7 @@ class PDATest(unittest.TestCase):
         op.vfeed = 200
         op.hfeed = 700
         op.doc = 1.5
+        op.offset = 0.1
         op.stepover = 40
         op.extra_width = 90
         op.trc_rate = 50
@@ -506,6 +510,7 @@ class PDATest(unittest.TestCase):
         self.assertEqual(preset.vfeed, 200)
         self.assertEqual(preset.hfeed, 700)
         self.assertEqual(preset.maxdoc, 1.5)
+        self.assertEqual(preset.offset, 0.1)
         self.assertEqual(preset.stepover, 0.4)
         self.assertEqual(preset.extra_width, 0.9)
         self.assertEqual(preset.trc_rate, 0.5)
@@ -582,6 +587,7 @@ class PDATest(unittest.TestCase):
         self.verifyAttribute(op, pda, 'hfeed', 700, 800)
         self.verifyAttribute(op, pda, 'doc', 1.5, 2)
         self.verifyAttribute(op, pda, 'stepover', 40, 41)
+        self.verifyAttribute(op, pda, 'offset', 0.1, 0.11)
         self.verifyAttribute(op, pda, 'extra_width', 90, 91)
         self.verifyAttribute(op, pda, 'trc_rate', 50, 51)
         self.verifyAttribute(op, pda, 'direction', gui.inventory.MillDirection.CLIMB, gui.inventory.MillDirection.CONVENTIONAL)
