@@ -546,6 +546,8 @@ class Cut2DWithDraft(BaseCut2D):
         self.outline_func = outline_func
         max_height = self.props.start_depth - self.props.depth
         toolpaths = toolpaths_func(self.props.margin + max_height * self.draft)
+        if isinstance(toolpaths, tuple):
+            toolpaths = toolpaths[0]
         self.flattened = toolpaths.flattened() if isinstance(toolpaths, toolpath.Toolpaths) else [toolpaths]
         self.cutpaths = [CutPath2D(p) for p in self.flattened]
     def layers_at_depth(self, prev_depth, depth, cutpath):
@@ -655,8 +657,13 @@ class OutsidePeelHSM(UntabbedOperation):
         return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin)
 
 class TabbedOperation(Operation):
-    def __init__(self, shape, tool, props, paths, tabs):
+    def __init__(self, shape, tool, props, outside, tabs, extra_attribs):
         Operation.__init__(self, shape, tool, props)
+        self.outside = outside
+        self.tabs = tabs
+        for key, value in extra_attribs.items():
+            setattr(self, key, value)
+        paths, tabs = self.build_paths(0)
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
         self.tabbed_for_path = {}
@@ -704,35 +711,41 @@ class TabbedOperation(Operation):
                     if dist < maxd:
                         thistabs.append(t)
                 tabs_dict[i] = thistabs
+    def calc_tabs(self, contours):
+        newtabs = []
+        if isinstance(self.tabs, int):
+            for contour in contours:
+                newtabs += contour.autotabs(self.tool, self.tabs, width=self.tabs_width())
+        else:
+            path = Path(self.shape.boundary, self.shape.closed)
+            # Offset the tabs
+            for pt in self.tabs:
+                pos, dist = path.closest_point(pt)
+                pt2 = path.offset_point(pos, self.tool.diameter / 2 * (1 if self.outside else -1))
+                newtabs.append(pt2)
+        return newtabs
 
 class Contour(TabbedOperation):
-    def tabs_width(self):
-        return self.tab_extend
     def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0):
         assert shape.closed
+        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate})
+    def tabs_width(self):
+        return self.tab_extend
+    def build_paths(self, margin):
+        trc_rate = self.trc_rate
+        extra_width = self.extra_width
+        tool = self.tool
         if trc_rate and extra_width:
             self.tab_extend = 8 * pi / (tool.diameter * trc_rate)
         else:
             self.tab_extend = 1
         if trc_rate and extra_width:
-            contour_paths = cam.contour.pseudotrochoidal(shape, tool.diameter, outside, props.margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
+            contour_paths = cam.contour.pseudotrochoidal(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened() if contour_paths else []
         else:
-            contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
+            contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
-        if isinstance(tabs, int):
-            newtabs = []
-            for contour in contours:
-                newtabs += contour.autotabs(tool, tabs, width=self.tabs_width())
-        else:
-            path = Path(shape.boundary, shape.closed)
-            # Offset the tabs
-            newtabs = []
-            for pt in tabs:
-                pos, dist = path.closest_point(pt)
-                pt2 = path.offset_point(pos, tool.diameter / 2 * (1 if outside else -1))
-                newtabs.append(pt2)
-        tabs = newtabs
+        tabs = self.calc_tabs(contours)
         tabs_dict = {}
         if extra_width and not trc_rate:
             extra_width *= tool.diameter / 2
@@ -754,8 +767,7 @@ class Contour(TabbedOperation):
         else:
             contours = toolpath.Toolpaths(contours)
         self.add_tabs_if_close(contours, tabs_dict, tabs, tool.diameter * sqrt(2))
-        TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
-        self.outside = outside
+        return contours, tabs_dict
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
     def widen(self, contour, tool, extension):
@@ -781,46 +793,31 @@ class Contour(TabbedOperation):
 
 class TrochoidalContour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
-        nrad *= 0.5 * tool.diameter
-        self.nrad = nrad
-        self.nspeed = nspeed
-        if not outside:
+        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'nrad' : nrad * 0.5 * tool.diameter, 'nspeed' : nspeed})
+    def build_paths(self, margin):
+        nrad = self.nrad
+        nspeed = self.nspeed
+        contours = self.shape.contour(self.tool, outside=self.outside, displace=nrad + self.props.margin + margin)
+        if not self.outside:
             nrad = -nrad
-        contours = shape.contour(tool, outside=outside, displace=abs(nrad) + props.margin)
         trochoidal_func = lambda contour: shapes.trochoidal_transform(contour, nrad, nspeed)
-        if isinstance(tabs, int):
-            newtabs = []
-            for contour in contours.toolpaths:
-                newtabs += contour.autotabs(tool, tabs, width=self.tabs_width())
-        else:
-            # Offset the tabs
-            newtabs = []
-            path = Path(shape.boundary, True)
-            for pt in tabs:
-                pos, dist = path.closest_point(pt)
-                pt2 = path.offset_point(pos, tool.diameter / 2 * (1 if outside else -1))
-                newtabs.append(pt2)
+        newtabs = self.calc_tabs(contours)
         contours = toolpath.Toolpaths([toolpath.Toolpath(tp.path, tool, transform=trochoidal_func) for tp in contours.toolpaths])
-        tabs_dict = {}
-        self.add_tabs_if_close(contours, tabs_dict, newtabs, tool.diameter * sqrt(2) + self.nrad)
-        TabbedOperation.__init__(self, shape, tool, props, contours, tabs=tabs_dict)
+        return contours, self.nrad, {}
     def tabs_width(self):
         # This needs tweaking
         return 1 + self.nrad
 
 class ContourWithDraft(TabbedOperation):
     def __init__(self, shape, outside, tool, props, draft_angle_deg, layer_thickness):
-        contour_paths = cam.contour.plain(shape, tool.diameter, outside, props.margin, tool.climb)
-        if contour_paths is None:
-            raise ValueError("Empty contour")
-        contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths])
-        TabbedOperation.__init__(self, shape, tool, props, contours, [])
-        self.outside = outside
-        self.draft_angle_deg = draft_angle_deg
-        self.layer_thickness = layer_thickness
+        TabbedOperation.__init__(self, shape, tool, props, outside, 0, {'draft_angle_deg' : draft_angle_deg, 'layer_thickness' : layer_thickness})
     def build_paths(self, margin):
-        contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, self.props.margin, self.tool.climb)
-        return toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
+        contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, self.props.margin + margin, self.tool.climb)
+        contours = toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
+        tabs = self.calc_tabs(contours.toolpaths)
+        tabs_dict = {}
+        self.add_tabs_if_close(contours, tabs_dict, tabs, self.tool.diameter * sqrt(2))
+        return contours, tabs_dict
     def to_gcode(self, gcode, machine_params):
         Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
