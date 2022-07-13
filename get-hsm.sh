@@ -3,7 +3,7 @@ if [ -d HSM_experiment ]; then
     (cd HSM_experiment; git pull) || exit 1
 else
     git clone https://github.com/mrdunk/HSM_experiment || exit 1
-    (cd HSM_experiment; git checkout -b development --track origin/development) || exit 1
+    #(cd HSM_experiment; git checkout -b development --track origin/development) || exit 1
 fi
 if [ -f HSM_experiment/src/geometry.py ]; then
     cd src/DerpCAM/cam
