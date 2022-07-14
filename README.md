@@ -16,6 +16,8 @@ support G-Code dialects used by the common commercial machine vendors. It does
 have bugs. Corners have been cut in many places. Use at your own risk. There
 is no warranty of any kind.
 
+![image](img/screenshot.png)
+
 The following features are available in the current version:
 
 * import of DXF files from LibreCAD (other DXF files may or may not work,
@@ -37,6 +39,8 @@ The following features are available in the current version:
 * project file support with per-project tools/presets
 
 * global tool/preset library
+
+* undo/redo
 
 * G-Code output using Grbl or LinuxCNC dialects
 
