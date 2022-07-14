@@ -356,14 +356,14 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                     turns = math.ceil(rdiff / pitch)
                     pitch = rdiff / turns
                     # Number of arcs per circle
-                    res = 4
+                    res = 2
                     slice = 2 * math.pi / res * sign
                     dr = pitch / (2 * math.sin(slice / 2) * res)
                     dr = abs(dr)
                     sa = (math.pi / res + math.pi / 2) * sign + a
                     xc0 = x - dr * math.cos(sa)
                     yc0 = y - dr * math.sin(sa)
-                    for i in range(res * turns + 1):
+                    for i in range(res * turns):
                         t1 = slice * i
                         c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
                         cp1 = c.at_angle(t1 + a)
