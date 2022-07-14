@@ -331,7 +331,10 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         if not from_outside:
             r = 0
             c = geom.CandidateCircle(x, y, rt)
-            a = 0
+            if hsm_path:
+                a = math.atan2(hsm_path[0].start.y - y, hsm_path[0].start.x - x)
+            else:
+                a = 0
             min_helix_dia = tool.min_helix_diameter
             max_helix_dia = 2 * rt
             if min_helix_dia <= max_helix_dia:
