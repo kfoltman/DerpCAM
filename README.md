@@ -34,7 +34,7 @@ The following features are available in the current version:
 
 * tabs placement either automatic or manual
 
-* optional dogbones for slot-and-tab designs (2 automatically-calculated variants to choose from)
+* optional dogbones for slot-and-tab designs (3 automatically-calculated variants to choose from)
 
 * project file support with per-project tools/presets
 
