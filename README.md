@@ -2,21 +2,17 @@
 
 DerpCAM is a GUI application for creating 2.5D toolpaths for hobby 3-axis CNC
 subtractive machines like routers and mills that are based on LinuxCNC or Grbl.
-It is written in Python. The GUI is based on Qt5. It has been tested on Linux,
+It is written in Python 3. The GUI is based on Qt5. It has been tested on Linux,
 but may potentially run in other Unix based systems as well.
+
+![screenshot](img/screenshot.png)
 
 The overall goal was to create a simple but useful open-source, user-friendly,
 well-performing application that could be used by private users and hackerspaces
 without worrying about things like licensing, copy protection, Internet access
 or capricious vendors removing features.
 
-It is not meant for use in a professional environment, as it lacks many
-features or stability of its commercial and shareware counterparts. It does not
-support G-Code dialects used by the common commercial machine vendors. It does
-have bugs. Corners have been cut in many places. Use at your own risk. There
-is no warranty of any kind.
-
-![image](img/screenshot.png)
+## Features
 
 The following features are available in the current version:
 
@@ -36,6 +32,8 @@ The following features are available in the current version:
 
 * optional dogbones for slot-and-tab designs (3 automatically-calculated variants to choose from)
 
+* ramped/helical entry support for hard materials
+
 * project file support with per-project tools/presets
 
 * global tool/preset library
@@ -44,16 +42,25 @@ The following features are available in the current version:
 
 * G-Code output using Grbl or LinuxCNC dialects
 
-Some more features are only partially implemented:
+### Incomplete/work-in-progress features
 
-* external milling - producing a target shape by milling from the outside
+The following features may have unexpected limitations or bugs, but also might work
+just fine in many cases.
+
+* external milling - producing a target shape by milling from the outside edges
 
 * rest machining - refining a coarsely-milled pocket using a finer tool
 
-* single-line text objects - no need to convert to paths for most operations, uses system fonts like TrueType/OpenType etc.
+* single-line text objects - no need to convert text to paths for most operations, it is based on system fonts like TrueType/OpenType etc.
 
-* inch support - the application works in metric, but can import inch-based drawings, output inch-based G-Code and accept values in inches in some places
-
-* ramped entry support - picks helical, linear or plunge based on what is possible
+* inch support - import/export and some of the data entry supports inch values, but values are displayed in metric only
 
 * automated testing facilities are limited and need a lot more work
+
+## Disclaimer
+
+This project is not meant for use in a professional environment, as it lacks many
+features or stability of its commercial and shareware counterparts. It does not
+support G-Code dialects used by the common commercial machine vendors. It does
+have bugs. Corners have been cut in many places. Use at your own risk. There
+is no warranty of any kind.
