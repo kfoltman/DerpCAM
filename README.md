@@ -7,7 +7,7 @@ but may potentially run in other Unix based systems as well.
 
 ![screenshot](img/screenshot.png)
 
-The overall goal was to create a simple but useful open-source, user-friendly,
+The overall goal was to create a simple but useful open-source (GPL), user-friendly,
 well-performing application that could be used by private users and hackerspaces
 without worrying about things like licensing, copy protection, Internet access
 or capricious vendors removing features.
@@ -30,9 +30,9 @@ The following features are available in the current version:
 
 * tabs placement either automatic or manual
 
-* optional dogbones for slot-and-tab designs (3 automatically-calculated variants to choose from)
+* optional dogbones (corner overcut) for slot-and-tab designs, with 3 automatically-calculated variants to choose from
 
-* ramped/helical entry support for hard materials
+* ramped/helical entry support for milling hard materials
 
 * project file support with per-project tools/presets
 
@@ -56,6 +56,39 @@ just fine in many cases.
 * inch support - import/export and some of the data entry supports inch values, but values are displayed in metric only
 
 * automated testing facilities are limited and need a lot more work
+
+## Requirements and installation
+
+The following third-party Python 3 packages are required:
+
+* PyClipper
+* PyVoronoi
+* Shapely
+
+Those can be installed using the following command:
+
+        pip3 install pyclipper pyvoronoi shapely
+
+The current method of installing DerpCAM is to download it from github:
+
+        git clone https://github.com/kfoltman/DerpCAM/
+        cd DerpCAM
+
+Additionally, it is highly recommended to obtain the HSM library by running the
+following command from the DerpCAM directory:
+
+        ./get-hsm.sh
+
+To launch the application, use the following command from the DerpCAM directory:
+
+        ./DerpCAM
+
+No installation is needed, the application can run from the directory it has
+been downloaded to.
+
+## License
+
+DerpCAM is licensed under a GNU General Public License version 3.
 
 ## Disclaimer
 
