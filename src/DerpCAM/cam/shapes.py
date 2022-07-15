@@ -18,8 +18,10 @@ class Shape(object):
         xcoords = [p.seg_end().x for p in self.boundary]
         ycoords = [p.seg_end().y for p in self.boundary]
         return (min(xcoords), min(ycoords), max(xcoords), max(ycoords))
-    def default_tab_count(self, min_tabs, max_tabs, distance):
+    def default_tab_count(self, min_tabs, max_tabs, distance, min_length=0):
         plen = Path(self.boundary, self.closed).length()
+        if plen < min_length:
+            return 0
         return int(max(min_tabs, min(max_tabs, plen // distance)))
     def engrave(self, tool):
         tps = [toolpath.Toolpath(Path(self.boundary, self.closed), tool)] + [

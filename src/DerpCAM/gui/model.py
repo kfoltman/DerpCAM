@@ -1353,7 +1353,8 @@ class OperationTreeItem(CAMTreeItem):
         if len(self.user_tabs):
             tabs = self.user_tabs
         else:
-            tabs = self.tab_count if self.tab_count is not None else shape.default_tab_count(2, 8, 200)
+            cs = self.document.config_settings
+            tabs = self.tab_count if self.tab_count is not None else shape.default_tab_count(cs.min_tabs, cs.max_tabs, cs.tab_dist, cs.tab_min_length)
         if self.document.checkUpdateSuspended(self):
             return
         if self.operation == OperationType.OUTSIDE_CONTOUR:
