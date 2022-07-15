@@ -238,6 +238,85 @@ class FloatEditableProperty(EditableProperty):
             value = self.max
         return value, self.unit
 
+class UnitConverter(object):
+    alt_units = {"in", "sfm", "ipm"}
+    @staticmethod
+    def fromInch(value, multiplier=25.4):
+        value = value.strip()
+        if '/' in value:
+            wholes = 0
+            if ' ' in value:
+                # Mixed numbers like 1 1/4"
+                wholesStr, value = value.split(" ", 1)
+                wholes = int(wholesStr)
+            num, denom = value.split("/", 1)
+            return str((float(num) + wholes * float(denom)) * multiplier / float(denom))
+        return str(float(value) * multiplier)
+    @staticmethod
+    def fromMetric(value, multiplier):
+        value = value.strip()
+        if '/' in value:
+            num, denom = value.split("/", 1)
+            return str(float(num) * multiplier / float(denom))
+        return str(float(value) * multiplier)
+    @staticmethod
+    def isAltUnit(unit):
+        return unit in UnitConverter.alt_units
+    @staticmethod
+    def parse(value, unit, as_float=False):
+        value2 = value.strip()
+        if unit == "m/min":
+            if value2.endswith('sfm'):
+                unit = "sfm"
+                value = UnitConverter.fromInch(value2[:-3], 1000.0 / (12 * 25.4))
+            elif value2.endswith('m/min'):
+                unit = "m/min"
+                value = UnitConverter.fromMetric(value2[:-5], 1)
+            elif GuiSettings.inch_mode:
+                unit = "sfm"
+                value = UnitConverter.fromInch(value2, 1000.0 / (12 * 25.4))
+        elif unit == "mm/min":
+            if value2.endswith('ipm'):
+                unit = "ipm"
+                value = UnitConverter.fromInch(value2[:-3])
+            elif value2.endswith('in/min'):
+                unit = "ipm"
+                value = UnitConverter.fromInch(value2[:-6])
+            elif value2.endswith('mm/min'):
+                unit = "mm/min"
+                value = UnitConverter.fromMetric(value2[:-6], 1)
+            elif GuiSettings.inch_mode:
+                unit = "ipm"
+                value = UnitConverter.fromInch(value2)
+            else:
+                value = value2
+        elif unit == "mm":
+            if value2.endswith('in'):
+                unit = "in"
+                value = UnitConverter.fromInch(value2[:-2])
+            elif value2.endswith('"'):
+                unit = "in"
+                value = UnitConverter.fromInch(value2[:-1])
+            elif value2.endswith('mm'):
+                unit = "mm"
+                value = UnitConverter.fromMetric(value2[:-2], 1)
+            elif value2.endswith('cm'):
+                unit = "cm"
+                value = UnitConverter.fromMetric(value2[:-2], 10)
+            elif value2.endswith('dm'):
+                unit = "dm"
+                value = UnitConverter.fromMetric(value2[:-2], 100)
+            elif value2.endswith('m'):
+                unit = "m"
+                value = UnitConverter.fromMetric(value2[:-2], 1000)
+            elif GuiSettings.inch_mode:
+                value = UnitConverter.fromInch(value2)
+            else:
+                value = value2
+        if as_float:
+            value = float(value)
+        return value, unit
+
 class FloatDistEditableProperty(FloatEditableProperty):
     def scaling(self):
         if not GuiSettings.inch_mode:
@@ -271,70 +350,8 @@ class FloatDistEditableProperty(FloatEditableProperty):
             return ""
         value *= self.scaling()
         return EditableProperty.toEditString(self, value)
-    def fromInch(self, value, multiplier=25.4):
-        value = value.strip()
-        if '/' in value:
-            wholes = 0
-            if ' ' in value:
-                # Mixed numbers like 1 1/4"
-                wholesStr, value = value.split(" ", 1)
-                wholes = int(wholesStr)
-            num, denom = value.split("/", 1)
-            return str((float(num) + wholes * float(denom)) * multiplier / float(denom))
-        return str(float(value) * multiplier)
-    def fromMetric(self, value, multiplier):
-        value = value.strip()
-        if '/' in value:
-            num, denom = value.split("/", 1)
-            return str(float(num) * multiplier / float(denom))
-        return str(float(value) * multiplier)
     def validateString(self, value):
-        value2 = value.strip()
-        unit = self.unit
-        if self.unit == "m/min":
-            if value2.endswith('sfm'):
-                unit = "sfm"
-                value = self.fromInch(value2[:-3], 1000.0 / (12 * 25.4))
-            elif value2.endswith('m/min'):
-                unit = "m/min"
-                value = self.fromMetric(value2[:-5], 1)
-            elif GuiSettings.inch_mode:
-                unit = "sfm"
-                value = self.fromInch(value2, 1000.0 / (12 * 25.4))
-        elif self.unit == "mm/min":
-            if value2.endswith('ipm'):
-                unit = "ipm"
-                value = self.fromInch(value2[:-3])
-            elif value2.endswith('in/min'):
-                unit = "ipm"
-                value = self.fromInch(value2[:-6])
-            elif value2.endswith('mm/min'):
-                unit = "mm/min"
-                value = self.fromMetric(value2[:-6], 1)
-            elif GuiSettings.inch_mode:
-                unit = "ipm"
-                value = self.fromInch(value2)
-        elif self.unit == "mm":
-            if value2.endswith('in'):
-                unit = "in"
-                value = self.fromInch(value2[:-2])
-            elif value2.endswith('"'):
-                unit = "in"
-                value = self.fromInch(value2[:-1])
-            elif value2.endswith('mm'):
-                unit = "mm"
-                value = self.fromMetric(value2[:-2], 1)
-            elif value2.endswith('cm'):
-                unit = "cm"
-                value = self.fromMetric(value2[:-2], 10)
-            elif value2.endswith('dm'):
-                unit = "dm"
-                value = self.fromMetric(value2[:-2], 100)
-            elif value2.endswith('m'):
-                unit = "m"
-                value = self.fromMetric(value2[:-2], 1000)
-            elif GuiSettings.inch_mode:
-                value = self.fromInch(value2)
+        value, unit = UnitConverter.parse(value, self.unit)
         return FloatEditableProperty.validateString(self, value)[0], unit
 
 class IntEditableProperty(EditableProperty):

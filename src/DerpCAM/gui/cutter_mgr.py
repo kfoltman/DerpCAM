@@ -396,7 +396,7 @@ class CreateEditCutterDialog(QDialog):
             self.flutesEdit.setFocus()
             return
         try:
-            diameter = float(self.diameterEdit.text())
+            diameter, unit = propsheet.UnitConverter.parse(self.diameterEdit.text(), "mm", as_float=True)
             if diameter <= 0 or diameter > 100:
                 raise ValueError("Invalid diameter value")
         except ValueError as e:
@@ -408,7 +408,7 @@ class CreateEditCutterDialog(QDialog):
             if self.lengthEdit.text() == "":
                 self.length = None
             else:
-                length = float(self.lengthEdit.text())
+                length, unit = propsheet.UnitConverter.parse(self.lengthEdit.text(), "mm", as_float=True)
                 if length <= 0 or length > 500:
                     raise ValueError("Invalid length value")
                 self.length = length
