@@ -161,6 +161,8 @@ class CAMMainWindow(QMainWindow):
         self.refreshNeeded = True
         self.resetZoomNeeded = self.resetZoomNeeded or resetZoomNeeded
     def itemPropertyChanged(self, item, name):
+        if isinstance(item, (model.ToolTreeItem, model.ToolPresetTreeItem, model.WorkpieceTreeItem, model.DrawingItemTreeItem)):
+            item.emitDataChanged()
         self.propsDW.updatePropertiesFor(item.invalidatedObjects(model.InvalidateAspect.PROPERTIES))
         ## Do not re-zoom when tools or presets updated, not much risk of things going off-screen etc.
         self.scheduleMajorRedraw(not isinstance(item, (model.ToolTreeItem, model.ToolPresetTreeItem)))
