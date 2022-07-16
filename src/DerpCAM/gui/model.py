@@ -1969,7 +1969,7 @@ class DocumentModel(QObject):
     def largerDiameterForShape(self, shape, min_size):
         candidates = []
         for operation in self.forEachOperation(lambda operation: operation):
-            pda = PresetDerivedAttributes(item)
+            pda = PresetDerivedAttributes(operation)
             diameter_plus = operation.cutter.diameter + 2 * pda.offset
             if (operation.shape_id is shape.shape_id) and (diameter_plus > min_size):
                 candidates.append((diameter_plus, operation))
