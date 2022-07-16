@@ -3,6 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common.geom import GeometrySettings
+from DerpCAM.common.guiutils import GuiSettings
 
 class ConfigSetting(object):
     def __init__(self, attr_name, setting_pathname, def_value):
@@ -58,6 +59,7 @@ class ConfigSettings(object):
         FloatConfigSetting('safe_entry_z', 'defaults/safe_entry_z', 1, 2),
         BoolConfigSetting('dxf_inches', 'units/dxf_inches', GeometrySettings.dxf_inches),
         BoolConfigSetting('gcode_inches', 'units/gcode_inches', GeometrySettings.gcode_inches),
+        BoolConfigSetting('display_inches', 'units/display_inches', GuiSettings.inch_mode),
         IntConfigSetting('min_tabs', 'tabs/min_tabs', 2),
         IntConfigSetting('max_tabs', 'tabs/max_tabs', 8),
         FloatConfigSetting('tab_dist', 'tabs/tab_dist', 200, 1),
@@ -88,6 +90,7 @@ class ConfigSettings(object):
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
         GeometrySettings.grbl_output = self.grbl_output
+        GuiSettings.inch_mode = self.display_inches
 
 class DirectorySelector(QWidget):
     def __init__(self):
@@ -194,6 +197,9 @@ class PreferencesDialog(QDialog):
         self.gcodeInchesCheck = QCheckBox("G-Code files use inch measurements")
         self.gcodeInchesCheck.setChecked(self.config.gcode_inches)
         self.formUnits.addRow(self.gcodeInchesCheck)
+        self.displayInchesCheck = QCheckBox("Display values in inches")
+        self.displayInchesCheck.setChecked(self.config.display_inches)
+        self.formUnits.addRow(self.displayInchesCheck)
 
         self.widgetTabs = QWidget()
         self.formTabs = QFormLayout(self.widgetTabs)
@@ -233,6 +239,7 @@ class PreferencesDialog(QDialog):
         self.config.safe_entry_z = self.safeEntryZSpin.value()
         self.config.dxf_inches = self.dxfInchesCheck.isChecked()
         self.config.gcode_inches = self.gcodeInchesCheck.isChecked()
+        self.config.display_inches = self.displayInchesCheck.isChecked()
         if self.tabsMin.value() > self.tabsMax.value():
             self.tabsMax.setFocus()
             QMessageBox.critical(self, None, "Minimum number of tabs must be less than the maximum")

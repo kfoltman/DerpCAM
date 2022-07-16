@@ -254,7 +254,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(doc.itemForCutter(tool.inventory_tool), tool)
         self.assertEqual(doc.itemForPreset(preset.inventory_preset), preset)
         self.verifyPropertyOp(preset, "doc", 0.5, 1, "0.5 mm")
-        self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 rev/min")
+        self.verifyPropertyOp(preset, "rpm", 16000, 12000, "16000 rpm")
         self.verifyPropertyOp(preset, "hfeed", 500, 750, "500 mm/min")
         self.verifyPropertyOp(preset, "vfeed", 100, 150, "100 mm/min")
         self.verifyPropertyOp(preset, "offset", 0, 0.2, "0 mm")
@@ -306,7 +306,7 @@ class DocumentTest(unittest.TestCase):
         cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
         self.verifyCutter(cutter, "added cutter: 3F \u23004 L15 HSS end mill")
         cutter = gui.inventory.DrillBitCutter.new(None, "added drill bit", gui.inventory.CutterMaterial.HSS, 3.175, 33)
-        self.verifyCutter(cutter, "added drill bit: 3.175mm HSS drill bit, L=33mm")
+        self.verifyCutter(cutter, "added drill bit: 3.175 mm HSS drill bit, L=33 mm")
         doc.load(testDocument1)
         doc.cancelAllWorkers()
         doc.waitForUpdateCAM()
@@ -314,7 +314,7 @@ class DocumentTest(unittest.TestCase):
         cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3)
         self.verifyCutter(cutter, "added cutter: 3F \u23004 L15 HSS end mill")
         cutter = gui.inventory.DrillBitCutter.new(None, "added drill bit", gui.inventory.CutterMaterial.HSS, 3.3, 33)
-        self.verifyCutter(cutter, "added drill bit: 3.3mm HSS drill bit, L=33mm")
+        self.verifyCutter(cutter, "added drill bit: 3.3 mm HSS drill bit, L=33 mm")
     def testChangeActive(self):
         doc = self.document
         doc.load(testDocument1)

@@ -265,7 +265,7 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.DRILLED_HOLE)
     def canvasMouseMove(self, x, y):
         Format = guiutils.Format
-        self.coordLabel.setText(f"X={Format.coord(x)}{Format.coord_unit()} Y={Format.coord(y)}{Format.coord_unit()}")
+        self.coordLabel.setText(f"X={Format.coord(x, brief=True)}{Format.coord_unit()} Y={Format.coord(y, brief=True)}{Format.coord_unit()}")
     def canvasMouseLeave(self):
         self.coordLabel.setText("")
     def onDrawingImportedOrProjectLoaded(self, fn):

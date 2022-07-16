@@ -1,5 +1,5 @@
 from .propsheet import EnumClass
-from DerpCAM.common.guiutils import Format
+from DerpCAM.common.guiutils import Format, UnitConverter
 import os
 import json
 import sys
@@ -210,15 +210,15 @@ class EndMillPreset(PresetBase):
         if self.trc_rate:
             res.append(f"\u21f4")
         if self.hfeed:
-            res.append(f"f\u2194{Format.feed(self.hfeed)}")
+            res.append(f"f\u2194{Format.feed(self.hfeed, brief=True)}")
         if self.vfeed:
-            res.append(f"f\u2193{Format.feed(self.vfeed)}")
+            res.append(f"f\u2193{Format.feed(self.vfeed, brief=True)}")
         if self.maxdoc:
-            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc)}")
+            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc, brief=True)}")
         if self.stepover:
-            res.append(f"\u27f7{Format.as_percent(self.stepover)}")
+            res.append(f"\u27f7{Format.as_percent(self.stepover, brief=True)}%")
         if self.rpm:
-            res.append(f"\u27f3{Format.rpm(self.rpm)}")
+            res.append(f"\u27f3{Format.rpm(self.rpm, brief=True)}")
         if self.direction is not None:
             res.append(MillDirection.toString(self.direction))
         return " ".join(res)
@@ -237,9 +237,9 @@ class EndMillCutter(CutterBase):
         return self
     def description_only(self):
         if self.length is not None:
-            return f"{self.flutes}F \u2300{Format.cutter_dia(self.diameter)} L{Format.cutter_length(self.length)} {self.material.name} end mill"
+            return f"{self.flutes}F \u2300{Format.cutter_dia(self.diameter, brief=True)} L{Format.cutter_length(self.length, brief=True)} {self.material.name} end mill"
         else:
-            return f"{self.flutes}F \u2300{Format.cutter_length(self.diameter)} {self.material.name} end mill"
+            return f"{self.flutes}F \u2300{Format.cutter_length(self.diameter, brief=True)} {self.material.name} end mill"
         
 class DrillBitPreset(PresetBase):
     properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
@@ -254,11 +254,11 @@ class DrillBitPreset(PresetBase):
     def description_only(self):
         res = []
         if self.vfeed:
-            res.append(f"f\u2193{Format.feed(self.vfeed)}")
+            res.append(f"f\u2193{Format.feed(self.vfeed, brief=True)}")
         if self.maxdoc:
-            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc)}")
+            res.append(f"\u21a7{Format.depth_of_cut(self.maxdoc, brief=True)}")
         if self.rpm:
-            res.append(f"\u27f3{Format.rpm(self.rpm)}")
+            res.append(f"\u27f3{Format.rpm(self.rpm, brief=True)}")
         return " ".join(res)
 
 class DrillBitCutter(CutterBase):
@@ -272,7 +272,7 @@ class DrillBitCutter(CutterBase):
         self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
         return self
     def description_only(self):
-        return f"{Format.cutter_dia(self.diameter)}mm {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}mm" if self.length is not None else "")
+        return f"{Format.cutter_dia(self.diameter)} {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
     
 class Inventory(object):
     def __init__(self):

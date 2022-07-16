@@ -164,8 +164,8 @@ class CutterEditDlgTest(CutterMgrTestBase):
         orig_tool = gui.inventory.inventory.toolbitByName("cheapo 2F 2.5/12")
         dlg = gui.cutter_mgr.CreateEditCutterDialog(None, orig_tool)
         self.assertEqual(dlg.flutesEdit.text(), "2")
-        self.assertEqual(dlg.diameterEdit.text(), "2.5")
-        self.assertEqual(dlg.lengthEdit.text(), "12")
+        self.assertEqual(dlg.diameterEdit.text(), "2.5 mm")
+        self.assertEqual(dlg.lengthEdit.text(), "12 mm")
         self.clickOk(dlg)
         self.assertIsNot(dlg.cutter, orig_tool)
         self.assertEqual(dlg.cutter.diameter, orig_tool.diameter)
@@ -184,8 +184,8 @@ class CutterEditDlgTest(CutterMgrTestBase):
         orig_tool = gui.inventory.inventory.toolbitByName("3mm HSS")
         dlg = gui.cutter_mgr.CreateEditCutterDialog(None, orig_tool)
         self.assertEqual(dlg.flutesEdit.text(), "2")
-        self.assertEqual(dlg.diameterEdit.text(), "3")
-        self.assertEqual(dlg.lengthEdit.text(), "41")
+        self.assertEqual(dlg.diameterEdit.text(), "3 mm")
+        self.assertEqual(dlg.lengthEdit.text(), "41 mm")
         self.clickOk(dlg)
         self.assertIsNot(dlg.cutter, orig_tool)
         self.assertEqual(dlg.cutter.diameter, orig_tool.diameter)
@@ -217,7 +217,7 @@ class CutterListDialogTest(CutterMgrTestBase):
     def testEditCutterEM(self):
         self.verifyEditCutter("cheapo 2F 3.2/15", "pricey 4F 2/8", "carbide+TiN", gui.inventory.EndMillCutter, "\u23002 L8 carbide+TiN end mill")
     def testEditCutterDB(self):
-        self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", "HSSCo5", gui.inventory.DrillBitCutter, "2mm HSSCo5 drill bit, L=8mm")
+        self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", "HSSCo5", gui.inventory.DrillBitCutter, "2 mm HSSCo5 drill bit, L=8 mm")
     def verifyEditCutter(self, cutter_name, new_cutter_name, new_material, cutter_type, expected_str):
         tool_data = gui.inventory.inventory.toolbitByName(cutter_name, cutter_type).newInstance()
         self.assertIsNotNone(tool_data)
