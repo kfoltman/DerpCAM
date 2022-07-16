@@ -1153,6 +1153,9 @@ class OperationTreeItem(CAMTreeItem):
         self.user_tabs = set()
         PresetDerivedAttributes.resetPresetDerivedValues(self)
     def updateCheckState(self):
+        if not self.active and self.cam is not None:
+            self.cam = None
+            self.document.operationsUpdated.emit()
         self.setCheckState(Qt.CheckState.Checked if self.active else Qt.CheckState.Unchecked)
     def editTabLocations(self):
         self.document.tabEditRequested.emit(self)
