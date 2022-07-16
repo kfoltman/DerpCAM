@@ -54,8 +54,24 @@ class UnitConverter(object):
         else:
             assert False, f"Unhandled unit: {unit}"
     @staticmethod
-    def fmt(value, dp, suffix, force_suffix):
+    def fmt(value, dp, suffix, force_suffix, binary_fractions=False):
         suffix = force_suffix if force_suffix is not None else suffix
+        if binary_fractions and value != round(value):
+            max_denom = 64
+            value = round(value, dp)
+            num = round(value * max_denom * 1.0)
+            value2 = num / (max_denom * 1.0)
+            if num != 0 and abs(value - value2) < pow(0.1, dp):
+                num = int(num)
+                denom = max_denom
+                while (num & 1) == 0 and denom > 1:
+                    num = num >> 1
+                    denom = denom >> 1
+                if num >= denom:
+                    whole = num // denom
+                    num = num % denom
+                    return f"{whole} {num}/{denom}" + suffix
+                return f"{num}/{denom}" + suffix
         s = f"%0.{dp}f" % (value,)
         if '.' in s:
             s = s.rstrip("0").rstrip(".")
@@ -74,7 +90,7 @@ class UnitConverter(object):
             return fmt(value / 1000.0, dp + 3, " m", force_suffix)
         elif unit == 'in':
             # XXXKF fractions
-            return fmt(value / 25.4, dp + 1, '"', force_suffix)
+            return fmt(value / 25.4, dp + 1, '"', force_suffix, binary_fractions=True)
         elif unit == 'ft':
             return fmt(value / (12 * 25.4), dp + 2, "'", force_suffix)
         elif unit == 'mm/min' or unit == 'mm/tooth':
