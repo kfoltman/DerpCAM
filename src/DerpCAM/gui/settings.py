@@ -185,9 +185,9 @@ class PreferencesDialog(QDialog):
         self.widgetDefaults = QWidget()
         self.formDefaults = QFormLayout(self.widgetDefaults)
         self.clearanceZSpin = floatSpin(-100, 100, 2, self.config.clearance_z, "Z coordinate at which horizontal rapid moves are performed, assumed safe from collision with workholding")
-        self.formDefaults.addRow("&Clearance Z:", self.clearanceZSpin)
+        self.formDefaults.addRow("&Clearance Z (mm):", self.clearanceZSpin)
         self.safeEntryZSpin = floatSpin(-100, 100, 2, self.config.safe_entry_z, "Z coordinate above which vertical rapid moves are safe, slightly above the top of the material")
-        self.formDefaults.addRow("&Safe entry Z:", self.safeEntryZSpin)
+        self.formDefaults.addRow("&Safe entry Z (mm):", self.safeEntryZSpin)
 
         self.widgetUnits = QWidget()
         self.formUnits = QFormLayout(self.widgetUnits)
