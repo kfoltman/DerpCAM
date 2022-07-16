@@ -84,7 +84,7 @@ def contour_parallel(shape, tool, displace=0):
         displace_now += stepover
         toolpath.mergeToolpaths(tps, res, tool.diameter)
     if len(tps) == 0:
-        raise ValueError("Empty contour")
+        return toolpath.Toolpaths([])
     tps = list(reversed(tps))
     tps = toolpath.joinClosePaths(tps_islands + tps)
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
@@ -322,6 +322,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         hsm_path = tp.path
         gen_path = []
         if from_outside:
+            if not hsm_path:
+                continue
             x, y = hsm_path[0].start.x, hsm_path[0].start.y
             rt = 0
             x -= rt
@@ -434,7 +436,7 @@ def shape_to_object(shape, tool, displace=0, from_outside=False):
     else:
         return MultiPolygon(inputs)
 
-def refine_shape(shape, previous, current, stepover):
+def refine_shape_internal(shape, previous, current, stepover):
     alltps = []
     entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
     mill_all = shape_to_object(shape, milling_tool.FakeTool(current))
@@ -442,7 +444,7 @@ def refine_shape(shape, previous, current, stepover):
     previous_toolpath = shape_to_object(shape, milling_tool.FakeTool(previous))
     # Area cut by that toolpath
     previous_milled = previous_toolpath.buffer(previous / 2)
-    # Shrunk by current tool radius
+    # Minus previously milled, plus margin, but limited to the target area
     unmilled = mill_all.difference(previous_milled).buffer(current / 2 * (1 - stepover)).intersection(mill_all)
     unmilled_polygons = objects_to_polygons(unmilled)
     output_shapes = []
@@ -452,4 +454,18 @@ def refine_shape(shape, previous, current, stepover):
             exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
             interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
             output_shapes.append(shapes.Shape(exterior, True, interiors))
+    return output_shapes
+
+def refine_shape_external(shape, previous, current, stepover):
+    from shapely.geometry import Polygon, GeometryCollection, MultiPolygon
+    alltps = []
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
+    milled_polygons = entire_shape.buffer(previous / 2).buffer(-previous / 2)
+    unmilled = milled_polygons.buffer(current / 2).difference(entire_shape).buffer((previous-current) / 2).difference(entire_shape)
+    unmilled_polygons = objects_to_polygons(unmilled)
+    output_shapes = []
+    for polygon in unmilled_polygons:
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
+        output_shapes.append(shapes.Shape(exterior, True, interiors))
     return output_shapes

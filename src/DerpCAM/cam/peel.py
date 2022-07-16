@@ -28,7 +28,7 @@ def outside_peel(shape, tool, displace=0):
             # diff with other islands
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
     # fixPathNesting normally expects the opposite order (inside to outside)
-    tps = list(reversed(shapes.fixPathNesting(list(reversed(tps)))))
+    tps = list(reversed(toolpath.fixPathNesting(list(reversed(tps)))))
     tps = toolpath.joinClosePathsWithCollisionCheck(tps, boundary_transformed, islands_transformed)
     tps_islands = toolpath.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
     geom.set_calculation_progress(expected_size, expected_size)

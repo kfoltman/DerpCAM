@@ -1381,6 +1381,8 @@ class OperationTreeItem(CAMTreeItem):
                 return lambda: self.cam.outside_peel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
                 return lambda: self.cam.outside_peel_hsm(shape)
+            else:
+                raise ValueError("Strategy not supported for outside cuts")
         elif self.operation == OperationType.ENGRAVE:
             return lambda: self.cam.engrave(shape)
         elif self.operation == OperationType.INTERPOLATED_HOLE:
@@ -1388,8 +1390,11 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
-    def refineShape(self, shape, previous, current, stepover):
-        return cam.pocket.refine_shape(shape, previous, current, stepover)
+    def refineShape(self, shape, previous, current, stepover, is_external):
+        if is_external:
+            return cam.pocket.refine_shape_external(shape, previous, current, stepover)
+        else:
+            return cam.pocket.refine_shape_internal(shape, previous, current, stepover)
     def updateCAMWork(self):
         try:
             errors = []
@@ -1442,10 +1447,11 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = prev_diameter
                 if prev_diameter is None:
                     raise ValueError("No matching milling operation to refine")
+                self.is_external = (prev_operation.operation == OperationType.OUTSIDE_CONTOUR)
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
-                        res += self.refineShape(i, prev_diameter, diameter_plus, pda.stepover / 100.0)
+                        res += self.refineShape(i, prev_diameter, diameter_plus, pda.stepover / 100.0, self.is_external)
                     self.shape = res
                 else:
                     if islands:
@@ -1453,7 +1459,7 @@ class OperationTreeItem(CAMTreeItem):
                             item = self.document.drawing.itemById(island).translated(*translation).toShape()
                             if item.closed:
                                 self.shape.add_island(item.boundary)
-                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, pda.stepover / 100.0)
+                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, pda.stepover / 100.0, self.is_external)
             else:
                 self.prev_diameter = None
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
