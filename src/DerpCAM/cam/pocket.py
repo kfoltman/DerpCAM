@@ -434,18 +434,20 @@ def shape_to_object(shape, tool, displace=0, from_outside=False):
     else:
         return MultiPolygon(inputs)
 
-def refine_shape(shape, previous, current):
+def refine_shape(shape, previous, current, stepover):
     alltps = []
     entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
-    previous_tool = milling_tool.FakeTool(previous)
-    previous_toolpath = shape_to_object(shape, previous_tool)
-    # This is the actual shape that has been milled by the previous tool
-    previous_outcome = previous_toolpath.buffer((previous - current) / 2)
-    unmilled = entire_shape.difference(previous_outcome)
+    mill_all = shape_to_object(shape, milling_tool.FakeTool(current))
+    # Toolpath made by the previous tool
+    previous_toolpath = shape_to_object(shape, milling_tool.FakeTool(previous))
+    # Area cut by that toolpath
+    previous_milled = previous_toolpath.buffer(previous / 2)
+    # Shrunk by current tool radius
+    unmilled = mill_all.difference(previous_milled).buffer(current / 2 * (1 - stepover)).intersection(mill_all)
     unmilled_polygons = objects_to_polygons(unmilled)
     output_shapes = []
     for polygon in unmilled_polygons:
-        #polygon = polygon.buffer(current / 2).intersection(entire_shape)
+        polygon = polygon.buffer(current / 2).intersection(entire_shape)
         if polygon.buffer(-current / 2):
             exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
             interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]

@@ -1012,7 +1012,6 @@ class PresetDerivedAttributes(object):
         inventory.EndMillCutter : {i.name : i for i in attrs_all},
         inventory.DrillBitCutter : {i.name : i for i in attrs_common},
     }
-    @classmethod
     def __init__(self, operation, preset=None):
         if preset is None:
             preset = operation.tool_preset
@@ -1085,7 +1084,7 @@ class WorkerThread(threading.Thread):
             if isinstance(self.worker_func, list):
                 # XXXKF this gives pretty bad progress reporting
                 for fn in self.worker_func:
-                    if fn is not None:
+                    if self.parent_operation.cam and fn is not None:
                         fn()
             else:
                 self.worker_func()
@@ -1389,8 +1388,8 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
-    def refineShape(self, shape, previous, current):
-        return cam.pocket.refine_shape(shape, previous, current)
+    def refineShape(self, shape, previous, current, stepover):
+        return cam.pocket.refine_shape(shape, previous, current, stepover)
     def updateCAMWork(self):
         try:
             errors = []
@@ -1446,7 +1445,7 @@ class OperationTreeItem(CAMTreeItem):
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
-                        res += self.refineShape(i, prev_diameter, diameter_plus)
+                        res += self.refineShape(i, prev_diameter, diameter_plus, pda.stepover / 100.0)
                     self.shape = res
                 else:
                     if islands:
@@ -1454,7 +1453,7 @@ class OperationTreeItem(CAMTreeItem):
                             item = self.document.drawing.itemById(island).translated(*translation).toShape()
                             if item.closed:
                                 self.shape.add_island(item.boundary)
-                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus)
+                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, pda.stepover / 100.0)
             else:
                 self.prev_diameter = None
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
