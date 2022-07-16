@@ -49,7 +49,7 @@ just fine in many cases.
 
 * external milling - producing a target shape by milling from the outside edges
 
-* rest machining - refining a coarsely-milled pocket using a finer tool
+* rest machining - refining a coarsely-milled pocket or outline using a finer tool
 
 * single-line text objects - no need to convert text to paths for most operations, it is based on system fonts like TrueType/OpenType etc.
 
