@@ -61,13 +61,14 @@ just fine in many cases.
 
 The following third-party Python 3 packages are required:
 
+* EZDXF
 * PyClipper
 * PyVoronoi
 * Shapely
 
 Those can be installed using the following command:
 
-        pip3 install pyclipper pyvoronoi shapely
+        pip3 install ezdxf pyclipper pyvoronoi shapely
 
 The current method of installing DerpCAM is to download it from github:
 
