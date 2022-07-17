@@ -183,21 +183,21 @@ class UnitConverter(object):
             value = float(value)
         return value, unit
 
+def mk_fmt(dp, unit="mm", suffix=None):
+    return lambda value, alt_suffix=None, brief=False: UnitConverter.format(value, UnitConverter.curUnit(unit), dp, "" if brief else (alt_suffix or suffix))
+
 class Format(object):
-    @staticmethod
-    def fmt(dp, unit="mm", suffix=None):
-        return lambda value, alt_suffix=None, brief=False: UnitConverter.format(value, UnitConverter.curUnit(unit), dp, "" if brief else (alt_suffix or suffix))
-    cutter_dia = fmt(3)
-    cutter_length = fmt(2)
-    depth_of_cut = fmt(3)
-    feed = fmt(1, unit="mm/min")
-    rpm = fmt(1, unit="rpm")
-    surf_speed = fmt(2, unit="m/min")
-    chipload = fmt(4, unit="mm/tooth")
-    coord = fmt(2)
-    angle = fmt(2, unit='\u00b0')
-    percent = fmt(2, unit='', suffix=" %")
-    as_percent = fmt(2, unit='%')
+    cutter_dia = mk_fmt(3)
+    cutter_length = mk_fmt(2)
+    depth_of_cut = mk_fmt(3)
+    feed = mk_fmt(1, unit="mm/min")
+    rpm = mk_fmt(1, unit="rpm")
+    surf_speed = mk_fmt(2, unit="m/min")
+    chipload = mk_fmt(4, unit="mm/tooth")
+    coord = mk_fmt(2)
+    angle = mk_fmt(2, unit='\u00b0')
+    percent = mk_fmt(2, unit='', suffix=" %")
+    as_percent = mk_fmt(2, unit='%')
     @staticmethod
     def coord_unit():
         return UnitConverter.curUnit("mm")
