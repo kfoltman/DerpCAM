@@ -39,37 +39,36 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
     def __init__(self, owner):
         view.OperationsRenderer.__init__(self, owner.cam)
         self.owner = owner
-        self.isFlashHighlighted = False
+        self.isFlashHighlighted = lambda: False
     def isHighlighted(self, operation):
-        if self.isFlashHighlighted:
+        if self.isFlashHighlighted():
             return (64, 160, 128) if not self.owner.isSelected else (0, 192, 255)
         return self.owner.isSelected
     def renderToolpaths(self, owner, alpha_scale=1.0):
-        self.isFlashHighlighted = owner.flash_highlight is self.owner
+        self.isFlashHighlighted = lambda: owner.flash_highlight is self.owner
         view.OperationsRenderer.renderToolpaths(self, owner, alpha_scale)
         if owner.mode == DrawingUIMode.MODE_NORMAL and GeometrySettings.draw_arrows:
             self.renderArrows(owner)
     def renderArrows(self, owner):
         pen = QPen(QColor(0, 0, 0), 0)
         self.owner.document.forEachOperation(lambda item: [self.renderArrowsForPath(owner, pen, path) for operation in item.renderer.operations.operations if item.renderer.operations for path in operation.flattened ] if item.renderer else None)
-    def renderArrowhead(self, owner, p1, p2, pos):
+    def renderArrowhead(self, p1, p2, pos, output):
         if p2.is_arc():
             angle = p2.angle_at_fraction(pos) + pi / 2
             midpoint = p2.at_fraction(pos)
         else:
-            angle = atan2(p2.y - p1.y, p2.x - p1.x)
+            angle = p1.angle_to(p2)
             midpoint = weighted(p1, p2, pos)
         d = 0.3
         d2 = 1
         da = pi / 2
         da2 = 0
-        arrow = [
+        output.append([
             PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
             PathPoint(midpoint.x + d * cos(angle + da), midpoint.y + d * sin(angle + da)),
             PathPoint(midpoint.x + d * cos(angle - da), midpoint.y + d * sin(angle - da)),
             PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
-        ]
-        owner.addPolygons(QBrush(QColor(0, 0, 0)), [arrow], False, darken=False)
+        ])
     def renderArrowsForPath(self, owner, pen, path):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
@@ -87,20 +86,21 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
         #nodes = CircleFitter.simplify(nodes)
         lastpt2 = nodes[0]
         cnt = 0
+        arrows = []
         while i < len(nodes):
             p1 = lastpt
             p2 = nodes[i]
             if p1 is not None and (dist(p1, p2) > 2 or p2.is_arc() or cnt > 5):
                 if p2.is_arc():
                     if p2.length() > 5:
-                        self.renderArrowhead(owner, p1, p2, 0.15)
-                        self.renderArrowhead(owner, p1, p2, 0.85)
-                    self.renderArrowhead(owner, p1, p2, 0.5)
+                        self.renderArrowhead(p1, p2, 0.15, arrows)
+                        self.renderArrowhead(p1, p2, 0.85, arrows)
+                    self.renderArrowhead(p1, p2, 0.5, arrows)
                 elif dist(p1, p2) > 5:
-                    self.renderArrowhead(owner, p1, p2, 0.15)
-                    self.renderArrowhead(owner, p1, p2, 0.85)
+                    self.renderArrowhead(p1, p2, 0.15, arrows)
+                    self.renderArrowhead(p1, p2, 0.85, arrows)
                 else:
-                    self.renderArrowhead(owner, p1, p2, 0.5)
+                    self.renderArrowhead(p1, p2, 0.5, arrows)
                 cnt = 0
                 lastpt2 = p2
             elif lastpt is not None:
@@ -110,6 +110,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
                     cnt += dist(p1, p2)
             lastpt = p2.seg_end()
             i += 1
+        owner.addPolygons(QBrush(QColor(0, 0, 0)), arrows, False, darken=False)
 
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
@@ -138,7 +139,6 @@ class DrawingViewer(view.PathViewer):
         if self.flash_highlight is item:
             return
         self.flash_highlight = item
-        self.renderDrawing()
         self.repaint()
     def changeMode(self, mode, item):
         self.mode = mode

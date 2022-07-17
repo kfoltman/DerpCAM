@@ -101,6 +101,8 @@ class PathPoint(PathNode):
         dx = other.x - self.x
         dy = other.y - self.y
         return sqrt(dx * dx + dy * dy)
+    def angle_to(self, p2):
+        return atan2(p2.y - self.y, p2.x - self.x)
     @staticmethod
     def from_tuple(t):
         if len(t) != 2:
