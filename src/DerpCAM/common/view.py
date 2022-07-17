@@ -326,7 +326,7 @@ class PathViewer(QWidget):
 
     def addRapidLine(self, pen, sp, ep):
         if draw_arrows_for_rapids and dist(sp, ep) > 6:
-            midp = weighted(sp, ep, 0.5)
+            midp = weighted(sp, ep, 0.4)
             angle = atan2(ep.y - sp.y, ep.x - sp.x)
             dangle = 7 * pi / 8
             r = 3

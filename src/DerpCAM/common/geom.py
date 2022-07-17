@@ -237,11 +237,22 @@ class Path(object):
         return res
     def without_circles(self):
         return Path([i for i in self.nodes if not i.is_circle()], self.closed)
-    def subpath(self, start, end):
+    def subpath(self, start, end, hint=None):
         res = []
-        tlen = 0
-        it = PathSegmentIterator(self)
-        for last, p in it:
+        if hint is None or hint is Ellipsis:
+            it = PathSegmentIterator(self)
+            tlen = 0
+            prev = hint
+        else:
+            it, tlen = hint
+            prev = None
+        while True:
+            if hint is not None and tlen < start:
+                prev = (it.clone(), tlen)
+            try:
+                last, p = next(it)
+            except StopIteration:
+                break
             if p.is_arc():
                 assert last.dist(p.p1) < 1 / GeometrySettings.RESOLUTION
                 d = p.length()
@@ -268,8 +279,13 @@ class Path(object):
         # Eliminate duplicates
         res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
         if res[0].seg_start() == res[-1].seg_end():
-            return Path(res, True) if res[-1].is_arc() else Path(res[:-1], True)
-        return Path(res, False)
+            sp = Path(res, True) if res[-1].is_arc() else Path(res[:-1], True)
+        else:
+            sp = Path(res, False)
+        if hint is None:
+            return sp
+        else:
+            return sp, prev
     def reverse(self):
         res = []
         i = len(self.nodes) - 1
@@ -360,11 +376,17 @@ class Path(object):
         return IntPath([i.seg_end() for i in self.nodes]).orientation()
     # Return the point at 'pos' position along the path.
     def point_at(self, pos):
-        tlen = 0
-        it = PathSegmentIterator(self)
+        return self.point_at_hint(pos, self.start_hint())[0]
+    def start_hint(self):
+        return (PathSegmentIterator(self), 0)
+    def point_at_hint(self, pos, hint):
+        it, tlen = hint
+        it = it.clone()
+        hint = (it.clone(), tlen)
+        assert pos >= tlen
         for last, p in it:
             if pos <= tlen:
-                return last
+                return last, hint
             if p.is_arc():
                 tseg = p.length()
             else:
@@ -372,13 +394,14 @@ class Path(object):
             if pos < tlen + tseg:
                 alpha = (pos - tlen) / tseg
                 if p.is_arc():
-                    return p.at_fraction(alpha)
+                    return p.at_fraction(alpha), hint
                 else:
-                    return weighted(last, p, alpha)
+                    return weighted(last, p, alpha), hint
             tlen += tseg
+            hint = (it.clone(), tlen)
         if self.closed and pos > tlen:
-            return self.point_at(pos % tlen)
-        return last
+            return self.point_at(pos % tlen), hint
+        return last, hint
     def seg_start(self):
         return self.nodes[0]
     def seg_end(self):
@@ -409,10 +432,12 @@ class Path(object):
         return (xcoords.min, ycoords.min, xcoords.max, ycoords.max)
 
 class PathSegmentIterator(object):
-    def __init__(self, path):
+    def __init__(self, path, index=0):
         self.path = path
-        self.index = 0
+        self.index = index
         assert not self.path or not self.path.nodes or self.path.nodes[0].is_point()
+    def clone(self):
+        return PathSegmentIterator(self.path, self.index)
     def __iter__(self):
         return self
     def __next__(self):
