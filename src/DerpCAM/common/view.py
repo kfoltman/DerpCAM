@@ -235,6 +235,7 @@ class PathViewer(QWidget):
         self.repaint()
     def addFilledPath(self, brush, polylines, darken=True):
         path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
         for polyline in polylines:
             path.moveTo(polyline[0].x, polyline[0].y)
             for point in polyline[1:]:
