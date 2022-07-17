@@ -83,6 +83,10 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
         i = 0
         pos = 0
         spacing = 10
+        if tlength < spacing / 2:
+            return
+        if spacing > tlength:
+            spacing = tlength
         max_arrows = 1000
         if tlength / spacing > max_arrows:
             spacing = tlength / max_arrows
