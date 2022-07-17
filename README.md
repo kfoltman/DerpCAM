@@ -61,19 +61,20 @@ just fine in many cases.
 
 A Python 3 interpreter (minimum version 3.9) is necessary to run DerpCAM. The following third-party Python 3 packages are also required:
 
+* PyQt5
 * EZDXF
 * PyClipper
 * PyVoronoi
 * Shapely
 
-Those can be installed using the following command:
-
-        pip3 install ezdxf pyclipper pyvoronoi shapely
-
 The current method of installing DerpCAM is to download it from github:
 
         git clone https://github.com/kfoltman/DerpCAM/
         cd DerpCAM
+
+Then, the required Python packages can be installed using the following command:
+
+        pip3 install -r requirements.txt
 
 Additionally, it is highly recommended to obtain the HSM library by running the
 following command from the DerpCAM directory:
