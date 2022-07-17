@@ -59,7 +59,7 @@ just fine in many cases.
 
 ## Requirements and installation
 
-The following third-party Python 3 packages are required:
+A Python 3 interpreter (minimum version 3.9) is necessary to run DerpCAM. The following third-party Python 3 packages are also required:
 
 * EZDXF
 * PyClipper
