@@ -2,6 +2,7 @@ from DerpCAM.common import geom
 from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipper
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
@@ -256,8 +257,23 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
 
 pyvlock = threading.RLock()
 
+def sort_polygons(polygons):
+    if len(polygons) <= 1:
+        return polygons
+    output = [polygons.pop(0)]
+    # Basic unoptimized greedy algo for now
+    while polygons:
+        best = 0
+        bestd = polygons[0].distance(output[-1])
+        for j in range(1, len(polygons)):
+            d = polygons[j].distance(output[-1])
+            if d < bestd:
+                bestd = d
+                best = j
+        output.append(polygons.pop(best))
+    return output
+
 def objects_to_polygons(polygon):
-    from shapely.geometry import Polygon, GeometryCollection, MultiPolygon
     inputs = []
     if isinstance(polygon, Polygon):
         inputs.append(polygon)
@@ -272,7 +288,6 @@ def objects_to_polygons(polygon):
     return inputs
 
 def shape_to_polygons(shape, tool, displace=0, from_outside=False):
-    from shapely.geometry import LinearRing, Polygon
     tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
     if from_outside:
         subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
@@ -430,46 +445,72 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     return toolpath.Toolpaths(alltps)
 
 def shape_to_object(shape, tool, displace=0, from_outside=False):
-    from shapely.geometry import MultiPolygon
     inputs = shape_to_polygons(shape, tool, displace, from_outside)
     if len(inputs) == 1:
         return inputs[0]
     else:
         return MultiPolygon(inputs)
 
-def refine_shape_internal(shape, previous, current, stepover):
+def refine_shape_internal(shape, previous, current, min_entry_dia):
     alltps = []
     entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
     # Toolpath made by the previous tool
     previous_toolpath = shape_to_object(shape, milling_tool.FakeTool(previous))
     # Area cut by that toolpath
     previous_milled = previous_toolpath.buffer(previous / 2)
+    safe_entry_to_shape = previous_milled.intersection(entire_shape).buffer(-min_entry_dia - current / 2)
     # What's left to mill
     unmilled = entire_shape.difference(previous_milled)
     unmilled_polygons = objects_to_polygons(unmilled)
-    output_shapes = []
+    output_polygons = []
+    junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
     for polygon in unmilled_polygons:
         # Skip very tiny shapes
-        if polygon.buffer(-current / 10):
+        polygons = polygon.buffer(-junk_cutoff)
+        if polygons:
             # Extend each fragment, but only within the target area.
-            buffered = polygon.buffer(current)
-            buffered = buffered.intersection(entire_shape)
+            orig_buffered = polygons.buffer(current + junk_cutoff)
+            buffered = orig_buffered.intersection(entire_shape)
             for polygon2 in objects_to_polygons(buffered):
                 if polygon2.difference(previous_milled):
-                    exterior = [geom.PathPoint(x, y) for x, y in polygon2.exterior.coords]
-                    interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon2.interiors]
-                    output_shapes.append(shapes.Shape(exterior, True, interiors))
+                    entry_areas = polygon2.intersection(safe_entry_to_shape)
+                    for area in objects_to_polygons(entry_areas):
+                        pt = area.centroid
+                        if not area.contains(pt):
+                            pt = area.representative_point()
+                        entry_circle = pt.buffer(current / 2 + min_entry_dia)
+                        polygon2 = polygon2.union(entry_circle)
+                    output_polygons.append(polygon2)
+    output_polygons = objects_to_polygons(MultiPolygon(output_polygons).buffer(0))
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
+        output_shapes.append(shapes.Shape(exterior, True, interiors))
     return output_shapes
 
-def refine_shape_external(shape, previous, current, stepover):
-    from shapely.geometry import Polygon, GeometryCollection, MultiPolygon
+def refine_shape_external(shape, previous, current, min_entry_dia):
     alltps = []
     entire_shape = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
-    milled_polygons = entire_shape.buffer(previous / 2).buffer(-previous / 2)
-    unmilled = milled_polygons.buffer(current / 2).difference(entire_shape).buffer((previous-current) / 2).difference(entire_shape)
+    previous_milled_outline = entire_shape.buffer(previous / 2)
+    previous_milled = previous_milled_outline.buffer(-previous / 2)
+    mill_slot = previous_milled_outline.difference(previous_milled)
+    unmilled = previous_milled.difference(entire_shape)
     unmilled_polygons = objects_to_polygons(unmilled)
-    output_shapes = []
+    output_polygons = []
+    junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
     for polygon in unmilled_polygons:
+        # Skip very tiny shapes
+        polygons = polygon.buffer(-junk_cutoff)
+        if polygons:
+            polygons = polygons.buffer(current + junk_cutoff).difference(entire_shape)
+            for polygon2 in objects_to_polygons(polygons):
+                entry_circle = polygon2.intersection(mill_slot).centroid.buffer(current / 2 + min_entry_dia).difference(entire_shape)
+                polygon2 = polygon2.union(entry_circle)
+            output_polygons.append(polygon2)
+    output_polygons = objects_to_polygons(MultiPolygon(output_polygons).buffer(0))
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
         exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
         interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
         output_shapes.append(shapes.Shape(exterior, True, interiors))

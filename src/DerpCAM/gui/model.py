@@ -1390,11 +1390,11 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
-    def refineShape(self, shape, previous, current, stepover, is_external):
+    def refineShape(self, shape, previous, current, min_entry_dia, is_external):
         if is_external:
-            return cam.pocket.refine_shape_external(shape, previous, current, stepover)
+            return cam.pocket.refine_shape_external(shape, previous, current, min_entry_dia)
         else:
-            return cam.pocket.refine_shape_internal(shape, previous, current, stepover)
+            return cam.pocket.refine_shape_internal(shape, previous, current, min_entry_dia)
     def updateCAMWork(self):
         try:
             errors = []
@@ -1446,12 +1446,15 @@ class OperationTreeItem(CAMTreeItem):
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
                 self.prev_diameter = prev_diameter
                 if prev_diameter is None:
-                    raise ValueError("No matching milling operation to refine")
+                    if pda.offset:
+                        raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)} and offset {Format.coord(pda.offset)}")
+                    else:
+                        raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)}")
                 self.is_external = (prev_operation.operation == OperationType.OUTSIDE_CONTOUR)
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
-                        res += self.refineShape(i, prev_diameter, diameter_plus, pda.stepover / 100.0, self.is_external)
+                        res += self.refineShape(i, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
                     self.shape = res
                 else:
                     if islands:
@@ -1459,7 +1462,7 @@ class OperationTreeItem(CAMTreeItem):
                             item = self.document.drawing.itemById(island).translated(*translation).toShape()
                             if item.closed:
                                 self.shape.add_island(item.boundary)
-                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, pda.stepover / 100.0, self.is_external)
+                    self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
             else:
                 self.prev_diameter = None
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
@@ -1479,6 +1482,7 @@ class OperationTreeItem(CAMTreeItem):
             self.cam = None
             self.renderer = None
             self.error = str(e)
+            self.document.operationsUpdated.emit()
             if not isinstance(e, ValueError):
                 raise
     def reorderItem(self, direction):
@@ -2039,7 +2043,8 @@ class DocumentModel(QObject):
         self.forEachOperation(lambda item: self.updateRefineOp(item, shape_ids))
     def updateRefineOp(self, operation, shape_ids):
         if operation.operation == OperationType.REFINE and operation.shape_id in shape_ids and operation.orig_shape:
-            diameter_plus = operation.cutter.diameter + 2 * operation.offset
+            pda = PresetDerivedAttributes(operation)
+            diameter_plus = operation.cutter.diameter + 2 * pda.offset
             prev_diameter, prev_operation, islands = self.largerDiameterForShape(operation.orig_shape, diameter_plus)
             if prev_diameter != operation.prev_diameter:
                 operation.startUpdateCAM()
