@@ -312,6 +312,16 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
             else:
                 tp = cam.geometry.InsidePocket(polygon, step, arc_dir, generate=True)
+        if not from_outside:
+            rt = tp.start_radius
+            min_helix_dia = tool.min_helix_diameter
+            max_helix_dia = 2 * rt
+            if min_helix_dia <= max_helix_dia:
+                r = 0.5 * min_helix_dia
+            else:
+                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
+        else:
+            rt = 0
         generator = tp._get_arcs(100)
         try:
             while not geom.is_calculation_cancelled():
@@ -325,11 +335,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             if not hsm_path:
                 continue
             x, y = hsm_path[0].start.x, hsm_path[0].start.y
-            rt = 0
-            x -= rt
         else:
             x, y = tp.start_point.x, tp.start_point.y
-            rt = tp.start_radius
         if not from_outside:
             r = 0
             c = geom.CandidateCircle(x, y, rt)
@@ -337,12 +344,6 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 a = math.atan2(hsm_path[0].start.y - y, hsm_path[0].start.x - x)
             else:
                 a = 0
-            min_helix_dia = tool.min_helix_diameter
-            max_helix_dia = 2 * rt
-            if min_helix_dia <= max_helix_dia:
-                r = 0.5 * min_helix_dia
-            else:
-                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
             pitch = tool.diameter * tool.stepover
             if False:
                 # Old method, uses concentric circles, marginally better tested but has direction changes
@@ -439,21 +440,25 @@ def shape_to_object(shape, tool, displace=0, from_outside=False):
 def refine_shape_internal(shape, previous, current, stepover):
     alltps = []
     entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
-    mill_all = shape_to_object(shape, milling_tool.FakeTool(current))
     # Toolpath made by the previous tool
     previous_toolpath = shape_to_object(shape, milling_tool.FakeTool(previous))
     # Area cut by that toolpath
     previous_milled = previous_toolpath.buffer(previous / 2)
-    # Minus previously milled, plus margin, but limited to the target area
-    unmilled = mill_all.difference(previous_milled).buffer(current / 2 * (1 - stepover)).intersection(mill_all)
+    # What's left to mill
+    unmilled = entire_shape.difference(previous_milled)
     unmilled_polygons = objects_to_polygons(unmilled)
     output_shapes = []
     for polygon in unmilled_polygons:
-        polygon = polygon.buffer(current / 2).intersection(entire_shape)
-        if polygon.buffer(-current / 2):
-            exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
-            interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
-            output_shapes.append(shapes.Shape(exterior, True, interiors))
+        # Skip very tiny shapes
+        if polygon.buffer(-current / 10):
+            # Extend each fragment, but only within the target area.
+            buffered = polygon.buffer(current)
+            buffered = buffered.intersection(entire_shape)
+            for polygon2 in objects_to_polygons(buffered):
+                if polygon2.difference(previous_milled):
+                    exterior = [geom.PathPoint(x, y) for x, y in polygon2.exterior.coords]
+                    interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon2.interiors]
+                    output_shapes.append(shapes.Shape(exterior, True, interiors))
     return output_shapes
 
 def refine_shape_external(shape, previous, current, stepover):
