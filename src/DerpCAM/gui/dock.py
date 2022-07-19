@@ -75,6 +75,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
 
         self.tabs.setTabPosition(QTabWidget.South)
         self.tabs.currentChanged.connect(self.tabSelectionChanged)
+        self.document.operationsUpdated.connect(lambda: self.updateOperationIcons())
         self.setWidget(self.tabs)
     def onCutterChanged(self, cutter):
         self.shapeTree.repaint()
@@ -84,6 +85,13 @@ class CAMObjectTreeDockWidget(QDockWidget):
         item = self.document.operModel.itemFromIndex(index)
         if item:
             self.operationTouched.emit(item)
+    def updateOperationIcons(self):
+        if any(self.document.checkCAMErrors()):
+            self.tabs.setTabIcon(1, self.tabs.style().standardIcon(QStyle.SP_MessageBoxCritical))
+        elif any(self.document.checkCAMWarnings()):
+            self.tabs.setTabIcon(1, self.tabs.style().standardIcon(QStyle.SP_MessageBoxWarning))
+        else:
+            self.tabs.setTabIcon(1, QIcon())
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
             self.returnKeyPressed(self.activeSelection())

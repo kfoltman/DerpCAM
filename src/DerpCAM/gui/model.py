@@ -2092,6 +2092,8 @@ class DocumentModel(QObject):
         return not cancelled
     def checkCAMErrors(self):
         return self.forEachOperation(lambda item: item.error)
+    def checkCAMWarnings(self):
+        return self.forEachOperation(lambda item: item.warning)
     def getToolbitList(self, data_type: type):
         res = [(tb.id, tb.description()) for tb in self.project_toolbits.values() if isinstance(tb, data_type)]
         #res += [(tb.id, tb.description()) for tb in inventory.inventory.toolbits if isinstance(tb, data_type) and tb.presets]
