@@ -58,8 +58,12 @@ if args.export_gcode:
             doLoad(args)
             document.validateForOutput()
             document.exportGcode(args.export_gcode[0])
-        except ValueError as e:
-            sys.stderr.write(f"Error: {e}\n")
+            errors = document.checkCAMErrors()
+            errors = [i for i in errors if i is not None]
+            if any(errors):
+                raise ValueError("\n".join(errors))
+        except Exception as e:
+            sys.stderr.write(f"Cannot generate G-Code for {args.export_gcode[0]}: {e}\n")
             retcode = 2
 else:
     cutter_mgr.loadInventory()
