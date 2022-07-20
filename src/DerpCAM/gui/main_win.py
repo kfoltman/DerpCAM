@@ -8,7 +8,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import guiutils
-from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr
+from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about
 
 OperationType = model.OperationType
 
@@ -91,6 +91,9 @@ class CAMMainWindow(QMainWindow):
             ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
             ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
+        ])
+        self.helpMenu = self.addMenu("&Help", [
+            ("&About...", lambda: self.helpAbout(), None, "Display project information"),
         ])
         self.coordLabel = QLabel("")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -265,6 +268,10 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.REFINE)
     def drillHole(self):
         self.millSelectedShapes(OperationType.DRILLED_HOLE)
+    def helpAbout(self):
+        dlg = about.AboutDlg()
+        dlg.initUI()
+        dlg.exec_()
     def canvasMouseMove(self, x, y):
         Format = guiutils.Format
         self.coordLabel.setText(f"X={Format.coord(x, brief=True)}{Format.coord_unit()} Y={Format.coord(y, brief=True)}{Format.coord_unit()}")
