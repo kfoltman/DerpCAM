@@ -1547,11 +1547,13 @@ class AddOperationUndoCommand(QUndoCommand):
         self.row = row
     def undo(self):
         self.parent.takeRow(self.row)
+        self.document.refreshRefineForOpOrCycle(self.item)
         if isinstance(self.item, CycleTreeItem):
             del self.document.project_toolbits[self.item.cutter.name]
             self.item.document.refreshToolList()
     def redo(self):
         self.parent.insertRow(self.row, self.item)
+        self.document.refreshRefineForOpOrCycle(self.item)
         if isinstance(self.item, CycleTreeItem):
             self.document.project_toolbits[self.item.cutter.name] = self.item.cutter
             self.item.document.refreshToolList()
@@ -1589,12 +1591,14 @@ class DeleteCycleUndoCommand(QUndoCommand):
             self.document.selectCutterCycle(self.cycle)
         if self.def_preset is not None:
             self.document.default_preset_by_tool[self.cycle.cutter] = self.def_preset
+        self.document.refreshRefineForOpOrCycle(self.cycle)
         self.document.refreshToolList()
     def redo(self):
         self.row = self.cycle.row()
         self.was_default = self.cycle is self.document.current_cutter_cycle
         self.def_preset = self.document.default_preset_by_tool.get(self.cycle.cutter, None)
         self.document.operModel.invisibleRootItem().takeRow(self.row)
+        self.document.refreshRefineForOpOrCycle(self.cycle)
         del self.document.project_toolbits[self.cycle.cutter.name]
         if self.cycle.cutter in self.document.default_preset_by_tool:
             del self.document.default_preset_by_tool[self.cycle.cutter]
@@ -1610,6 +1614,7 @@ class DeleteOperationUndoCommand(QUndoCommand):
         self.row = row
     def undo(self):
         self.parent.insertRow(self.row, self.item)
+        self.document.refreshRefineForOpOrCycle(self.item)
         if isinstance(self.item, CycleTreeItem) and self.deleted_cutter:
             self.document.project_toolbits[self.item.cutter.name] = self.deleted_cutter
             self.document.refreshToolList()
@@ -1617,6 +1622,7 @@ class DeleteOperationUndoCommand(QUndoCommand):
             self.item.startUpdateCAM()
     def redo(self):
         self.parent.takeRow(self.row)
+        self.document.refreshRefineForOpOrCycle(self.item)
         if isinstance(self.item, CycleTreeItem):
             # Check if there are other users of the same tool
             if self.document.cycleForCutter(self.item.cutter) is None:
@@ -2154,6 +2160,16 @@ class DocumentModel(QObject):
                 return p
     def refineOpsForShapes(self, shape_ids):
         return self.allOperations(lambda item: item.operation == OperationType.REFINE and item.shape_id in shape_ids)
+    def refreshRefineForOpOrCycle(self, item):
+        shape_ids = set()
+        if isinstance(item, CycleTreeItem):
+            for i in item.items():
+                self.refreshRefineForOpOrCycle(i)
+        elif isinstance(item, OperationTreeItem):
+            shape_ids.add(item.shape_id)
+        refineOps = self.refineOpsForShapes(shape_ids)
+        for i in refineOps:
+            i.startUpdateCAM()
     def checkUpdateSuspended(self, item):
         if self.update_suspended is item:
             self.update_suspended_dirty = True
