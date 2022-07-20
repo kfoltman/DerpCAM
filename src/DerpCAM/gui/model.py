@@ -385,6 +385,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         scale = geom.GeometrySettings.RESOLUTION
         if self.style.height * scale > 1000:
             scale = 1000 / self.style.height
+        if not isinstance(QCoreApplication.instance(), QGuiApplication):
+            raise Exception("Use --allow-text for converting files using text objects")
         font = QFont(self.style.font_name, int(self.style.height * scale), 400, False)
         metrics = QFontMetrics(font)
         twidth = metrics.horizontalAdvance(self.text) / scale
