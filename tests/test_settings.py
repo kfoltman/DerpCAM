@@ -29,12 +29,15 @@ class ConfigDialogTest(unittest.TestCase):
         self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33.25), (21, 55)])
         self.checkSpinbox("clearance_z", "clearanceZSpin", [(42, 33.25), (21, 55)])
         self.checkSpinbox("safe_entry_z", "safeEntryZSpin", [(42, 33.25), (21, -55)])
+        self.checkSpinbox("spindle_warmup", "warmupSpin", [(42, 33.2)])
     def testCheckboxes(self):
         self.checkCheckbox('simplify_arcs', 'simplifyArcsCheck')
         self.checkCheckbox('simplify_lines', 'simplifyLinesCheck')
         self.checkCheckbox('draw_arrows', 'drawArrowsCheck')
         self.checkCheckbox('dxf_inches', 'dxfInchesCheck')
+        self.checkCheckbox('grbl_output', 'grblOutputCheck')
         self.checkCheckbox('gcode_inches', 'gcodeInchesCheck')
+        self.checkCheckbox('spindle_control', 'spindleControlCheck')
     def testEditBoxes(self):
         self.checkDirEditbox('input_directory', 'inputDirEdit')
         self.checkDirEditbox('gcode_directory', 'gcodeDirEdit')

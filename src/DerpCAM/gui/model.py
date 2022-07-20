@@ -1435,6 +1435,7 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
+            self.gcode_props.rpm = pda.rpm
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
                 if isinstance(self.shape, list):
                     res = []

@@ -24,6 +24,7 @@ class OperationProps(object):
         self.margin = margin
         self.zigzag = zigzag
         self.angle = angle
+        self.rpm = None
     def clone(self, **attrs):
         res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin)
         for k, v in attrs.items():
@@ -39,6 +40,8 @@ class Gcode(object):
         self.gcode = []
         self.last_feed = 0
         self.last_feed_index = None
+        self.rpm = None
+        self.last_rpm = None
     def add(self, line):
         self.gcode.append(line)
     def add_dedup(self, line):
@@ -57,14 +60,32 @@ class Gcode(object):
         # Grbl doesn't understand G64
         accuracy_mode = "" if GeometrySettings.grbl_output else f" G64 P{accuracy:0.3f} Q{accuracy:0.3f}"
         self.add(f"G17 G90 G40 {unit_mode}{accuracy_mode}")
+    def spindle_start(self):
+        if GeometrySettings.spindle_control:
+            if self.rpm is not None:
+                self.add(f"M3 S{self.rpm}")
+                if self.last_rpm != self.rpm:
+                    self.dwell(GeometrySettings.spindle_warmup)
+                    self.last_rpm = self.rpm
+            else:
+                self.add("M3")
+    def spindle_stop(self):
+        if GeometrySettings.spindle_control:
+            self.add("M5")
+            self.last_rpm = None
     def prompt_for_tool(self, name):
+        self.spindle_stop()
         name = name.replace("(", "<").replace(")",">")
         self.add(f"M1 ({name})")
         self.reset()
     def finish(self):
+        self.spindle_stop()
         self.add("M2")
-    def begin_section(self):
+    def begin_section(self, rpm=None):
         self.last_feed = None
+        self.rpm = rpm
+        if self.rpm is not None:
+            self.spindle_start()
     def feed(self, feed):
         if feed != self.last_feed:
             if self.last_feed_index == len(self.gcode) - 1:
@@ -83,6 +104,8 @@ class Gcode(object):
         self.add("G3" + self.enc_coords_arc(x, y, z, i, j, k))
     def arc(self, direction, x=None, y=None, z=None, i=None, j=None, k=None):
         (self.arc_ccw if direction > 0 else self.arc_cw)(x, y, z, i, j, k)
+    def dwell(self, delay):
+        self.add(f"G4 P{delay:0.2f}")
     def enc_feed(self, feed):
         if self.inch_mode:
             return f"F{feed / 25.4:0.3f}"
@@ -111,8 +134,6 @@ class Gcode(object):
         if k is not None:
             res += self.enc_coord('K', k)
         return res
-    def dwell(self, millis):
-        self.add("G4 P%0.0f" % millis)
 
     def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
         i = -r * cos(angle)
@@ -577,6 +598,7 @@ class Operation(object):
         self.shape = shape
         self.tool = tool
         self.props = props
+        self.rpm = props.rpm if props is not None else None
     def outline(self, margin):
         contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, margin, self.tool.climb)
         if contour_paths is None:
@@ -609,6 +631,8 @@ class UntabbedOperation(Operation):
             paths = paths.optimize()
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
+        if not self.flattened:
+            return
         for i in self.flattened:
             if is_calculation_cancelled():
                 break
@@ -860,14 +884,14 @@ class PeckDrill(UntabbedOperation):
             nextz = max(curz - doc, self.props.depth)
             gcode.linear(z=nextz)
             if self.dwell_bottom:
-                gcode.dwell(1000 * self.dwell_bottom)
+                gcode.dwell(self.dwell_bottom)
             retrz = self.retract.get(nextz, self.props, machine_params.semi_safe_z)
             if self.slow_retract:
                 gcode.linear(z=retrz)
             else:
                 gcode.rapid(z=retrz)
             if self.dwell_retract:
-                gcode.dwell(1000 * self.dwell_retract)
+                gcode.dwell(self.dwell_retract)
             curz = nextz
 
 class HelicalDrill(UntabbedOperation):
@@ -1047,7 +1071,7 @@ class Operations(object):
         gcode.rapid(x=0, y=0)
         for operation in self.operations:
             gcode.section_info(f"Start operation: {type(operation).__name__}")
-            gcode.begin_section()
+            gcode.begin_section(operation.rpm)
             operation.to_gcode(gcode, self.machine_params)
             gcode.section_info(f"End operation: {type(operation).__name__}")
         gcode.rapid(x=0, y=0)

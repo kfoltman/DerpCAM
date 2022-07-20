@@ -11,6 +11,8 @@ class GeometrySettings:
     dxf_inches = False
     gcode_inches = False
     grbl_output = False
+    spindle_control = False
+    spindle_warmup = 0
 
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION

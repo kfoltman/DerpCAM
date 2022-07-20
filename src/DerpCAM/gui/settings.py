@@ -49,6 +49,8 @@ class ConfigSettings(object):
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
         BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
+        BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
+        FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
         ConfigSetting('input_directory', 'paths/input', ''),
@@ -90,6 +92,8 @@ class ConfigSettings(object):
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
         GeometrySettings.grbl_output = self.grbl_output
+        GeometrySettings.spindle_control = self.spindle_control
+        GeometrySettings.spindle_warmup = self.spindle_warmup
         GuiSettings.inch_mode = self.display_inches
 
 class DirectorySelector(QWidget):
@@ -164,6 +168,11 @@ class PreferencesDialog(QDialog):
         self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
         self.grblOutputCheck.setChecked(self.config.grbl_output)
         self.formCAM.addRow(self.grblOutputCheck)
+        self.spindleControlCheck = QCheckBox("&Generate spindle control commands")
+        self.spindleControlCheck.setChecked(self.config.spindle_control)
+        self.formCAM.addRow(self.spindleControlCheck)
+        self.warmupSpin = floatSpin(0, 60, 1, self.config.spindle_warmup, "Time in seconds to wait for the spindle to get up to target speed.")
+        self.formCAM.addRow("&Spin-up time (seconds):", self.warmupSpin)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
@@ -231,6 +240,8 @@ class PreferencesDialog(QDialog):
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
         self.config.grbl_output = self.grblOutputCheck.isChecked()
+        self.config.spindle_control = self.spindleControlCheck.isChecked()
+        self.config.spindle_warmup = self.warmupSpin.value()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
         self.config.grid_resolution = self.gridSpin.value()
         self.config.input_directory = self.inputDirEdit.value()
