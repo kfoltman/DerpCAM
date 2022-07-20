@@ -623,7 +623,7 @@ class Engrave(UntabbedOperation):
     def build_paths(self, margin):
         if margin != 0:
             raise ValueError("Offset not supported for engraving")
-        return self.shape.engrave(self.tool)
+        return self.shape.engrave(self.tool, self.props.margin)
 
 class FaceMill(UntabbedOperation):
     def build_paths(self, margin):

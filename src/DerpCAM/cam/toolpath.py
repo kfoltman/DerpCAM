@@ -90,7 +90,7 @@ class Toolpath(object):
         return self.transformed_cache
 
     def calc_bounds(self):
-        assert len(self.path.nodes)
+        assert len(self.path.nodes), "Empty toolpath"
         xcoords = [p.x for p in self.path.nodes if p.is_point()]
         ycoords = [p.y for p in self.path.nodes if p.is_point()]
         tr = 0.5 * self.tool.diameter

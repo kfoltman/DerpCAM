@@ -3,6 +3,7 @@ from math import *
 from DerpCAM.common.geom import *
 from . import toolpath
 import threading
+import shapely.geometry
 
 class Shape(object):
     def __init__(self, boundary, closed=True, islands=None):
@@ -23,9 +24,19 @@ class Shape(object):
         if plen < min_length:
             return 0
         return int(max(min_tabs, min(max_tabs, plen // distance)))
-    def engrave(self, tool):
-        tps = [toolpath.Toolpath(Path(self.boundary, self.closed), tool)] + [
-            toolpath.Toolpath(Path(island, True), tool) for island in self.islands ]
+    def engrave(self, tool, offset=0):
+        def offset_path(boundary, closed, offset):
+            if offset == 0:
+                return Path(boundary, closed)
+            pts = [shapely.geometry.Point(pt.x, pt.y) for pt in boundary]
+            if closed:
+                ls = shapely.geometry.LinearRing(pts)
+            else:
+                ls = shapely.geometry.LineString(pts)
+            lso = ls.parallel_offset(abs(offset), 'right' if offset > 0 else 'left', 4)
+            return Path([PathPoint(x, y) for x, y in lso.coords], closed)
+        tps = [toolpath.Toolpath(offset_path(self.boundary, self.closed, offset), tool)] + [
+            toolpath.Toolpath(offset_path(island, True, offset), tool) for island in self.islands ]
         return toolpath.Toolpaths(tps)
     @staticmethod
     def _offset(points, closed, dist):

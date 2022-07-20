@@ -1184,7 +1184,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE) and name == 'dogbones':
             return False
-        if self.operation == OperationType.ENGRAVE and name in ['offset', 'direction']:
+        if self.operation == OperationType.ENGRAVE and name in ['direction']:
             return False
         if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
