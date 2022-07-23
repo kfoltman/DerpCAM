@@ -438,7 +438,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             if path.orientation() != orientation:
                 return path.reverse()
             return path
-        tps.append(toolpath.Toolpath(ls2path(polygon.exterior, tool.climb), tool, was_previously_cut=True))
+        if not from_outside:
+            tps.append(toolpath.Toolpath(ls2path(polygon.exterior, tool.climb), tool, was_previously_cut=True))
         for h in polygon.interiors:
             tps.append(toolpath.Toolpath(ls2path(h, not tool.climb), tool, was_previously_cut=True))
         alltps += tps
