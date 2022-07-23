@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import *
 
 class GuiSettings(object):
     inch_mode = False
+    batch_text_hack = False
 
 class UnitConverter(object):
     alt_units = {"in", "sfm", "ipm", "ipt"}
@@ -209,7 +210,7 @@ class Format(object):
         return Format.point_tuple((value.x, value.y), brief=brief)
 
 def is_gui_application():
-    return isinstance(QCoreApplication.instance(), QGuiApplication)
+    return isinstance(QCoreApplication.instance(), QGuiApplication) and not GuiSettings.batch_text_hack
 
 class Spinner(object):
     def __enter__(self):
