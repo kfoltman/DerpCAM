@@ -910,6 +910,7 @@ class CycleTreeItem(CAMTreeItem):
         self.setCheckable(True)
         self.setAutoTristate(True)
         self.cutter = cutter
+        self.setCheckState(Qt.CheckState.Checked)
     def toString(self):
         return "Tool cycle"
     @staticmethod
@@ -928,7 +929,8 @@ class CycleTreeItem(CAMTreeItem):
     def operCheckState(self):
         return CycleTreeItem.listCheckState(self.items())
     def updateCheckState(self):
-        self.setCheckState(self.operCheckState())
+        if self.items():
+            self.setCheckState(self.operCheckState())
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(f"Use tool: {self.cutter.name}")
