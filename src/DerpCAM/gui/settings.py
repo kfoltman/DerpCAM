@@ -48,6 +48,7 @@ class ConfigSettings(object):
         FloatConfigSetting('resolution', 'geometry/resolution', GeometrySettings.RESOLUTION, 1),
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
+        BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
         BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
@@ -88,6 +89,7 @@ class ConfigSettings(object):
         GeometrySettings.RESOLUTION = self.resolution
         GeometrySettings.simplify_arcs = self.simplify_arcs
         GeometrySettings.simplify_lines = self.simplify_lines
+        GeometrySettings.paranoid_mode = self.paranoid_mode
         GeometrySettings.draw_arrows = self.draw_arrows
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
@@ -165,6 +167,10 @@ class PreferencesDialog(QDialog):
         self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
         self.formCAM.addRow(self.simplifyLinesCheck)
+        self.paranoidModeCheck = QCheckBox("&Paranoid mode: never use rapids below safe entry Z")
+        self.paranoidModeCheck.setToolTip("Forbid rapid Z moves into previously removed stock or outside stock boundaries")
+        self.paranoidModeCheck.setChecked(self.config.paranoid_mode)
+        self.formCAM.addRow(self.simplifyLinesCheck)
         self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
         self.grblOutputCheck.setChecked(self.config.grbl_output)
         self.formCAM.addRow(self.grblOutputCheck)
@@ -239,6 +245,7 @@ class PreferencesDialog(QDialog):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
+        self.config.paranoid_mode = self.paranoidModeCheck.isChecked()
         self.config.grbl_output = self.grblOutputCheck.isChecked()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()

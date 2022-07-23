@@ -155,24 +155,41 @@ class Gcode(object):
     def move_z(self, new_z, old_z, tool, semi_safe_z, already_cut_z=None):
         if new_z == old_z:
             return
-        if new_z < old_z:
-            if old_z > semi_safe_z:
-                self.rapid(z=semi_safe_z)
-                old_z = semi_safe_z
-            if already_cut_z is not None:
-                # Plunge at hfeed mm/min right above the cut to avoid taking ages
-                if new_z <= already_cut_z and old_z >= already_cut_z:
-                    self.feed(tool.hfeed)
-                    self.linear(z=already_cut_z)
-                    old_z = already_cut_z
-                    if old_z == new_z:
-                        return
-            # Use plunge rate for the last part
+        if new_z > old_z:
+            # Retract from the cut - can always use rapids, no questions asked
+            self.rapid(z=new_z)
+            return
+        if new_z >= semi_safe_z:
+            # Z above material, rapids are safe
+            self.rapid(z=new_z)
+            return
+        if GeometrySettings.paranoid_mode:
+            self.rapid(z=semi_safe_z)
+            # Everything from semi_safe_z down is done slowly out of paranoia
+            not_very_paranoid = False
+            if not_very_paranoid and already_cut_z is not None and already_cut_z < semi_safe_z:
+                # Use XY feed for vertical entry into already-cut stock,
+                # It's a compromise between very slow Z rate and G0 speed.
+                # But it's probably not paranoid enough
+                self.feed(tool.hfeed)
+                self.linear(z=already_cut_z)
             self.feed(tool.vfeed)
             self.linear(z=new_z)
-            self.feed(tool.hfeed)
-        else:
+            return
+        if already_cut_z is None:
+            already_cut_z = semi_safe_z
+        if new_z >= already_cut_z:
+            # Above the previous cut line? Use rapid speed.
             self.rapid(z=new_z)
+            return
+        # Continue slowly into the stock - using this to actually enter the
+        # material (and not just as a precautionary measure for the last bit
+        # just above the uncut stock) is not recommended for any hard materials
+        # like metals.
+        self.rapid(z=already_cut_z)
+        self.feed(tool.vfeed)
+        self.linear(z=new_z)
+        self.feed(tool.hfeed)
 
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None):
         self.section_info(f"Start subpath")
@@ -425,6 +442,7 @@ class BaseCut2D(Cut):
             if newz < self.curz:
                 self.enter_cut(gcode, subpath, newz)
             else:
+                # Leave a cut, always uses a rapid move
                 gcode.move_z(newz, self.curz, subpath.tool, self.machine_params.semi_safe_z)
                 self.curz = newz
 
@@ -458,21 +476,25 @@ class BaseCut2D(Cut):
         if subpath.was_previously_cut:
             # no plunge penalty
             plunge_penalty = 1
-        if subpath.helical_entry is not None:
+        if isinstance(subpath.helical_entry, toolpath.PlungeEntry):
+            plunge_entry = subpath.helical_entry
+            self.lastpt = plunge_entry.point
+            gcode.rapid(z=newz)
+        elif isinstance(subpath.helical_entry, toolpath.HelicalEntry):
             gcode.feed(subpath.tool.hfeed * plunge_penalty)
             # Descend helically to the indicated helical entry point
             self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-            if self.lastpt != subpath.path.seg_start():
-                # The helical entry ends somewhere else in the pocket, so feed to the right spot
-                self.lastpt = subpath.path.seg_start()
-                gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
-            assert self.lastpt is not None
         else:
             gcode.feed(subpath.tool.hfeed * plunge_penalty)
             if newz < self.curz:
                 self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
             assert self.lastpt is not None
         gcode.feed(subpath.tool.hfeed)
+        if self.lastpt != subpath.path.seg_start():
+            # The helical entry ends somewhere else in the pocket, so feed to the right spot
+            self.lastpt = subpath.path.seg_start()
+            gcode.linear(x=self.lastpt.x, y=self.lastpt.y)
+        assert self.lastpt is not None
         self.curz = newz
         gcode.section_info(f"End enter cut")
 

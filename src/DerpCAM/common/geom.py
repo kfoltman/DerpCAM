@@ -13,6 +13,7 @@ class GeometrySettings:
     grbl_output = False
     spindle_control = False
     spindle_warmup = 0
+    paranoid_mode = False
 
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION

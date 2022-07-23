@@ -54,6 +54,10 @@ class Tabs(object):
     def coords(self, path):
         return [tab.coords(path) for tab in self.tabs]
 
+class PlungeEntry(object):
+    def __init__(self, point):
+        self.point = point
+
 class HelicalEntry(object):
     def __init__(self, point, r, angle=0, climb=True):
         self.point = point
