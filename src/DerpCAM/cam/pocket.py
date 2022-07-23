@@ -392,7 +392,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
                 gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
 
         lastpt = None
-        was_previously_cut = False
+        was_previously_cut = from_outside
         for item in hsm_path:
             if isinstance(item, cam.geometry.LineData):
                 if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
