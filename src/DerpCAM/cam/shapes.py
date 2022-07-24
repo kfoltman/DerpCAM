@@ -89,6 +89,10 @@ class Shape(object):
     def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
         return Shape(circle(x, y, r if r is not None else 0.5 * d, n, sa, ea), True, None)
     @staticmethod
+    def sausage(x1, y1, x2, y2, r, n=None):
+        sa = atan2(y2 - y1, x2 - x1) + pi / 2
+        return Shape(circle(x1, y1, r, n, sa, sa + pi) + circle(x2, y2, r, n, sa + pi, sa + 2 * pi), True, None)
+    @staticmethod
     def rectangle(sx, sy, ex, ey):
         polygon = [PathPoint(sx, sy), PathPoint(ex, sy), PathPoint(ex, ey), PathPoint(sx, ey)]
         #polygon = list(reversed(polygon))
