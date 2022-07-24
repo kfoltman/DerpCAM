@@ -1439,13 +1439,15 @@ class OperationTreeItem(CAMTreeItem):
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
             self.gcode_props.rpm = pda.rpm
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
+                is_outside = self.operation == OperationType.OUTSIDE_CONTOUR
+                is_refine = self.operation == OperationType.REFINE
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
-                        res.append(cam.dogbone.add_dogbones(i, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones))
+                        res.append(cam.dogbone.add_dogbones(i, tool, is_outside, self.dogbones, is_refine))
                     self.shape = res
                 else:
-                    self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
+                    self.shape = cam.dogbone.add_dogbones(self.shape, tool, is_outside, self.dogbones, is_refine)
             if self.operation == OperationType.REFINE:
                 diameter_plus = self.cutter.diameter + 2 * pda.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
