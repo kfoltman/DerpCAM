@@ -24,7 +24,7 @@ def seg_angle(s, e):
 def slope(angle):
     return abs(math.sin(angle))
 
-def add_circle(circles, s, m, e, angle, dangle, tool, mode, orientation):
+def add_circle(circles, s, m, e, angle, dangle, tool, mode, orientation, shape, is_refine):
     if dangle >= math.pi:
         return
     d1 = geom.dist(s, m)
@@ -50,9 +50,12 @@ def add_circle(circles, s, m, e, angle, dangle, tool, mode, orientation):
             a = angle - dangle + math.pi
     vx = d * math.cos(a)
     vy = d * math.sin(a)
-    circles.append(shapes.Shape.circle(m.x + vx, m.y + vy, tool.diameter * 0.5 + 2 / geom.GeometrySettings.RESOLUTION))
+    if is_refine:
+        circles.append(shapes.Shape.sausage(m.x + vx * 2, m.y + vy * 2, m.x + vx, m.y + vy, tool.diameter * 0.5 + 2 / geom.GeometrySettings.RESOLUTION))
+    else:
+        circles.append(shapes.Shape.circle(m.x + vx, m.y + vy, tool.diameter * 0.5 + 2 / geom.GeometrySettings.RESOLUTION))
 
-def add_dogbones(shape, tool, outside, mode):
+def add_dogbones(shape, tool, outside, mode, is_refine):
     circles = []
     old_angle = None
     old_s = None
@@ -64,13 +67,13 @@ def add_dogbones(shape, tool, outside, mode):
         angle = seg_angle(s, e)
         if old_angle is not None:
             dangle = (angle - old_angle) % (math.pi * 2.0)
-            add_circle(circles, old_s, s, e, angle, dangle, tool, mode, orientation)
+            add_circle(circles, old_s, s, e, angle, dangle, tool, mode, orientation, shape, is_refine)
         old_s = s
         old_angle = angle
     s, e = next(geom.PathSegmentIterator(boundary))
     angle = seg_angle(s, e)
     dangle = (angle - old_angle) % (math.pi * 2.0)
-    add_circle(circles, old_s, s, e, angle, dangle, tool, mode, orientation)
+    add_circle(circles, old_s, s, e, angle, dangle, tool, mode, orientation, shape, is_refine)
     if not orientation:
         shape.boundary = geom.Path(shape.boundary, True).reverse().nodes
     if outside:
