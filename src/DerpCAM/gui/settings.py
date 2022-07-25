@@ -170,7 +170,7 @@ class PreferencesDialog(QDialog):
         self.paranoidModeCheck = QCheckBox("&Paranoid mode: never use rapids below safe entry Z")
         self.paranoidModeCheck.setToolTip("Forbid rapid Z moves into previously removed stock or outside stock boundaries")
         self.paranoidModeCheck.setChecked(self.config.paranoid_mode)
-        self.formCAM.addRow(self.simplifyLinesCheck)
+        self.formCAM.addRow(self.paranoidModeCheck)
         self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
         self.grblOutputCheck.setChecked(self.config.grbl_output)
         self.formCAM.addRow(self.grblOutputCheck)
