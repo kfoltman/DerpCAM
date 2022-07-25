@@ -56,7 +56,7 @@ class Tabs(object):
 
 class PlungeEntry(object):
     def __init__(self, point):
-        self.point = point
+        self.start = point
 
 class HelicalEntry(object):
     def __init__(self, point, r, angle=0, climb=True):
@@ -95,7 +95,8 @@ class Toolpath(object):
         return self.transformed_cache
 
     def calc_bounds(self):
-        assert len(self.path.nodes), "Empty toolpath"
+        if self.path.is_empty():
+            return None
         xcoords = [p.x for p in self.path.nodes if p.is_point()]
         ycoords = [p.y for p in self.path.nodes if p.is_point()]
         tr = 0.5 * self.tool.diameter

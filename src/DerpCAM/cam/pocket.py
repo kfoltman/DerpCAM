@@ -456,7 +456,10 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut)
             tps.append(tpo)
         if not from_outside and tps and min_helix_dia <= max_helix_dia:
-            tps[0].helical_entry = toolpath.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+            sp = geom.PathPoint(tp.start_point.x, tp.start_point.y)
+            tps[0].helical_entry = toolpath.HelicalEntry(sp, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+        elif from_outside and tps and not tps[0].path.is_empty():
+            tps[0].helical_entry = toolpath.PlungeEntry(tps[0].path.seg_start())
         # Add a final pass around the perimeter
         if not from_outside:
             tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
