@@ -198,7 +198,7 @@ class Toolpath(object):
             spos, epos = cspos, cepos
         return Tab(spos, epos, helical_entry)
     def render_as_outlines(self):
-        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 1)
+        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
         intsFull = PtsToInts(points)
         if self.path.closed:
             intsFull += [intsFull[0]]
@@ -221,7 +221,6 @@ class Toolpath(object):
         for o in outlines:
             pc.AddPath(o, PT_SUBJECT, True)
         outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
-        #print (len(outlines))
         outlines2 = []
         for o in outlines:
             if is_calculation_cancelled():
