@@ -350,7 +350,7 @@ def entry_path(x, y, rt, tool, hsm_path):
         c = geom.CandidateCircle(x, y, rt)
         cp = c.at_angle(a)
         gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
-    return gen_path
+    return gen_path, a
 
 # only works for closed linestrings
 def linestring2path(ls, orientation):
@@ -437,7 +437,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         else:
             x, y = tp.start_point.x, tp.start_point.y
         if not from_outside:
-            gen_path += entry_path(x, y, rt, tool, hsm_path)
+            spiral_path, a = entry_path(x, y, rt, tool, hsm_path)
+            gen_path += spiral_path
         lastpt = None
         was_previously_cut = from_outside
         for item in hsm_path:
