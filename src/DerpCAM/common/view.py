@@ -331,16 +331,16 @@ class PathViewer(QWidget):
             self.addPath(pen, points, darken=darken)
 
     def addRapidLine(self, pen, sp, ep):
-        if draw_arrows_for_rapids and dist(sp, ep) > 6:
-            midp = weighted(sp, ep, 0.4)
+        if draw_arrows_for_rapids and dist(sp, ep) > 2:
+            dlen = sp.dist(ep)
+            r = 0.8
+            midp = weighted(sp, ep, 0.5 + r / dlen / 2)
             angle = atan2(ep.y - sp.y, ep.x - sp.x)
-            dangle = 7 * pi / 8
-            r = 3
-            m1 = PathPoint(midp.x + r * cos(angle - dangle), midp.y  + r * sin(angle - dangle))
-            m2 = PathPoint(midp.x + r * cos(angle + dangle), midp.y  + r * sin(angle + dangle))
-            self.addLines(pen, [sp, midp, m1, midp, m2, midp, ep], False, darken=False)
-        else:
-            self.addLines(pen, [sp, ep], False, darken=False)
+            dangle = 29 * pi / 32
+            m1 = PathPoint(midp.x + r * cos(angle - dangle), midp.y + r * sin(angle - dangle))
+            m2 = PathPoint(midp.x + r * cos(angle + dangle), midp.y + r * sin(angle + dangle))
+            self.addPolygons(QBrush(pen.color()), [[midp, m1, m2, midp]], has_arcs=False, darken=False)
+        self.addLines(pen, [sp, ep], False, darken=False)
 
     def addPolygons(self, brush, polygons, has_arcs=False, darken=True):
         #if has_arcs:
