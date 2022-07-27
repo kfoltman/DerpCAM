@@ -355,7 +355,7 @@ def entry_path(x, y, rt, tool, hsm_path):
 # only works for closed linestrings
 def linestring2path(ls, orientation):
     path = geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
-    if path.orientation() != orientation:
+    if orientation is not None and path.orientation() != orientation:
         return path.reverse()
     return path
 
@@ -383,6 +383,36 @@ def add_arcdata(gen_path, item):
         gen_path.append(oep)
     return oep
 
+def polygon_to_shape(polygon):
+    exterior = linestring2path(polygon.exterior, None)
+    interiors = [linestring2path(i, None).nodes for i in polygon.interiors]
+    return shapes.Shape(exterior.nodes, True, interiors)
+
+def add_outer_passes2(polygon, tool):
+    tps = []
+    interiors = MultiPolygon([Polygon(i) for i in polygon.interiors])
+    while True:
+        outside_pass = polygon.exterior
+        exterior = Polygon(polygon.exterior).buffer(-tool.diameter * tool.stepover)
+        if not exterior.contains(interiors):
+            break
+        tps.append(toolpath.Toolpath(linestring2path(outside_pass, None), tool))
+        polygon = exterior.difference(interiors)
+    return polygon, tps
+
+def add_outer_passes(polygon, tool):
+    tps = []
+    exterior = Polygon(polygon.exterior)
+    interiors = MultiPolygon([Polygon(i) for i in polygon.interiors])
+    while True:
+        new_exterior = exterior.buffer(-tool.diameter * tool.stepover)
+        if not new_exterior.contains(interiors):
+            break
+        tps.append(toolpath.Toolpath(linestring2path(exterior.exterior, None), tool))
+        exterior = new_exterior
+    polygon = exterior.difference(interiors)
+    return polygon, tps
+
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     from DerpCAM import cam
     import DerpCAM.cam.geometry
@@ -398,9 +428,12 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         with pyvlock:
             if from_outside:
                 old_peel_code = False
+                adaptive = False
                 if old_peel_code:
                     tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
                 else:
+                    if adaptive:
+                        polygon, tps = add_outer_passes(polygon, tool)
                     outside_poly = Polygon(polygon.exterior)
                     # Generous margins
                     already_cut = outside_poly.buffer(tool.diameter).difference(outside_poly)
@@ -458,7 +491,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         if not from_outside and tps and min_helix_dia <= max_helix_dia:
             sp = geom.PathPoint(tp.start_point.x, tp.start_point.y)
             tps[0].helical_entry = toolpath.HelicalEntry(sp, min_helix_dia / 2.0, angle=a, climb=tool.climb)
-        elif from_outside and tps and not tps[0].path.is_empty():
+        elif from_outside and tps and not tps[0].is_empty():
             tps[0].helical_entry = toolpath.PlungeEntry(tps[0].path.seg_start())
         # Add a final pass around the perimeter
         if not from_outside:

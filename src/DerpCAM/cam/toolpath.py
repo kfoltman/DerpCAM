@@ -234,6 +234,8 @@ class Toolpath(object):
             pc.AddPath(o, PT_SUBJECT, True)
         outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
         return [PtsFromInts(ints) for ints in outlines]
+    def is_empty(self):
+        return self.path.is_empty()
 
 class Toolpaths(object):
     def __init__(self, toolpaths):
@@ -262,6 +264,8 @@ class Toolpaths(object):
         return Toolpaths([tp.optimize_lines() for tp in self.toolpaths])
     def optimize(self):
         return Toolpaths([tp.optimize() for tp in self.toolpaths])
+    def is_empty(self):
+        return all([tp.is_empty() for tp in self.toolpaths])
 
 def findPathNesting(tps):
     nestings = []
