@@ -174,7 +174,12 @@ class DrawingViewer(view.PathViewer):
             path = path.subtracted(path2)
         for island in op.islands:
             shape = op.document.drawing.itemById(island).translated(*translation).toShape()
-            if shape.closed:
+            items = None
+            if isinstance(shape, list):
+                items = shape
+            elif shape.closed:
+                items = [shape]
+            for shape in items:
                 path2 = QPainterPath()
                 view.addPolylineToPath(path2, shape.boundary + shape.boundary[0:1])
                 path = path.subtracted(path2)

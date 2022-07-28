@@ -163,7 +163,7 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
     def invalidatedObjects(self, aspect):
         if aspect == InvalidateAspect.CAM:
-            return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
+            return set([self] + self.document.allOperations(lambda item: item.usesShape(self.shape_id)))
         # Settings of operations are not affected and don't need to be refreshed
         return set([self])
 
@@ -1168,6 +1168,13 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
+    def usesShape(self, shape_id):
+        if self.shape_id == shape_id:
+            return True
+        for i in self.islands:
+            if i == shape_id:
+                return True
+        return False
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
@@ -1324,6 +1331,9 @@ class OperationTreeItem(CAMTreeItem):
         self.emitDataChanged()
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
+    def resetRenderedState(self):
+        self.renderer = None
+        self.document.operationsUpdated.emit()
     def startUpdateCAM(self):
         with Spinner():
             self.updateOrigShape()
@@ -1408,7 +1418,10 @@ class OperationTreeItem(CAMTreeItem):
                 if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
                     for island in self.islands:
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
+                        if isinstance(item, list):
+                            for i in item:
+                                self.shape.add_island(i.boundary)
+                        elif item.closed:
                             self.shape.add_island(item.boundary)
             else:
                 self.shape = None
