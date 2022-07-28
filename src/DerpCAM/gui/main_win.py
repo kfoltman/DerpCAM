@@ -130,6 +130,9 @@ class CAMMainWindow(QMainWindow):
         QMainWindow.timerEvent(self, event)
     def scheduleCAMUpdate(self, item):
         self.newCAMNeeded |= item
+        for i in item:
+            if isinstance(i, model.OperationTreeItem):
+                i.resetRenderedState()
     def noOperationTouched(self):
         self.viewer.flashHighlight(None)
     def operationTouched(self, item):

@@ -1331,6 +1331,9 @@ class OperationTreeItem(CAMTreeItem):
         self.emitDataChanged()
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
+    def resetRenderedState(self):
+        self.renderer = None
+        self.document.operationsUpdated.emit()
     def startUpdateCAM(self):
         with Spinner():
             self.updateOrigShape()
