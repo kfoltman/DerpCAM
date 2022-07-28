@@ -163,7 +163,7 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
     def invalidatedObjects(self, aspect):
         if aspect == InvalidateAspect.CAM:
-            return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
+            return set([self] + self.document.allOperations(lambda item: item.usesShape(self.shape_id)))
         # Settings of operations are not affected and don't need to be refreshed
         return set([self])
 
@@ -1168,6 +1168,13 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
+    def usesShape(self, shape_id):
+        if self.shape_id == shape_id:
+            return True
+        for i in self.islands:
+            if i == shape_id:
+                return True
+        return False
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
