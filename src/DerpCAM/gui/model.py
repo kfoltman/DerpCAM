@@ -1408,7 +1408,10 @@ class OperationTreeItem(CAMTreeItem):
                 if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
                     for island in self.islands:
                         item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
+                        if isinstance(item, list):
+                            for i in item:
+                                self.shape.add_island(i.boundary)
+                        elif item.closed:
                             self.shape.add_island(item.boundary)
             else:
                 self.shape = None
