@@ -953,4 +953,4 @@ def is_calculation_cancelled():
     return getattr(threading.current_thread(), 'cancelled', False)
 
 def set_calculation_progress(amount_done, amount_total):
-    setattr(threading.current_thread(), 'progress', (amount_done, amount_total))
+    setattr(threading.current_thread(), 'progress', (min(amount_done, amount_total - 1), amount_total))
