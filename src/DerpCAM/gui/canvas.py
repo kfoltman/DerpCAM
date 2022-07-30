@@ -183,6 +183,10 @@ class DrawingViewer(view.PathViewer):
                 path2 = QPainterPath()
                 view.addPolylineToPath(path2, shape.boundary + shape.boundary[0:1])
                 path = path.subtracted(path2)
+                path2 = QPainterPath()
+                for i in shape.islands:
+                    view.addPolylineToPath(path2, i + i[0:1])
+                path = path.united(path2)
         transform = self.drawingTransform()
         brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
         brush.setTransform(transform.inverted()[0])
