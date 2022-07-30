@@ -1408,7 +1408,7 @@ class OperationTreeItem(CAMTreeItem):
             self.worker.join()
             self.worker = None
     def operationFunc(self, shape, pda):
-        translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+        translation = self.document.drawing.translation()
         if len(self.user_tabs):
             tabs = self.user_tabs
         else:
@@ -1453,7 +1453,7 @@ class OperationTreeItem(CAMTreeItem):
         else:
             return cam.pocket.refine_shape_internal(shape, previous, current, min_entry_dia)
     def createShapeObject(self):
-        translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+        translation = self.document.drawing.translation()
         self.shape = self.orig_shape.translated(*translation).toShape()
         if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
             extra_shapes = []
@@ -1472,6 +1472,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.shape = [self.shape] + extra_shapes
     def updateCAMWork(self):
         try:
+            translation = self.document.drawing.translation()
             errors = []
             if self.orig_shape:
                 self.createShapeObject()
