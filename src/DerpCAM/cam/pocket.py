@@ -315,6 +315,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     import DerpCAM.cam.geometry
     alltps = []
     all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
+    num_polys = len(all_inputs)
+    outer_progress = 0
     for polygon in all_inputs:
         tps = []
         step = tool.diameter * tool.stepover
@@ -341,7 +343,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         try:
             while not geom.is_calculation_cancelled():
                 progress = max(0, min(1000, 1000 * next(generator)))
-                geom.set_calculation_progress(progress, 1000)
+                geom.set_calculation_progress(outer_progress + progress, 1000 * num_polys)
         except StopIteration:
             pass
         hsm_path = tp.path
@@ -443,6 +445,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         for h in polygon.interiors:
             tps.append(toolpath.Toolpath(ls2path(h, not tool.climb), tool, was_previously_cut=True))
         alltps += tps
+        outer_progress += 1000
     return toolpath.Toolpaths(alltps)
 
 def shape_to_object(shape, tool, displace=0, from_outside=False):
@@ -465,6 +468,7 @@ def refine_shape_internal(shape, previous, current, min_entry_dia):
     unmilled_polygons = objects_to_polygons(unmilled)
     output_polygons = []
     junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
+    cnt = 0
     for polygon in unmilled_polygons:
         # Skip very tiny shapes
         polygons = polygon.buffer(-junk_cutoff)

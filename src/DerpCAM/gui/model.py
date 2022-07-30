@@ -1125,7 +1125,14 @@ class WorkerThread(threading.Thread):
         self.worker_func = workerFunc
         self.parent_operation = parentOp
         self.exception = None
+        self.exception_text = None
+        self.progress = (0, 10000000)
+        self.cancelled = False
         threading.Thread.__init__(self, target=self.threadMain)
+    def getProgress(self):
+        return self.progress
+    def cancel(self):
+        self.cancelled = True
     def threadMain(self):
         try:
             if isinstance(self.worker_func, list):
@@ -1137,10 +1144,46 @@ class WorkerThread(threading.Thread):
                 self.worker_func()
             if self.parent_operation.cam and self.parent_operation.cam.is_nothing():
                 self.parent_operation.addWarning("No cuts produced")
+            self.progress = (self.progress[1], self.progress[1])
         except Exception as e:
             self.exception = e
+            self.exception_text = str(e)
             import traceback
             traceback.print_exc()
+
+class WorkerThreadPack(object):
+    def __init__(self, parentOp, workerFuncList):
+        self.threads = [WorkerThread(parentOp, workerFunc) for workerFunc in workerFuncList]
+        self.exception = None
+        self.exception_text = None
+    def getProgress(self):
+        num = denom = 0
+        for thread in self.threads:
+            progress = thread.getProgress()
+            num += progress[0]
+            denom += progress[1]
+        return (num, denom)
+    def start(self):
+        for thread in self.threads:
+            thread.start()
+    def cancel(self):
+        for thread in self.threads:
+            thread.cancel()
+    def join(self):
+        for thread in self.threads:
+            thread.join()
+        exceptions = ""
+        for thread in self.threads:
+            if thread.exception is not None:
+                self.exception = thread.exception
+                break
+        for thread in self.threads:
+            if thread.exception is not None:
+                exceptions += thread.exception_text
+        if exceptions:
+            self.exception_text = exceptions
+    def is_alive(self):
+        return any([thread.is_alive() for thread in self.threads])
 
 def cutterTypesForOperationType(operationType):
     return (inventory.DrillBitCutter, inventory.EndMillCutter) if operationType == OperationType.DRILLED_HOLE else inventory.EndMillCutter
@@ -1380,6 +1423,7 @@ class OperationTreeItem(CAMTreeItem):
     def startUpdateCAM(self):
         with Spinner():
             self.updateOrigShape()
+            self.last_progress = (1, 100000)
             self.error = None
             self.warning = None
             self.cam = None
@@ -1389,24 +1433,28 @@ class OperationTreeItem(CAMTreeItem):
                 self.error = "Cutter not set"
                 return
             if not self.active:
+                self.last_progress = (1, 1)
                 # Operation not enabled
                 return
             self.updateCAMWork()
     def pollForUpdateCAM(self):
+        if not self.worker:
+            return self.last_progress
+        self.last_progress = self.worker.getProgress()
         if self.worker and not self.worker.is_alive():
             self.worker.join()
             if self.error is None and self.worker.exception is not None:
-                self.error = str(self.worker.exception)
+                self.error = self.worker.exception_text
             self.worker = None
             self.document.operationsUpdated.emit()
             self.emitDataChanged()
-        if self.worker is not None:
-            return self.worker.progress
+        return self.last_progress
     def cancelWorker(self):
         if self.worker:
-            self.worker.cancelled = True
+            self.worker.cancel()
             self.worker.join()
             self.worker = None
+            self.last_progress = None
     def operationFunc(self, shape, pda):
         translation = self.document.drawing.translation()
         if len(self.user_tabs):
@@ -1555,18 +1603,22 @@ class OperationTreeItem(CAMTreeItem):
                     self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
             else:
                 self.prev_diameter = None
+            if isinstance(self.shape, list) and len(self.shape) == 1:
+                self.shape = self.shape[0]
             self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
-                    threadFunc = [ self.operationFunc(shape, pda) for shape in self.shape ]
+                    threadFuncs = [ self.operationFunc(shape, pda) for shape in self.shape ]
+                    threadFuncs = [ fn for fn in threadFuncs if fn is not None]
+                    if threadFuncs:
+                        self.worker = WorkerThreadPack(self, threadFuncs)
+                        self.worker.start()
                 else:
                     threadFunc = self.operationFunc(self.shape, pda)
-                if threadFunc:
-                    self.worker = WorkerThread(self, threadFunc)
-                    self.worker.progress = (0, 1000000)
-                    self.worker.cancelled = False
-                    self.worker.start()
+                    if threadFunc:
+                        self.worker = WorkerThread(self, threadFunc)
+                        self.worker.start()
             self.error = None
         except Exception as e:
             self.cam = None
@@ -2153,6 +2205,9 @@ class DocumentModel(QObject):
     def cancelAllWorkers(self):
         self.forEachOperation(lambda item: item.cancelWorker())
     def pollForUpdateCAM(self):
+        has_workers = any(self.forEachOperation(lambda item: item.worker))
+        if not has_workers:
+            return
         results = self.forEachOperation(lambda item: item.pollForUpdateCAM())
         totaldone = 0
         totaloverall = 0
