@@ -174,7 +174,7 @@ class DrawingViewer(view.PathViewer):
             path = path.subtracted(path2)
         for island in op.islands:
             shape = op.document.drawing.itemById(island).translated(*translation).toShape()
-            items = None
+            items = []
             if isinstance(shape, list):
                 items = shape
             elif shape.closed:
