@@ -1488,6 +1488,15 @@ class OperationTreeItem(CAMTreeItem):
                         extra_shapes += [shapes.Shape(j, True) for j in item.islands]
             if extra_shapes:
                 self.shape = [self.shape] + extra_shapes
+    def addDogbonesToIslands(self, shape, tool):
+        new_islands = []
+        for i in shape.islands:
+            new_shapes = cam.dogbone.add_dogbones(shapes.Shape(i, True), tool, True, self.dogbones, False)
+            if isinstance(new_shapes, list):
+                new_islands += [j.boundary for j in new_shapes]
+            else:
+                new_islands.append(new_shapes.boundary)
+        shape.islands = new_islands
     def updateCAMWork(self):
         try:
             translation = self.document.drawing.translation()
@@ -1522,16 +1531,24 @@ class OperationTreeItem(CAMTreeItem):
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
             self.gcode_props.rpm = pda.rpm
-            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
+            if self.dogbones and self.operation == OperationType.OUTSIDE_PEEL and not isinstance(self.shape, list):
+                self.addDogbonesToIslands(self.shape, tool)
+            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.OUTSIDE_PEEL):
                 is_outside = self.operation == OperationType.OUTSIDE_CONTOUR
                 is_refine = self.operation == OperationType.REFINE
+                is_pocket = self.operation == OperationType.POCKET
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
                         res.append(cam.dogbone.add_dogbones(i, tool, is_outside, self.dogbones, is_refine))
+                    if is_pocket:
+                        for i in res:
+                            self.addDogbonesToIslands(self.shape, tool)
                     self.shape = res
                 else:
                     self.shape = cam.dogbone.add_dogbones(self.shape, tool, is_outside, self.dogbones, is_refine)
+                    if is_pocket:
+                        self.addDogbonesToIslands(self.shape, tool)
             if self.operation == OperationType.REFINE:
                 diameter_plus = self.cutter.diameter + 2 * pda.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
