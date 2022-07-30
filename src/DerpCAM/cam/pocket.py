@@ -413,9 +413,22 @@ def add_outer_passes(polygon, tool):
     polygon = exterior.difference(interiors)
     return polygon, tps
 
-def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
+def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None):
     from DerpCAM import cam
     import DerpCAM.cam.geometry
+    already_cut = None
+    if not from_outside and shape_to_refine is not None:
+        already_cut = MultiPolygon()
+        for i in shape_to_refine:
+            for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
+                already_cut = already_cut.union(j)
+        already_cut = already_cut.buffer(-tool.diameter / 2)
+        display_already_cut = False
+        if display_already_cut:
+            tps = []
+            for polygon in objects_to_polygons(already_cut):
+                tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+            return toolpath.Toolpaths(tps)
     alltps = []
     all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
     if zigzag:
@@ -425,26 +438,35 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
     for polygon in all_inputs:
         tps = []
         step = tool.diameter * tool.stepover
-        with pyvlock:
-            if from_outside:
-                old_peel_code = False
-                adaptive = False
-                if old_peel_code:
-                    tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
-                else:
-                    if adaptive:
-                        polygon, tps = add_outer_passes(polygon, tool)
-                    outside_poly = Polygon(polygon.exterior)
-                    # Generous margins
-                    already_cut = outside_poly.buffer(tool.diameter).difference(outside_poly)
-                    # Ensure enough overlap
-                    outside_poly = outside_poly.buffer(tool.diameter / 2)
-                    for i in polygon.interiors:
-                        outside_poly = outside_poly.difference(Polygon(i))
-                    tp = cam.geometry.Pocket(outside_poly, step, arc_dir, generate=True, already_cut=already_cut, starting_point_tactic=cam.geometry.StartPointTactic.PERIMITER, debug=True)
+        tactic = cam.geometry.StartPointTactic.WIDEST
+        if from_outside:
+            tactic = cam.geometry.StartPointTactic.PERIMITER
+            adaptive = False
+            if adaptive:
+                polygon, tps = add_outer_passes(polygon, tool)
+            outside_poly = Polygon(polygon.exterior)
+            stock = outside_poly.buffer(tool.diameter)
+            if shape_to_refine:
+                already_cut_outline = MultiPolygon()
+                for i in shape_to_refine:
+                    for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
+                        already_cut_outline = already_cut_outline.union(j)
+                already_cut_for_this = stock.difference(already_cut_outline.buffer(tool.diameter / 2))
+                polygon = stock.difference(outside_poly)
             else:
-                tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True)
-        if not from_outside:
+                # Generous margins
+                already_cut_for_this = stock.difference(outside_poly)
+                # Ensure enough overlap
+                outside_poly = outside_poly.buffer(tool.diameter / 2)
+                for i in polygon.interiors:
+                    outside_poly = outside_poly.difference(Polygon(i))
+                polygon = outside_poly
+        else:
+            already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
+        has_entry_circle = not from_outside and not (already_cut_for_this and not already_cut_for_this.is_empty)
+        with pyvlock:
+            tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic)
+        if has_entry_circle:
             rt = tp.start_radius
             min_helix_dia = tool.min_helix_diameter
             max_helix_dia = 2 * rt
@@ -469,7 +491,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
             x, y = hsm_path[0].start.x, hsm_path[0].start.y
         else:
             x, y = tp.start_point.x, tp.start_point.y
-        if not from_outside:
+        if has_entry_circle:
             spiral_path, a = entry_path(x, y, rt, tool, hsm_path)
             gen_path += spiral_path
         lastpt = None
@@ -488,11 +510,18 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
         if geom.Path(gen_path, False).length():
             tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut)
             tps.append(tpo)
-        if not from_outside and tps and min_helix_dia <= max_helix_dia:
-            sp = geom.PathPoint(tp.start_point.x, tp.start_point.y)
-            tps[0].helical_entry = toolpath.HelicalEntry(sp, min_helix_dia / 2.0, angle=a, climb=tool.climb)
-        elif from_outside and tps and not tps[0].is_empty():
-            tps[0].helical_entry = toolpath.PlungeEntry(tps[0].path.seg_start())
+        while tps and tps[0].is_empty():
+            tps.pop(0)
+        if tps:
+            if has_entry_circle and min_helix_dia <= max_helix_dia:
+                sp = geom.PathPoint(tp.start_point.x, tp.start_point.y)
+                tps[0].helical_entry = toolpath.HelicalEntry(sp, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+            elif from_outside and not shape_to_refine:
+                # Can't do that when refining because of potential tool breakage
+                # when doing non-through cuts while at slightly wrong Z height
+                # due to a mistake while setting tool length offset. Better
+                # be safe here.
+                tps[0].helical_entry = toolpath.PlungeEntry(tps[0].path.seg_start())
         # Add a final pass around the perimeter
         if not from_outside:
             tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
@@ -571,4 +600,25 @@ def refine_shape_external(shape, previous, current, min_entry_dia):
         exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
         interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
         output_shapes.append(shapes.Shape(exterior, True, interiors))
+    return output_shapes
+
+def shape_to_refine_internal(shape, previous):
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
+    previous_milled = entire_shape.buffer(-previous / 2).buffer(previous / 2)
+    output_polygons = objects_to_polygons(previous_milled)
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
+        output_shapes.append(shapes.Shape(exterior, True, interiors))
+    return output_shapes
+
+def shape_to_refine_external(shape, previous):
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
+    previous_milled = entire_shape.buffer(previous / 2).buffer(-previous / 2)
+    output_polygons = objects_to_polygons(previous_milled)
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        output_shapes.append(shapes.Shape(exterior, True))
     return output_shapes

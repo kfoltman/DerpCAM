@@ -1133,6 +1133,7 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = None
         self.orig_shape = None
         self.shape = None
+        self.shape_to_refine = None
         self.resetProperties()
         self.isSelected = False
         self.error = None
@@ -1383,6 +1384,18 @@ class OperationTreeItem(CAMTreeItem):
                 return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
             else:
                 return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
+        elif self.operation == self.operation == OperationType.REFINE and self.shape_to_refine is not None:
+            assert pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG
+            if self.is_external:
+                if isinstance(self.shape_to_refine, dict):
+                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                else:
+                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine)
+            else:
+                if isinstance(self.shape_to_refine, dict):
+                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                else:
+                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine)
         elif self.operation == OperationType.POCKET or self.operation == OperationType.REFINE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.pocket(shape)
@@ -1404,6 +1417,11 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
+    def shapeToRefine(self, shape, previous, is_external):
+        if is_external:
+            return cam.pocket.shape_to_refine_external(shape, previous)
+        else:
+            return cam.pocket.shape_to_refine_internal(shape, previous)
     def refineShape(self, shape, previous, current, min_entry_dia, is_external):
         if is_external:
             return cam.pocket.refine_shape_external(shape, previous, current, min_entry_dia)
@@ -1470,18 +1488,28 @@ class OperationTreeItem(CAMTreeItem):
                         raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)} and offset {Format.coord(pda.offset)}")
                     else:
                         raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)}")
+                is_hsm = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG)
+                if prev_operation.operation == OperationType.OUTSIDE_PEEL:
+                    # Make up a list of shapes from shape's islands?
+                    raise ValueError("Refining outside peel operations is not supported yet")
                 self.is_external = (prev_operation.operation == OperationType.OUTSIDE_CONTOUR)
-                if isinstance(self.shape, list):
+                self.shape_to_refine = None
+                if islands and not isinstance(self.shape, list):
+                    for island in islands:
+                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                        if item.closed:
+                            self.shape.add_island(item.boundary)
+                if is_hsm:
+                    if isinstance(self.shape, list):
+                        self.shape_to_refine = { i : self.shapeToRefine(i, prev_diameter, self.is_external) for i in self.shape }
+                    else:
+                        self.shape_to_refine = self.shapeToRefine(self.shape, prev_diameter, self.is_external)
+                elif isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
                         res += self.refineShape(i, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
                     self.shape = res
                 else:
-                    if islands:
-                        for island in islands:
-                            item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                            if item.closed:
-                                self.shape.add_island(item.boundary)
                     self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
             else:
                 self.prev_diameter = None

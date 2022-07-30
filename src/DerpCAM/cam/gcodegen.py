@@ -645,8 +645,10 @@ class ToolChangeOperation(Operation):
         gcode.prompt_for_tool(self.cutter.name)
 
 class UntabbedOperation(Operation):
-    def __init__(self, shape, tool, props):
+    def __init__(self, shape, tool, props, extra_attribs={}):
         Operation.__init__(self, shape, tool, props)
+        for key, value in extra_attribs.items():
+            setattr(self, key, value)
         paths = self.build_paths(0)
         if paths:
             paths = paths.optimize()
@@ -678,9 +680,13 @@ class Pocket(UntabbedOperation):
     def build_paths(self, margin):
         return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
 
-class HSMPocket(UntabbedOperation):
+class HSMOperation(UntabbedOperation):
+    def __init__(self, shape, tool, props, shape_to_refine):
+        UntabbedOperation.__init__(self, shape, tool, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
+
+class HSMPocket(HSMOperation):
     def build_paths(self, margin):
-        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin)
+        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
@@ -697,9 +703,9 @@ class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
         return cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin)
 
-class OutsidePeelHSM(UntabbedOperation):
+class OutsidePeelHSM(HSMOperation):
     def build_paths(self, margin):
-        return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin)
+        return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, outside, tabs, extra_attribs):
@@ -1069,14 +1075,14 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, props or self.props))
-    def pocket_hsm(self, shape, props=None):
-        self.add(HSMPocket(shape, self.tool, props or self.props))
+    def pocket_hsm(self, shape, props=None, shape_to_refine=None):
+        self.add(HSMPocket(shape, self.tool, props or self.props, shape_to_refine))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
         self.add(OutsidePeel(shape, self.tool, props or self.props))
-    def outside_peel_hsm(self, shape, props=None):
-        self.add(OutsidePeelHSM(shape, self.tool, props or self.props))
+    def outside_peel_hsm(self, shape, props=None, shape_to_refine=None):
+        self.add(OutsidePeelHSM(shape, self.tool, props or self.props, shape_to_refine))
     def face_mill(self, shape, props=None):
         self.add(FaceMill(shape, self.tool, props or self.props))
     def peck_drill(self, x, y, props=None):
