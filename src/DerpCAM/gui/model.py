@@ -395,11 +395,13 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         return tti
     def toShape(self):
         res = []
-        for i, path in enumerate(self.paths):
-            if path.orientation():
-                res[-1].add_island(path.nodes)
-            else:
-                res.append(shapes.Shape(path.nodes, path.closed))
+        if self.paths:
+            first_orientation = self.paths[0].orientation()
+            for i, path in enumerate(self.paths):
+                if path.orientation() != first_orientation:
+                    res[-1].add_island(path.nodes)
+                else:
+                    res.append(shapes.Shape(path.nodes, path.closed))
         return res
     def renderTo(self, path, modeData):
         for i in self.paths:
