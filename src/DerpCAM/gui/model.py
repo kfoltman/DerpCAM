@@ -1450,20 +1450,29 @@ class OperationTreeItem(CAMTreeItem):
             return cam.pocket.refine_shape_external(shape, previous, current, min_entry_dia)
         else:
             return cam.pocket.refine_shape_internal(shape, previous, current, min_entry_dia)
+    def createShapeObject(self):
+        translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+        self.shape = self.orig_shape.translated(*translation).toShape()
+        if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
+            extra_shapes = []
+            for island in self.islands:
+                item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                if isinstance(item, list):
+                    for i in item:
+                        self.shape.add_island(i.boundary)
+                        if i.islands:
+                            extra_shapes += [shapes.Shape(j, True) for j in i.islands]
+                elif item.closed:
+                    self.shape.add_island(item.boundary)
+                    if item.islands:
+                        extra_shapes += [shapes.Shape(j, True) for j in item.islands]
+            if extra_shapes:
+                self.shape = [self.shape] + extra_shapes
     def updateCAMWork(self):
         try:
             errors = []
             if self.orig_shape:
-                translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
-                self.shape = self.orig_shape.translated(*translation).toShape()
-                if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
-                    for island in self.islands:
-                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if isinstance(item, list):
-                            for i in item:
-                                self.shape.add_island(i.boundary)
-                        elif item.closed:
-                            self.shape.add_island(item.boundary)
+                self.createShapeObject()
             else:
                 self.shape = None
             thickness = self.document.material.thickness
