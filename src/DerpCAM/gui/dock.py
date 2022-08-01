@@ -280,6 +280,17 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return self.operTree
         assert False
+    def shapeJoin(self):
+        selType, items = self.activeSelection()
+        if selType == 's':
+            for i in items:
+                if not isinstance(i, model.DrawingPolylineTreeItem) or i.closed:
+                    QMessageBox.critical(self, None, "Only lines, open polylines and arcs can be joined")
+                    return
+            if not items:
+                QMessageBox.critical(self, None, "No items selected")
+                return
+            self.document.opJoin(items)
     def operationMove(self, selection, direction):
         mode, items = selection
         indexes = self.document.opMoveItems(items, direction)

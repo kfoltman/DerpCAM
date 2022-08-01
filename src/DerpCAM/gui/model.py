@@ -233,12 +233,9 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def __init__(self, document, points, closed, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
-        if points:
-            self.bounds = geom.Path(self.points, closed).bounds()
-        else:
-            self.bounds = None
         self.closed = closed
         self.untransformed = untransformed if untransformed is not None else self
+        self.calcBounds()
     def store(self):
         res = DrawingItemTreeItem.store(self)
         res['points'] = [ i.as_tuple() for i in self.points ]
@@ -258,6 +255,11 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
         path.addLines(self.penForPath(path, modeData), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+    def calcBounds(self):
+        if self.points:
+            self.bounds = geom.Path(self.points, self.closed).bounds()
+        else:
+            self.bounds = None
     def label(self):
         if len(self.points) == 2:
             if self.points[1].is_point():
@@ -1908,6 +1910,119 @@ class RevertToolUndoCommand(BaseRevertUndoCommand):
         self.old = tool.newInstance()
         self.updateTo(tool.base_object)
 
+class BlockmapEntry(object):
+    def __init__(self):
+        self.starts = set()
+        self.ends = set()
+
+class Blockmap(dict):
+    def pt_to_index(self, pt):
+        res = geom.GeometrySettings.RESOLUTION
+        return (int(pt.x * res), int(pt.y * res))
+    def point(self, pt):
+        i = self.pt_to_index(pt)
+        res = self.get(i, None)
+        if res is None:
+            res = self[i] = BlockmapEntry()
+        return res
+    def start_point(self, points):
+        return self.point(points[0].seg_start())
+    def end_point(self, points):
+        return self.point(points[-1].seg_end())
+
+class JoinItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Join items")
+        self.document = document
+        self.items = items
+        self.original_items = {}
+        self.removed_items = []
+    def undo(self):
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        for item, points in self.original_items.items():
+            item.untransformed.points = points
+            item.closed = False
+        for row, item in self.removed_items:
+            self.document.drawing.insertRow(row, item)
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        def rev(pts):
+            return geom.Path(pts, False).reverse().nodes
+        def join(p1, p2):
+            if not p1[-1].is_arc():
+                assert not p2[0].is_arc()
+                return p1[:-1] + p2
+            else:
+                return p1 + p2
+        blockmap = Blockmap()
+        joined = set()
+        edges = set()
+        toRemove = set()
+        toRecalc = set()
+        originals = {}
+        for i in self.items:
+            points = i.untransformed.points
+            originals[i] = points
+            start = blockmap.pt_to_index(points[0].seg_start())
+            end = blockmap.pt_to_index(points[-1].seg_end())
+            if (end, start) in edges or (start, end) in edges:
+                # Duplicates
+                toRemove.add(i)
+                continue
+            edges.add((start, end))
+            blockmap.start_point(points).starts.add(i)
+            blockmap.end_point(points).ends.add(i)
+        for bme in blockmap.values():
+            while len(bme.starts) >= 1 and len(bme.ends) >= 1:
+                i = bme.ends.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    i.untransformed.closed = True
+                    del i.untransformed.points[-1:]
+                    continue
+                i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.starts) >= 2:
+                i = bme.starts.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    assert False
+                i.untransformed.points = join(rev(j.untransformed.points), i.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.starts.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.ends) >= 2:
+                i = bme.ends.pop()
+                j = bme.ends.pop()
+                i.untransformed.points = join(i.untransformed.points, rev(j.untransformed.points))
+                p = blockmap.start_point(j.untransformed.points)
+                p.starts.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+        for i in toRecalc:
+            i.untransformed.calcBounds()
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        self.original_items = {k : v for k, v in originals.items() if k in toRecalc}
+        self.removed_items = []
+        for i in toRemove:
+            row = i.row()
+            self.removed_items.append((row, self.document.drawing.takeRow(row)))
+        self.removed_items = self.removed_items[::-1]
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
@@ -1915,6 +2030,7 @@ class DocumentModel(QObject):
     islandsEditRequested = pyqtSignal([OperationTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
+    shapesUpdated = pyqtSignal([])
     projectLoaded = pyqtSignal([str])
     drawingImported = pyqtSignal([str])
     def __init__(self, config_settings):
@@ -2440,6 +2556,8 @@ class DocumentModel(QObject):
     def opModifyCutter(self, cutter, new_data):
         item = self.itemForCutter(cutter)
         self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
+    def opJoin(self, items):
+        self.undoStack.push(JoinItemsUndoCommand(self, items))
     def undo(self):
         self.undoStack.undo()
     def redo(self):

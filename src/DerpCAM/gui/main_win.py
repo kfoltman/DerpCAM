@@ -52,6 +52,7 @@ class CAMMainWindow(QMainWindow):
         self.document.propertyChanged.connect(self.itemPropertyChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
+        self.document.shapesUpdated.connect(self.onShapesUpdated)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
@@ -75,6 +76,7 @@ class CAMMainWindow(QMainWindow):
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
+            ("&Join", self.editJoin, None, "Join line segments into a polyline"),
             ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
@@ -151,6 +153,9 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
+    def onShapesUpdated(self):
+        self.scheduleMajorRedraw()
+        self.updateSelection()
     def onOperationsUpdated(self):
         self.refreshNeeded = True
     def updateOperations(self):
@@ -206,6 +211,8 @@ class CAMMainWindow(QMainWindow):
             self.propsDW.setSelection(items)
     def editDelete(self):
         self.projectDW.operationDelete()
+    def editJoin(self):
+        self.projectDW.shapeJoin()
     def editPreferences(self):
         dlg = settings.PreferencesDialog(self, self.configSettings)
         self.prefDlg = dlg
