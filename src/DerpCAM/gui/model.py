@@ -230,11 +230,12 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         return res
 
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
-    def __init__(self, document, points, closed, untransformed = None):
+    def __init__(self, document, points, closed, untransformed=None, src_name=None):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
         self.closed = closed
         self.untransformed = untransformed if untransformed is not None else self
+        self.src_name = src_name
         self.calcBounds()
     def store(self):
         res = DrawingItemTreeItem.store(self)
@@ -266,6 +267,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 return "Line%d" % self.shape_id
             else:
                 return "Arc%d" % self.shape_id
+        if self.src_name is not None:
+            return self.src_name + str(self.shape_id)
         return "Polyline%d" % self.shape_id
     def textDescription(self):
         if len(self.points) == 2:
@@ -300,7 +303,7 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
             x2 = centre.x + x1 * math.cos(major_angle) - y1 * math.sin(major_angle)
             y2 = centre.y + y1 * math.cos(major_angle) + x1 * math.sin(major_angle)
             points.append(geom.PathPoint(x2, y2))
-        return DrawingPolylineTreeItem(document, points, closed)
+        return DrawingPolylineTreeItem(document, points, closed, src_name="Ellipse")
         
 class DrawingTextStyleHAlign(EnumClass):
     LEFT = 0
@@ -531,6 +534,10 @@ class DrawingTreeItem(CAMListTreeItem):
         elif dxftype == 'ELLIPSE':
             centre = pt(entity.dxf.center[0], entity.dxf.center[1])
             self.addItem(DrawingPolylineTreeItem.ellipse(self.document, centre, pt(entity.dxf.major_axis[0], entity.dxf.major_axis[1]), entity.dxf.ratio, entity.dxf.start_param, entity.dxf.end_param))
+        elif dxftype == 'SPLINE':
+            iter = entity.flattening(1.0 / geom.GeometrySettings.RESOLUTION)
+            points = [geom.PathPoint(i[0], i[1]) for i in iter]
+            self.addItem(DrawingPolylineTreeItem(self.document, points, entity.closed, src_name="Spline"))
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
