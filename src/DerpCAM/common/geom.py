@@ -225,6 +225,8 @@ class Path(object):
         self.closed = closed
     def __eq__(self, other):
         return other is not None and self.nodes == other.nodes and self.closed == other.closed
+    def is_empty(self):
+        return len(self.nodes) == 0
     def length(self):
         return sum([(dist(start, end) if end.is_point() else end.length()) for start, end in PathSegmentIterator(self)])
     def lengths(self):

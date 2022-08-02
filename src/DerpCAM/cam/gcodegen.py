@@ -393,8 +393,7 @@ class BaseCut2D(Cut):
         # Not a continuous path, need to jump to a new place
         firstpt = subpaths[0].path.seg_start()
         if subpaths[0].helical_entry:
-            he = subpaths[0].helical_entry
-            firstpt = he.start
+            firstpt = subpaths[0].helical_entry.start
         # Assuming <1% of tool diameter of a gap is harmless enough. The tolerance
         # needs to be low enough to avoid exceeding cutter engagement specified,
         # but high enough not to be tripped by rasterization errors from
@@ -463,33 +462,33 @@ class BaseCut2D(Cut):
         # For tabs, do not consider anything lower than tab_depth as milled, because
         # it is not, as there is a tab there!
         gcode.section_info(f"Start enter cut at {newz}")
-        z_already_cut_here = self.z_already_cut_here(subpath)
-        z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
-        if z_already_cut_here < self.curz:
-            if subpath.helical_entry:
+        if isinstance(subpath.helical_entry, toolpath.PlungeEntry) and not GeometrySettings.paranoid_mode:
+            assert subpath.was_previously_cut
+            plunge_entry = subpath.helical_entry
+            self.lastpt = plunge_entry.start
+            gcode.rapid(z=newz)
+            gcode.feed(subpath.tool.hfeed)
+        else:
+            z_already_cut_here = self.z_already_cut_here(subpath)
+            z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
+            if z_already_cut_here < self.curz:
                 z_already_cut_here = z_above_cut
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
+                self.curz = z_already_cut_here
+            plunge_penalty = subpath.tool.full_plunge_feed_ratio
+            if subpath.was_previously_cut:
+                # no plunge penalty
+                plunge_penalty = 1
+            if isinstance(subpath.helical_entry, toolpath.HelicalEntry):
+                gcode.feed(subpath.tool.hfeed * plunge_penalty)
+                # Descend helically to the indicated helical entry point
+                self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             else:
-                gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z)
-            self.curz = z_already_cut_here
-        plunge_penalty = subpath.tool.full_plunge_feed_ratio
-        if subpath.was_previously_cut:
-            # no plunge penalty
-            plunge_penalty = 1
-        if isinstance(subpath.helical_entry, toolpath.PlungeEntry):
-            plunge_entry = subpath.helical_entry
-            self.lastpt = plunge_entry.point
-            gcode.rapid(z=newz)
-        elif isinstance(subpath.helical_entry, toolpath.HelicalEntry):
-            gcode.feed(subpath.tool.hfeed * plunge_penalty)
-            # Descend helically to the indicated helical entry point
-            self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
-        else:
-            gcode.feed(subpath.tool.hfeed * plunge_penalty)
-            if newz < self.curz:
-                self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
-            assert self.lastpt is not None
-        gcode.feed(subpath.tool.hfeed)
+                gcode.feed(subpath.tool.hfeed * plunge_penalty)
+                if newz < self.curz:
+                    self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
+                assert self.lastpt is not None
+            gcode.feed(subpath.tool.hfeed)
         if self.lastpt != subpath.path.seg_start():
             # The helical entry ends somewhere else in the pocket, so feed to the right spot
             self.lastpt = subpath.path.seg_start()
@@ -646,8 +645,10 @@ class ToolChangeOperation(Operation):
         gcode.prompt_for_tool(self.cutter.name)
 
 class UntabbedOperation(Operation):
-    def __init__(self, shape, tool, props):
+    def __init__(self, shape, tool, props, extra_attribs={}):
         Operation.__init__(self, shape, tool, props)
+        for key, value in extra_attribs.items():
+            setattr(self, key, value)
         paths = self.build_paths(0)
         if paths:
             paths = paths.optimize()
@@ -679,9 +680,13 @@ class Pocket(UntabbedOperation):
     def build_paths(self, margin):
         return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
 
-class HSMPocket(UntabbedOperation):
+class HSMOperation(UntabbedOperation):
+    def __init__(self, shape, tool, props, shape_to_refine):
+        UntabbedOperation.__init__(self, shape, tool, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
+
+class HSMPocket(HSMOperation):
     def build_paths(self, margin):
-        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin)
+        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
@@ -698,9 +703,9 @@ class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
         return cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin)
 
-class OutsidePeelHSM(UntabbedOperation):
+class OutsidePeelHSM(HSMOperation):
     def build_paths(self, margin):
-        return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin)
+        return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, props, outside, tabs, extra_attribs):
@@ -1070,14 +1075,14 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, props or self.props))
-    def pocket_hsm(self, shape, props=None):
-        self.add(HSMPocket(shape, self.tool, props or self.props))
+    def pocket_hsm(self, shape, props=None, shape_to_refine=None):
+        self.add(HSMPocket(shape, self.tool, props or self.props, shape_to_refine))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
         self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
         self.add(OutsidePeel(shape, self.tool, props or self.props))
-    def outside_peel_hsm(self, shape, props=None):
-        self.add(OutsidePeelHSM(shape, self.tool, props or self.props))
+    def outside_peel_hsm(self, shape, props=None, shape_to_refine=None):
+        self.add(OutsidePeelHSM(shape, self.tool, props or self.props, shape_to_refine))
     def face_mill(self, shape, props=None):
         self.add(FaceMill(shape, self.tool, props or self.props))
     def peck_drill(self, x, y, props=None):

@@ -56,7 +56,7 @@ class Tabs(object):
 
 class PlungeEntry(object):
     def __init__(self, point):
-        self.point = point
+        self.start = point
 
 class HelicalEntry(object):
     def __init__(self, point, r, angle=0, climb=True):
@@ -67,7 +67,7 @@ class HelicalEntry(object):
         self.climb = climb
 
 class Toolpath(object):
-    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False):
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False, is_cleanup=False):
         assert isinstance(path, Path)
         self.path = path
         self.tool = tool
@@ -78,6 +78,7 @@ class Toolpath(object):
         self.optimize_lines_cache = None
         self.segmentation = segmentation
         self.was_previously_cut = was_previously_cut
+        self.is_cleanup = is_cleanup
         if segmentation and helical_entry is None and segmentation[0][0] == 0 and isinstance(segmentation[0][2], HelicalEntry):
             helical_entry = segmentation[0][2]
         self.helical_entry = helical_entry
@@ -94,7 +95,8 @@ class Toolpath(object):
         return self.transformed_cache
 
     def calc_bounds(self):
-        assert len(self.path.nodes), "Empty toolpath"
+        if self.path.is_empty():
+            return None
         xcoords = [p.x for p in self.path.nodes if p.is_point()]
         ycoords = [p.y for p in self.path.nodes if p.is_point()]
         tr = 0.5 * self.tool.diameter
@@ -102,12 +104,12 @@ class Toolpath(object):
 
     def lines_to_arcs(self):
         if self.lines_to_arcs_cache is None:
-            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
+            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
         return self.lines_to_arcs_cache
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
+            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
         return self.optimize_lines_cache
 
     def optimize(self):
@@ -120,12 +122,12 @@ class Toolpath(object):
 
     def subpath(self, start, end, is_tab=False, helical_entry=None):
         path = self.path.subpath(start, end)
-        tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab)
+        tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab, was_previously_cut=self.was_previously_cut and start == 0, is_cleanup=self.is_cleanup)
         return tp
 
     def without_circles(self):
         assert self.is_tab
-        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut)
+        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
 
     def cut_by_tabs(self, tabs):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
@@ -196,7 +198,7 @@ class Toolpath(object):
             spos, epos = cspos, cepos
         return Tab(spos, epos, helical_entry)
     def render_as_outlines(self):
-        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 1)
+        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
         intsFull = PtsToInts(points)
         if self.path.closed:
             intsFull += [intsFull[0]]
@@ -219,7 +221,6 @@ class Toolpath(object):
         for o in outlines:
             pc.AddPath(o, PT_SUBJECT, True)
         outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
-        #print (len(outlines))
         outlines2 = []
         for o in outlines:
             if is_calculation_cancelled():
@@ -233,6 +234,8 @@ class Toolpath(object):
             pc.AddPath(o, PT_SUBJECT, True)
         outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
         return [PtsFromInts(ints) for ints in outlines]
+    def is_empty(self):
+        return self.path.is_empty()
 
 class Toolpaths(object):
     def __init__(self, toolpaths):
@@ -261,6 +264,8 @@ class Toolpaths(object):
         return Toolpaths([tp.optimize_lines() for tp in self.toolpaths])
     def optimize(self):
         return Toolpaths([tp.optimize() for tp in self.toolpaths])
+    def is_empty(self):
+        return all([tp.is_empty() for tp in self.toolpaths])
 
 def findPathNesting(tps):
     nestings = []

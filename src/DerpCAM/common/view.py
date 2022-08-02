@@ -101,7 +101,12 @@ class OperationsRenderer(object):
             return lastpt
         if path.helical_entry:
             he = path.helical_entry
-            owner.addLines(pen, circle(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
+            if isinstance(he, toolpath.HelicalEntry):
+                owner.addLines(pen, circle(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
+            elif isinstance(he, toolpath.PlungeEntry):
+                sp = he.start
+                d = path.tool.diameter / (2 * sqrt(2))
+                owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
         owner.addRapidLine(pen, lastpt, path.path.seg_start())
         return path.path.seg_end()
     def addToolpaths(self, owner, pen, path, stage, operation):
