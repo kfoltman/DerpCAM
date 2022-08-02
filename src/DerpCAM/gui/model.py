@@ -279,6 +279,28 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         return self.label() + f"{Format.point_tuple(self.bounds[:2], brief=True)}-{Format.point_tuple(self.bounds[2:], brief=True)}"
     def toShape(self):
         return shapes.Shape(geom.CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
+    @staticmethod
+    def ellipse(document, centre, major, ratio, start_param, end_param):
+        zero = geom.PathPoint(0, 0)
+        if end_param < start_param:
+            end_param += 2 * math.pi
+        major_r = zero.dist(major)
+        major_angle = major.angle_to(zero)
+        n = int((end_param - start_param) * major_r * geom.GeometrySettings.RESOLUTION)
+        points = []
+        limit = n + 1
+        closed = False
+        if end_param - start_param >= 2 * math.pi - 0.001:
+            limit = n
+            closed = True
+        for i in range(n + 1):
+            angle = start_param + (end_param - start_param) * i / n
+            x1 = major_r * math.cos(angle)
+            y1 = major_r * ratio * math.sin(angle)
+            x2 = centre.x + x1 * math.cos(major_angle) - y1 * math.sin(major_angle)
+            y2 = centre.y + y1 * math.cos(major_angle) + x1 * math.sin(major_angle)
+            points.append(geom.PathPoint(x2, y2))
+        return DrawingPolylineTreeItem(document, points, closed)
         
 class DrawingTextStyleHAlign(EnumClass):
     LEFT = 0
@@ -502,6 +524,13 @@ class DrawingTreeItem(CAMListTreeItem):
         if dxftype == 'LWPOLYLINE':
             points, closed = geom.dxf_polyline_to_points(entity, scaling)
             self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
+        elif dxftype == 'LINE':
+            start = tuple(entity.dxf.start)[0:2]
+            end = tuple(entity.dxf.end)[0:2]
+            self.addItem(DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False))
+        elif dxftype == 'ELLIPSE':
+            centre = pt(entity.dxf.center[0], entity.dxf.center[1])
+            self.addItem(DrawingPolylineTreeItem.ellipse(self.document, centre, pt(entity.dxf.major_axis[0], entity.dxf.major_axis[1]), entity.dxf.ratio, entity.dxf.start_param, entity.dxf.end_param))
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
