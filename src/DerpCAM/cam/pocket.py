@@ -478,7 +478,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
         else:
             rt = 0
-        generator = tp._get_arcs(100)
+        generator = tp.get_arcs(100)
         try:
             while not geom.is_calculation_cancelled():
                 progress = max(0, min(1000, 1000 * next(generator)))
