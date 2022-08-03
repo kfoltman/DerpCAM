@@ -442,7 +442,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         step = tool.diameter * tool.stepover
         tactic = cam.geometry.StartPointTactic.WIDEST
         if from_outside:
-            tactic = cam.geometry.StartPointTactic.PERIMITER
+            tactic = cam.geometry.StartPointTactic.PERIMETER
             adaptive = False
             if adaptive:
                 polygon, tps = add_outer_passes(polygon, tool)
