@@ -211,6 +211,7 @@ class DrawingViewer(view.PathViewer):
                     qp.drawEllipse(pos, 10, 10)
             qp.setPen(pen)
         if self.rubberband_rect:
+            qp.setPen(QPen(QColor(0, 0, 0), 0))
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
             qp.setOpacity(1.0)
@@ -297,7 +298,9 @@ class DrawingViewer(view.PathViewer):
             if dist.manhattanLength() > QApplication.startDragDistance():
                 self.dragging = True
         if self.dragging:
-            self.rubberband_rect = QRectF(self.start_point, e.localPos())
+            sp = self.start_point
+            ep = e.localPos()
+            self.rubberband_rect = QRectF(QPointF(min(sp.x(), ep.x()), min(sp.y(), ep.y())), QPointF(max(sp.x(), ep.x()), max(sp.y(), ep.y())))
             self.startDeferredRepaint()
             self.repaint()
         view.PathViewer.mouseMoveEvent(self, e)
