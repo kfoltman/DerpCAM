@@ -18,6 +18,7 @@ class CAMMainWindow(QMainWindow):
         self.document = document
         self.configSettings = config
         self.resetZoomNeeded = False
+        self.lastProgress = None
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:
@@ -118,8 +119,9 @@ class CAMMainWindow(QMainWindow):
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
             progress = self.document.pollForUpdateCAM()
-            if progress is not None and progress > 0:
+            if (progress is not None and progress > 0) or (progress is None and self.lastProgress is not None):
                 self.viewer.repaint()
+            self.lastProgress = progress
             if self.refreshNeeded:
                 self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
                 self.resetZoomNeeded = False
