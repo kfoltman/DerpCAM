@@ -1306,7 +1306,10 @@ class OperationTreeItem(CAMTreeItem):
         self.warning = None
         self.worker = None
         self.prev_diameter = None
-        self.startUpdateCAM()
+        self.cam = None
+        self.renderer = None
+        self.error = None
+        self.warning = None
     def resetProperties(self):
         self.active = True
         self.updateCheckState()
@@ -1503,15 +1506,16 @@ class OperationTreeItem(CAMTreeItem):
         self.document.operationsUpdated.emit()
     def startUpdateCAM(self):
         with Spinner():
-            self.updateOrigShape()
             self.last_progress = (1, 100000)
             self.error = None
             self.warning = None
             self.cam = None
             self.renderer = None
+            self.updateOrigShape()
             self.cancelWorker()
             if not self.cutter:
                 self.error = "Cutter not set"
+                self.last_progress = (1, 1)
                 return
             if not self.active:
                 self.last_progress = (1, 1)
