@@ -377,7 +377,7 @@ def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
         tpo = toolpath.Toolpath(path, tool, was_previously_cut=was_previously_cut)
         spt = path.seg_start()
         spt2 = Point(spt.x, spt.y)
-        if (already_cut and already_cut.contains(spt2)) or (tp is not None and tp.starting_angle is None):
+        if (already_cut and already_cut.intersection(spt2.buffer(tool.diameter / 20))) or (tp is not None and tp.starting_angle is None):
             tpo.helical_entry = toolpath.PlungeEntry(spt)
             tpo.was_previously_cut = True
         else:
