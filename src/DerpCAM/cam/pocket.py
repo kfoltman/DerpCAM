@@ -430,7 +430,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 for i in shape_to_refine:
                     for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
                         already_cut_outline = already_cut_outline.union(j)
-                already_cut_for_this = stock.difference(already_cut_outline.buffer(tool.diameter / 2))
+                already_cut = already_cut_for_this = stock.difference(already_cut_outline.buffer(tool.diameter / 2))
                 polygon = stock.difference(outside_poly)
             else:
                 # Generous margins
