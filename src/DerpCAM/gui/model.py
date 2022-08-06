@@ -148,7 +148,7 @@ class DrawingItemTreeItem(CAMTreeItem):
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
             item = DrawingCircleTreeItem(document, geom.PathPoint(dump['cx'], dump['cy']), dump['r'])
         elif rtype == 'DrawingTextTreeItem':
-            item = DrawingTextTreeItem(document, geom.PathPoint(dump['x'], dump['y']), geom.PathPoint(dump.get('x2', dump['x']), dump.get('y2', dump['y'])),
+            item = DrawingTextTreeItem(document, geom.PathPoint(dump['x'], dump['y']), dump.get('target_width', None),
                 DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font'], dump.get('spacing', 0)), dump['text'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
@@ -346,8 +346,6 @@ class DrawingTextStyle(object):
 class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_x = FloatDistEditableProperty("Insert X", "x", Format.coord, unit="mm", allow_none=False)
     prop_y = FloatDistEditableProperty("Insert Y", "y", Format.coord, unit="mm", allow_none=False)
-    prop_x2 = FloatDistEditableProperty("Align X", "x2", Format.coord, unit="mm", allow_none=False)
-    prop_y2 = FloatDistEditableProperty("Align Y", "y2", Format.coord, unit="mm", allow_none=False)
     prop_text = StringEditableProperty("Text", "text", False)
     prop_font = FontEditableProperty("Font face", "font")
     prop_height = FloatDistEditableProperty("Font size", "height", Format.coord, min=1, unit="mm", allow_none=False)
@@ -356,21 +354,29 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_angle = FloatDistEditableProperty("Angle", "angle", Format.angle, min=-360, max=360, unit='\u00b0', allow_none=False)
     prop_halign = EnumEditableProperty("Horizontal align", "halign", DrawingTextStyleHAlign, allow_none=False)
     prop_valign = EnumEditableProperty("Vertical align", "valign", DrawingTextStyleVAlign, allow_none=False)
-    def __init__(self, document, origin, anchor2, style, text, untransformed = None):
+    prop_target_width = FloatDistEditableProperty("Target width", "target_width", Format.coord, unit="mm", allow_none=True, min=0)
+    def __init__(self, document, origin, target_width, style, text, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.untransformed = untransformed if untransformed is not None else self
         self.origin = origin
-        self.anchor2 = anchor2
+        self.target_width = target_width
         self.style = style
         self.text = text
         self.closed = True
         self.createPaths()
     def properties(self):
-        return [ self.prop_x, self.prop_y, self.prop_x2, self.prop_y2, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle, self.prop_spacing, self.prop_halign, self.prop_valign ]
+        return [ self.prop_x, self.prop_y, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle, self.prop_spacing, self.prop_halign, self.prop_target_width, self.prop_valign ]
+    def isPropertyValid(self, name):
+        ha = DrawingTextStyleHAlign
+        if name == 'valign':
+            return self.style.halign in (ha.LEFT, ha.CENTRE, ha.RIGHT)
+        if name == 'target_width':
+            return self.style.halign in (ha.ALIGNED, ha.FIT)
+        return True
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id,
             'text' : self.text, 'x' : self.origin.x, 'y' : self.origin.y,
-            'x' : self.anchor2.x, 'y' : self.anchor2.y,
+            'target_width' : self.target_width,
             'height' : self.style.height, 'width' : self.style.width,
             'halign' : self.style.halign, 'valign' : self.style.valign,
             'angle' : self.style.angle,
@@ -380,10 +386,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             return self.origin.x
         elif name == 'y':
             return self.origin.y
-        elif name == 'x2':
-            return self.anchor2.x
-        elif name == 'y2':
-            return self.anchor2.y
+        elif name == 'target_width':
+            return self.target_width
         elif name == 'text':
             return self.text
         elif name == 'font':
@@ -407,10 +411,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             self.origin = geom.PathPoint(value, self.origin.y)
         elif name == 'y':
             self.origin = geom.PathPoint(self.origin.x, value)
-        elif name == 'x2':
-            self.anchor2 = geom.PathPoint(value, self.anchor2.y)
-        elif name == 'y2':
-            self.anchor2 = geom.PathPoint(self.anchor2.x, value)
+        elif name == 'target_width':
+            self.target_width = value
         elif name == 'text':
             self.text = value
         elif name == 'font':
@@ -432,7 +434,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         self.createPaths()
         self.emitPropertyChanged(name)
     def translated(self, dx, dy):
-        tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.anchor2.translated(dx, dy), self.style, self.text, self.untransformed)
+        tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.target_width, self.style, self.text, self.untransformed)
         tti.shape_id = self.shape_id
         return tti
     def toShape(self):
@@ -480,19 +482,17 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         angle = -self.style.angle
         twidth = metrics.horizontalAdvance(self.text) / scale * self.style.width
         x, y = self.origin.x, self.origin.y
-        if self.style.halign in (DrawingTextStyleHAlign.RIGHT, DrawingTextStyleHAlign.CENTRE, DrawingTextStyleHAlign.MIDDLE):
-            x, y = self.anchor2.x, self.anchor2.y
         if self.style.halign == DrawingTextStyleHAlign.RIGHT:
             x -= twidth
         elif self.style.halign == DrawingTextStyleHAlign.CENTRE:
             x -= twidth / 2
         elif self.style.halign == DrawingTextStyleHAlign.ALIGNED:
-            if twidth:
-                font.setPointSizeF(self.style.height * (self.anchor2.dist(self.origin)) / (width * twidth) * scale)
+            if twidth and self.target_width:
+                font.setPointSizeF(self.style.height * (self.target_width / (width * twidth) * scale))
                 metrics = QFontMetrics(font)
         elif self.style.halign == DrawingTextStyleHAlign.FIT:
-            if twidth:
-                width *= self.anchor2.dist(self.origin) / twidth
+            if twidth and self.target_width:
+                width *= self.target_width / twidth
         elif self.style.halign == DrawingTextStyleHAlign.MIDDLE:
             x -= twidth / 2
             # This is likely wrong, but 
@@ -594,10 +594,16 @@ class DrawingTreeItem(CAMListTreeItem):
         elif dxftype == 'TEXT':
             font = "OpenSans"
             style = DrawingTextStyle(entity.dxf.height * scaling, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font, 0)
+            target_width = None
             ap = entity.dxf.align_point
-            if ap is None:
-                ap = entity.dxf.insert
-            self.addItem(DrawingTextTreeItem(self.document, pt(entity.dxf.insert[0], entity.dxf.insert[1]), pt(ap[0], ap[1]), style, entity.dxf.text))
+            ip = pt(entity.dxf.insert[0], entity.dxf.insert[1])
+            if entity.dxf.align_point is None:
+                ap = ip
+            else:
+                ap = pt(entity.dxf.align_point[0], entity.dxf.align_point[1])
+                target_width = ap.dist(ip)
+            rp = ip if entity.dxf.halign in (0, 3, 5) else ap
+            self.addItem(DrawingTextTreeItem(self.document, rp, target_width, style, entity.dxf.text))
         else:
             print ("Ignoring DXF entity: %s" % dxftype)
     def renderTo(self, path, modeData):
