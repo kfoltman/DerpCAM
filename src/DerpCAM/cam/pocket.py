@@ -1,8 +1,8 @@
-from DerpCAM.common import geom
+from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipper
-from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, Point
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
@@ -310,48 +310,6 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
         all_inputs += objects_to_polygons(polygon)
     return all_inputs
 
-# Entry spiral/circle
-def entry_path(x, y, rt, tool, hsm_path):
-    r = 0
-    c = geom.CandidateCircle(x, y, rt)
-    if hsm_path:
-        a = math.atan2(hsm_path[0].start.y - y, hsm_path[0].start.x - x)
-    else:
-        a = 0
-    gen_path = []
-    pitch = tool.diameter * tool.stepover
-    if False:
-        # Old method, uses concentric circles, marginally better tested but has direction changes
-        while r < rt:
-            r = min(rt, r + pitch)
-            c = geom.CandidateCircle(x, y, r)
-            cp = c.at_angle(a)
-            gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
-    else:
-        sign = (1 if tool.climb else -1)
-        rdiff = rt - r
-        if rdiff:
-            turns = math.ceil(rdiff / pitch)
-            pitch = rdiff / turns
-            # Number of arcs per circle
-            res = 2
-            slice = 2 * math.pi / res * sign
-            dr = pitch / (2 * math.sin(slice / 2) * res)
-            dr = abs(dr)
-            sa = (math.pi / res + math.pi / 2) * sign + a
-            xc0 = x - dr * math.cos(sa)
-            yc0 = y - dr * math.sin(sa)
-            for i in range(res * turns):
-                t1 = slice * i
-                c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
-                cp1 = c.at_angle(t1 + a)
-                cp2 = c.at_angle(t1 + a + slice)
-                gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
-        c = geom.CandidateCircle(x, y, rt)
-        cp = c.at_angle(a)
-        gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
-    return gen_path, a
-
 # only works for closed linestrings
 def linestring2path(ls, orientation):
     path = geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
@@ -413,6 +371,25 @@ def add_outer_passes(polygon, tool):
     polygon = exterior.difference(interiors)
     return polygon, tps
 
+def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
+    path = geom.Path(gen_path, False)
+    if path.length():
+        tpo = toolpath.Toolpath(path, tool, was_previously_cut=was_previously_cut)
+        spt = path.seg_start()
+        spt2 = Point(spt.x, spt.y)
+        if (already_cut and already_cut.contains(spt2)) or (tp is not None and tp.starting_angle is None):
+            tpo.helical_entry = toolpath.PlungeEntry(spt)
+            tpo.was_previously_cut = True
+        else:
+            if tp and tp.starting_angle:
+                cc = geom.CandidateCircle(tp.start_point.x, tp.start_point.y, tool.min_helix_diameter / 2)
+                a = -tp.starting_angle + math.pi / 2
+                tpo.helical_entry = toolpath.HelicalEntry(cc.centre(), cc.r, angle=a, climb=tool.climb)
+        tps.append(tpo)
+        gen_path = []
+        was_previously_cut = True
+    return gen_path, was_previously_cut, None
+
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None):
     from DerpCAM import cam
     import DerpCAM.cam.geometry
@@ -459,25 +436,20 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 # Generous margins
                 already_cut_for_this = stock.difference(outside_poly)
                 # Ensure enough overlap
-                outside_poly = outside_poly.buffer(tool.diameter / 2)
+                #outside_poly = outside_poly.buffer(tool.diameter / 2)
                 for i in polygon.interiors:
+                    already_cut_for_this = already_cut_for_this.difference(Polygon(i))
                     outside_poly = outside_poly.difference(Polygon(i))
                 polygon = outside_poly
         else:
             already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
-        has_entry_circle = not from_outside and not (already_cut_for_this and not already_cut_for_this.is_empty)
         with pyvlock:
-            tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic)
-        if has_entry_circle:
-            rt = tp.start_radius
-            min_helix_dia = tool.min_helix_diameter
-            max_helix_dia = 2 * rt
-            if min_helix_dia <= max_helix_dia:
-                r = 0.5 * min_helix_dia
-            else:
-                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
-        else:
-            rt = 0
+            tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
+        has_entry_circle = tp.starting_angle is not None
+        if already_cut_for_this and already_cut_for_this.contains(tp.start_point):
+            has_entry_circle = False
+        if has_entry_circle and tp.max_starting_radius < tool.min_helix_diameter / 2:
+            raise ValueError(f"Entry location smaller than safe minimum of {guiutils.Format.cutter_dia(tool.min_helix_diameter + tool.diameter)}")
         generator = tp.get_arcs(100)
         try:
             while not geom.is_calculation_cancelled():
@@ -486,44 +458,20 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         except StopIteration:
             pass
         hsm_path = tp.path
+        if not hsm_path:
+            continue
         gen_path = []
-        if from_outside:
-            if not hsm_path:
-                continue
-            x, y = hsm_path[0].start.x, hsm_path[0].start.y
-        else:
-            x, y = tp.start_point.x, tp.start_point.y
-        if has_entry_circle:
-            spiral_path, a = entry_path(x, y, rt, tool, hsm_path)
-            gen_path += spiral_path
         lastpt = None
         was_previously_cut = from_outside
         for item in hsm_path:
             if isinstance(item, cam.geometry.LineData):
                 if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
-                    if geom.Path(gen_path, False).length():
-                        tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut))
-                    was_previously_cut = True
-                    gen_path = []
+                    gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
                     gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
             elif isinstance(item, cam.geometry.ArcData):
                 add_arcdata(gen_path, item)
-        if geom.Path(gen_path, False).length():
-            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut)
-            tps.append(tpo)
-        while tps and tps[0].is_empty():
-            tps.pop(0)
-        if tps:
-            if has_entry_circle and min_helix_dia <= max_helix_dia:
-                sp = geom.PathPoint(tp.start_point.x, tp.start_point.y)
-                tps[0].helical_entry = toolpath.HelicalEntry(sp, min_helix_dia / 2.0, angle=a, climb=tool.climb)
-            elif from_outside and not shape_to_refine:
-                # Can't do that when refining because of potential tool breakage
-                # when doing non-through cuts while at slightly wrong Z height
-                # due to a mistake while setting tool length offset. Better
-                # be safe here.
-                tps[0].helical_entry = toolpath.PlungeEntry(tps[0].path.seg_start())
+        gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
         # Add a final pass around the perimeter
         if not from_outside:
             tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))

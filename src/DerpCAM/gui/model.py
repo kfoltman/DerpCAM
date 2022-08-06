@@ -495,7 +495,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
                 width *= self.target_width / twidth
         elif self.style.halign == DrawingTextStyleHAlign.MIDDLE:
             x -= twidth / 2
-            # This is likely wrong, but 
+            # This is likely wrong, but I don't have a better idea
             y -= metrics.capHeight() / 2 / scale
         # For non-special H alignment values, use V alignment
         if self.style.halign < DrawingTextStyleHAlign.ALIGNED:
