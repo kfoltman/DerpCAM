@@ -77,7 +77,7 @@ class OperationsRenderer(object):
         return False
     def renderRapids(self, owner, lastpt = PathPoint(0, 0)):
         # Red rapid moves
-        pen = QPen(QColor(255, 0, 0), 0)
+        pen = QPen(QColor(192, 0, 0), 0)
         for op in self.operations.operations:
             if op.paths:
                 lastpt = self.addRapids(owner, pen, op.paths, lastpt)
@@ -185,8 +185,6 @@ class FillDrawingOp(object):
         self.bounds = bounds
         self.darken = darken
     def paint(self, qp, transform, drawingArea, is_draft, scale):
-        #if is_draft:
-        #    return
         if self.darken:
             qp.setCompositionMode(QPainter.CompositionMode_Darken)
         else:
@@ -197,6 +195,27 @@ class FillDrawingOp(object):
                 qp.fillPath(self.path, self.brush)
             else:
                 qp.fillPath(self.path, self.brush())
+
+class ScaledFillDrawingOp(object):
+    def __init__(self, brush, path, bounds, origin, limit):
+        self.brush = brush
+        self.path = path
+        self.bounds = bounds
+        self.origin = origin
+        self.limit = limit
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
+        if scale < self.limit:
+            return
+        qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        transform2 = QTransform(transform).translate(self.origin.x(), self.origin.y()).scale(1.0 / scale, 1.0 / scale).translate(-self.origin.x(), -self.origin.y())
+        qp.setTransform(transform2)
+        bounds = transform2.mapRect(self.bounds)
+        if bounds.intersects(drawingArea):
+            if isinstance(self.brush, QBrush):
+                qp.fillPath(self.path, self.brush)
+            else:
+                qp.fillPath(self.path, self.brush())
+        qp.setTransform(transform)
 
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
@@ -251,6 +270,18 @@ class PathViewer(QWidget):
                     path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
             path.closeSubpath()
         self.drawingOps.append(FillDrawingOp(brush, path, path.boundingRect(), darken))
+    def addScaledPolygon(self, brush, polyline, origin, limit):
+        path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
+        path.moveTo(polyline[0].x, polyline[0].y)
+        for point in polyline[1:]:
+            if point.is_point():
+                path.lineTo(point.x, point.y)
+            else:
+                arc = point
+                path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+        path.closeSubpath()
+        self.drawingOps.append(ScaledFillDrawingOp(brush, path, path.boundingRect(), origin, limit))
     def addPath(self, pen, *polylines, darken=True):
         for polyline in polylines:
             path = QPainterPath()
@@ -331,20 +362,23 @@ class PathViewer(QWidget):
             self.addPath(pen, points, darken=darken)
 
     def addRapidLine(self, pen, sp, ep):
-        if draw_arrows_for_rapids and dist(sp, ep) > 2:
+        if draw_arrows_for_rapids:
             dlen = sp.dist(ep)
-            r = 0.8
-            midp = weighted(sp, ep, 0.5 + r / dlen / 2)
+            if not dlen:
+                return
+            r = 10
+            midp = weighted(sp, ep, 0.48)
             angle = atan2(ep.y - sp.y, ep.x - sp.x)
-            dangle = 29 * pi / 32
+            dangle = 28 * pi / 32
+            tip = PathPoint(midp.x + r * cos(angle), midp.y + r * sin(angle))
             m1 = PathPoint(midp.x + r * cos(angle - dangle), midp.y + r * sin(angle - dangle))
             m2 = PathPoint(midp.x + r * cos(angle + dangle), midp.y + r * sin(angle + dangle))
-            self.addPolygons(QBrush(pen.color()), [[midp, m1, m2, midp]], has_arcs=False, darken=False)
+            self.addScaledPolygon(QBrush(pen.color()), [tip, m1, m2, tip], QPointF(midp.x, midp.y), 4 * r / dlen)
         self.addLines(pen, [sp, ep], False, darken=False)
 
     def addPolygons(self, brush, polygons, has_arcs=False, darken=True):
-        #if has_arcs:
-        #    points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
+        if has_arcs:
+            polygons = [CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor()) for points in polygons]
         self.addFilledPath(brush, polygons, darken=darken)
 
     def processMove(self, e):
