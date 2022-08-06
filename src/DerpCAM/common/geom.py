@@ -873,10 +873,19 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
         fillMode = GeometrySettings.fillMode
     pc = Pyclipper()
     for path in subject_polys:
-        pc.AddPath(path.int_points, PT_SUBJECT, True)
+        try:
+            pc.AddPath(path.int_points, PT_SUBJECT, True)
+        except ClipperException:
+            pass #print (path.int_points)
     for path in clipper_polys:
-        pc.AddPath(path.int_points, PT_CLIP, True)
-    res = pc.Execute(operation, fillMode, fillMode)
+        try:
+            pc.AddPath(path.int_points, PT_CLIP, True)
+        except ClipperException:
+            pass #print (path.int_points)
+    try:
+        res = pc.Execute(operation, fillMode, fillMode)
+    except ClipperException:
+        res = None
     if bool_only:
         return True if res else False
     if not res:
