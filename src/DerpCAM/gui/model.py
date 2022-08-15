@@ -1215,13 +1215,7 @@ class WorkerThread(threading.Thread):
         self.cancelled = True
     def threadMain(self):
         try:
-            if isinstance(self.worker_func, list):
-                # XXXKF this gives pretty bad progress reporting
-                for fn in self.worker_func:
-                    if self.parent_operation.cam and fn is not None:
-                        fn()
-            else:
-                self.worker_func()
+            self.worker_func()
             if self.parent_operation.cam and self.parent_operation.cam.is_nothing():
                 self.parent_operation.addWarning("No cuts produced")
             self.progress = (self.progress[1], self.progress[1])
