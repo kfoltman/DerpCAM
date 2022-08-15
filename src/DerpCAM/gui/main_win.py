@@ -79,8 +79,8 @@ class CAMMainWindow(QMainWindow):
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
-            ("&Join", self.editJoin, None, "Join line segments into a polyline"),
-            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
+            ("&Join lines", self.editJoin, None, "Join line segments into a polyline"),
+            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
         ])
@@ -116,20 +116,22 @@ class CAMMainWindow(QMainWindow):
         self.setWindowModified(not clean)
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
-            progress = self.document.pollForUpdateCAM()
-            if (progress is not None and progress > 0) or (progress is None and self.lastProgress is not None):
-                self.viewer.repaint()
-            self.lastProgress = progress
-            if self.refreshNeeded:
-                self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
-                self.resetZoomNeeded = False
-                self.refreshNeeded = False
-            if self.newCAMNeeded:
-                subset = list(self.newCAMNeeded)
-                self.newCAMNeeded = set()
-                self.document.startUpdateCAM(subset)
+            self.doRefreshNow()
             return
         QMainWindow.timerEvent(self, event)
+    def doRefreshNow(self):
+        progress = self.document.pollForUpdateCAM()
+        if (progress is not None and progress > 0) or (progress is None and self.lastProgress is not None):
+            self.viewer.repaint()
+        self.lastProgress = progress
+        if self.refreshNeeded:
+            self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
+            self.resetZoomNeeded = False
+            self.refreshNeeded = False
+        if self.newCAMNeeded:
+            subset = list(self.newCAMNeeded)
+            self.newCAMNeeded = set()
+            self.document.startUpdateCAM(subset)
     def scheduleCAMUpdate(self, item):
         self.newCAMNeeded |= item
         for i in item:
@@ -155,6 +157,7 @@ class CAMMainWindow(QMainWindow):
         return True
     def onShapesUpdated(self):
         self.scheduleMajorRedraw()
+        self.doRefreshNow()
         self.updateSelection()
     def onOperationsUpdated(self):
         self.refreshNeeded = True
@@ -210,7 +213,14 @@ class CAMMainWindow(QMainWindow):
         else:
             self.propsDW.setSelection(items)
     def editDelete(self):
-        self.projectDW.operationDelete()
+        try:
+            selType, items = self.projectDW.activeSelection()
+            if selType == 's':
+                self.document.opDeleteDrawingItems(items)
+            else:
+                self.projectDW.operationDelete()
+        except Exception as e:
+            QMessageBox.critical(self, None, str(e))
     def editJoin(self):
         self.projectDW.shapeJoin()
     def editPreferences(self):

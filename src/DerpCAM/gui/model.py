@@ -2048,6 +2048,21 @@ class Blockmap(dict):
     def end_point(self, points):
         return self.point(points[-1].seg_end())
 
+class DeleteDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Delete drawing items")
+        self.document = document
+        self.items = [(self.document.drawing, item.row(), item) for item in items]
+        self.items = sorted(self.items, key=lambda item: item[1])
+    def undo(self):
+        for parent, pos, item in self.items:
+            parent.insertRow(pos, item)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        for parent, pos, item in self.items[::-1]:
+            parent.takeRow(pos)
+        self.document.shapesUpdated.emit()
+
 class AddDrawingItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
         QUndoCommand.__init__(self, "Add drawing items")
@@ -2061,7 +2076,7 @@ class AddDrawingItemsUndoCommand(QUndoCommand):
     def redo(self):
         self.document.drawing.insertRows(self.pos, self.items)
         self.document.shapesUpdated.emit()
-    
+
 class JoinItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
         QUndoCommand.__init__(self, "Join items")
@@ -2697,6 +2712,11 @@ class DocumentModel(QObject):
         self.undoStack.push(JoinItemsUndoCommand(self, items))
     def opAddDrawingItems(self, items):
         self.undoStack.push(AddDrawingItemsUndoCommand(self, items))
+    def opDeleteDrawingItems(self, shapes):
+        for i in shapes:
+            if not isinstance(i, DrawingItemTreeItem):
+                raise ValueError("Cannot delete an item of type: " + str(i.__class__.__name__))
+        self.undoStack.push(DeleteDrawingItemsUndoCommand(self, shapes))
     def undo(self):
         self.undoStack.undo()
     def redo(self):
