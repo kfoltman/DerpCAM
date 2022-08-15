@@ -253,9 +253,6 @@ class Gcode(object):
 
     def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
         self.section_info(f"Start ramped move from {old_z} to {new_z}")
-        if False:
-            # If doing it properly proves to be too hard
-            subpath = CircleFitter.interpolate_arcs(subpath, False, 1)
         if new_z >= old_z:
             self.rapid(z=new_z)
             self.section_info(f"End ramped move - upward direction detected")
@@ -283,7 +280,10 @@ class Gcode(object):
                 newlength = (npasses - floor(npasses)) * tlengths[-1]
                 if newlength < 1 / GeometrySettings.RESOLUTION:
                     # Very small delta, just plunge down
+                    feed = self.last_feed
+                    self.feed(tool.vfeed)
                     self.linear(z=new_z)
+                    self.feed(feed)
                     break
                 if debug_ramp:
                     self.add("(Last pass, shortening to %d)" % newlength)
@@ -312,6 +312,7 @@ class Gcode(object):
                 cur_z = next_z
                 lastpt = self.apply_subpath(subpath_reverse, lastpt)
         self.section_info(f"End ramped move - upward direction detected")
+        self.feed(tool.hfeed)
         return lastpt
 
 class MachineParams(object):
@@ -475,16 +476,20 @@ class BaseCut2D(Cut):
                 z_already_cut_here = z_above_cut
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
                 self.curz = z_already_cut_here
-            plunge_penalty = subpath.tool.full_plunge_feed_ratio
+            speed_ratio = subpath.tool.full_plunge_feed_ratio
             if subpath.was_previously_cut:
                 # no plunge penalty
-                plunge_penalty = 1
+                speed_ratio = 1
+            # Compensate for the fact that hfeed is supposed to be the
+            # horizontal component of the feed rate. In this case, we're making
+            # a 3D move, so some of the programmed feed rate goes into the vertical
+            # component instead.
+            speed_ratio *= sqrt(subpath.tool.slope() ** 2 + 1) / subpath.tool.slope()
+            gcode.feed(subpath.tool.hfeed * speed_ratio)
             if isinstance(subpath.helical_entry, toolpath.HelicalEntry):
-                gcode.feed(subpath.tool.hfeed * plunge_penalty)
                 # Descend helically to the indicated helical entry point
                 self.lastpt = gcode.helical_move_z(newz, self.curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
             else:
-                gcode.feed(subpath.tool.hfeed * plunge_penalty)
                 if newz < self.curz:
                     self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
                 assert self.lastpt is not None
