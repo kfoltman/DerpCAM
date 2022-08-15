@@ -59,11 +59,13 @@ class CAMMainWindow(QMainWindow):
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
         self.document.cutterSelected.connect(self.projectDW.onCutterSelected)
+        self.document.projectCleared.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.drawingImported.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.projectLoaded.connect(self.onDrawingImportedOrProjectLoaded)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
         self.fileMenu = self.addMenu("&File", [
-            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
+            ("&New project", self.fileNew, QKeySequence.New, "Remove everything and start a new project"),
+            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file into the current project"),
             None,
             ("&Open project...", self.fileOpen, QKeySequence.Open, "Open a project file"),
             ("&Save project", self.fileSave, QKeySequence.Save, "Save a project file"),
@@ -106,11 +108,7 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operationTouched.connect(self.operationTouched)
         self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.updateOperations()
-        filename = self.document.filename or self.document.drawing_filename
-        if filename:
-            self.setWindowFilePath(filename)
-        else:
-            self.setWindowFilePath("unnamed project")
+        self.updateWindowTitle()
         self.refreshNeeded = False
         self.newCAMNeeded = set()
         self.idleTimer = self.startTimer(500)
@@ -289,8 +287,14 @@ class CAMMainWindow(QMainWindow):
         self.coordLabel.setText(f"X={Format.coord(x, brief=True)}{Format.coord_unit()} Y={Format.coord(y, brief=True)}{Format.coord_unit()}")
     def canvasMouseLeave(self):
         self.coordLabel.setText("")
-    def onDrawingImportedOrProjectLoaded(self, fn):
-        self.setWindowFilePath(fn)
+    def updateWindowTitle(self):
+        filename = self.document.filename or self.document.drawing_filename
+        if filename is not None:
+            self.setWindowFilePath(filename)
+        else:
+            self.setWindowFilePath("unnamed project")
+    def onDrawingImportedOrProjectLoaded(self):
+        self.updateWindowTitle()
         self.viewer.majorUpdate()
         self.updateSelection()
         self.projectDW.shapeTree.expandAll()
@@ -302,6 +306,10 @@ class CAMMainWindow(QMainWindow):
         f = open(fn, "w")
         json.dump(data, f, indent=2)
         f.close()
+    def fileNew(self):
+        if not self.handleUnsaved():
+            return
+        self.document.newDocument()
     def fileImport(self):
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
@@ -310,7 +318,11 @@ class CAMMainWindow(QMainWindow):
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.document.importDrawing(fn)
+            try:
+                self.document.importDrawing(fn)
+            except Exception as e:
+                QMessageBox.critical(self, None, "Cannot import a drawing: " + str(e))
+            self.document.undoStack.resetClean()
             self.configSettings.last_input_directory = os.path.split(fn)[0]
             self.configSettings.save()
     def fileOpen(self):
@@ -378,16 +390,17 @@ class CAMMainWindow(QMainWindow):
             self.configSettings.save()
     def fileExit(self):
         self.close()
-    def closeEvent(self, e):
+    def handleUnsaved(self):
         if not self.document.undoStack.isClean():
             answer = QMessageBox.question(self, "Unsaved changes", "Project has unsaved changes. Save?", QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
             if answer == QMessageBox.Cancel:
-                e.ignore()
-                return
-            if answer == QMessageBox.Discard:
-                return
+                return False
             if answer == QMessageBox.Save:
-                self.fileSave()
-                return
+                return self.fileSave()
+        return True
+    def closeEvent(self, e):
+        if not self.handleUnsaved():
+            e.ignore()
+            return
         QWidget.closeEvent(self, e)
 

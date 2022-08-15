@@ -546,11 +546,24 @@ class DrawingTreeItem(CAMListTreeItem):
         return (b[0] - self.x_offset - margin, b[1] - self.y_offset - margin, b[2] - self.x_offset + margin, b[3] - self.y_offset + margin)
     def importDrawing(self, name):
         doc = ezdxf.readfile(name)
-        self.reset()
         msp = doc.modelspace()
+        existing = {}
+        for item in self.items():
+            itemRepr = item.store()
+            del itemRepr['shape_id']
+            itemStr = json.dumps(itemRepr)
+            existing[itemStr] = item
+        itemsToAdd = []
         for entity in msp:
-            self.importDrawingEntity(entity)
-        self.document.drawingImported.emit(name)
+            item = self.importDrawingEntity(entity)
+            if item is not None:
+                itemRepr = item.store()
+                del itemRepr['shape_id']
+                itemStr = json.dumps(itemRepr)
+                if itemStr not in existing:
+                    itemsToAdd.append(item)
+        self.document.opAddDrawingItems(itemsToAdd)
+        self.document.drawingImported.emit()
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()
         inch_mode = geom.GeometrySettings.dxf_inches
@@ -559,25 +572,25 @@ class DrawingTreeItem(CAMListTreeItem):
             return geom.PathPoint(x * scaling, y * scaling)
         if dxftype == 'LWPOLYLINE':
             points, closed = geom.dxf_polyline_to_points(entity, scaling)
-            self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
+            return DrawingPolylineTreeItem(self.document, points, closed)
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
-            self.addItem(DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False))
+            return DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False)
         elif dxftype == 'ELLIPSE':
             centre = pt(entity.dxf.center[0], entity.dxf.center[1])
-            self.addItem(DrawingPolylineTreeItem.ellipse(self.document, centre, pt(entity.dxf.major_axis[0], entity.dxf.major_axis[1]), entity.dxf.ratio, entity.dxf.start_param, entity.dxf.end_param))
+            return DrawingPolylineTreeItem.ellipse(self.document, centre, pt(entity.dxf.major_axis[0], entity.dxf.major_axis[1]), entity.dxf.ratio, entity.dxf.start_param, entity.dxf.end_param)
         elif dxftype == 'SPLINE':
             iter = entity.flattening(1.0 / geom.GeometrySettings.RESOLUTION)
             points = [geom.PathPoint(i[0], i[1]) for i in iter]
-            self.addItem(DrawingPolylineTreeItem(self.document, points, entity.closed, src_name="Spline"))
+            return DrawingPolylineTreeItem(self.document, points, entity.closed, src_name="Spline")
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
-            self.addItem(DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False))
+            return DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False)
         elif dxftype == 'CIRCLE':
             centre = pt(entity.dxf.center[0], entity.dxf.center[1])
-            self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius * scaling))
+            return DrawingCircleTreeItem(self.document, centre, entity.dxf.radius * scaling)
         elif dxftype == 'ARC':
             start = pt(entity.start_point[0], entity.start_point[1])
             end = pt(entity.end_point[0], entity.end_point[1])
@@ -590,7 +603,7 @@ class DrawingTreeItem(CAMListTreeItem):
             else:
                 sspan = eangle - sangle
             points = [start, geom.PathArc(start, end, c, 50, sangle, sspan)]
-            self.addItem(DrawingPolylineTreeItem(self.document, points, False))
+            return DrawingPolylineTreeItem(self.document, points, False)
         elif dxftype == 'TEXT':
             font = "OpenSans"
             style = DrawingTextStyle(entity.dxf.height * scaling, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font, 0)
@@ -603,9 +616,10 @@ class DrawingTreeItem(CAMListTreeItem):
                 ap = pt(entity.dxf.align_point[0], entity.dxf.align_point[1])
                 target_width = ap.dist(ip)
             rp = ip if entity.dxf.halign in (0, 3, 5) else ap
-            self.addItem(DrawingTextTreeItem(self.document, rp, target_width, style, entity.dxf.text))
+            return DrawingTextTreeItem(self.document, rp, target_width, style, entity.dxf.text)
         else:
             print ("Ignoring DXF entity: %s" % dxftype)
+        return None
     def renderTo(self, path, modeData):
         # XXXKF convert
         for i in self.items():
@@ -2034,6 +2048,20 @@ class Blockmap(dict):
     def end_point(self, points):
         return self.point(points[-1].seg_end())
 
+class AddDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Add drawing items")
+        self.document = document
+        self.items = items
+        self.pos = self.document.drawing.rowCount()
+    def undo(self):
+        for i in range(len(self.items)):
+            self.document.drawing.takeRow(self.pos)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.document.drawing.insertRows(self.pos, self.items)
+        self.document.shapesUpdated.emit()
+    
 class JoinItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
         QUndoCommand.__init__(self, "Join items")
@@ -2135,8 +2163,9 @@ class DocumentModel(QObject):
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
     shapesUpdated = pyqtSignal([])
-    projectLoaded = pyqtSignal([str])
-    drawingImported = pyqtSignal([str])
+    projectCleared = pyqtSignal([])
+    projectLoaded = pyqtSignal([])
+    drawingImported = pyqtSignal([])
     def __init__(self, config_settings):
         QObject.__init__(self)
         self.config_settings = config_settings
@@ -2312,13 +2341,17 @@ class DocumentModel(QObject):
         self.filename = fn
         self.drawing_filename = None
         self.load(data)
-        self.projectLoaded.emit(fn)
+        self.projectLoaded.emit()
     def makeMachineParams(self):
         self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
-    def importDrawing(self, fn):
+    def newDocument(self):
         self.reinitDocument()
         self.filename = None
-        self.drawing_filename = fn
+        self.drawing_filename = None
+        self.projectCleared.emit()
+    def importDrawing(self, fn):
+        if self.drawing_filename is None:
+            self.drawing_filename = fn
         self.drawing.importDrawing(fn)
     def allOperationsPlusRefinements(self, func=None):
         ops = set(self.allOperations(func))
@@ -2662,6 +2695,8 @@ class DocumentModel(QObject):
         self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
     def opJoin(self, items):
         self.undoStack.push(JoinItemsUndoCommand(self, items))
+    def opAddDrawingItems(self, items):
+        self.undoStack.push(AddDrawingItemsUndoCommand(self, items))
     def undo(self):
         self.undoStack.undo()
     def redo(self):
