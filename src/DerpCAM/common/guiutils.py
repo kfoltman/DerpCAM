@@ -119,13 +119,15 @@ class UnitConverter(object):
         if unit == "m/min":
             if value2.endswith('sfm'):
                 unit = "sfm"
-                value = UnitConverter.fromInch(value2[:-3], 1000.0 / (12 * 25.4))
+                value = UnitConverter.fromInch(value2[:-3], 12 * 25.4)
             elif value2.endswith('m/min'):
                 unit = "m/min"
-                value = UnitConverter.fromMetric(value2[:-5], 1)
+                value = UnitConverter.fromMetric(value2[:-5], 1000.0)
             elif GuiSettings.inch_mode:
                 unit = "sfm"
-                value = UnitConverter.fromInch(value2, 1000.0 / (12 * 25.4))
+                value = UnitConverter.fromInch(value2, 12 * 25.4)
+            else:
+                value = UnitConverter.fromMetric(value2, 1000.0)
         elif unit == "mm/min":
             if value2.endswith('ipm'):
                 unit = "ipm"
@@ -138,6 +140,21 @@ class UnitConverter(object):
                 value = UnitConverter.fromMetric(value2[:-6], 1)
             elif GuiSettings.inch_mode:
                 unit = "ipm"
+                value = UnitConverter.fromInch(value2)
+            else:
+                value = value2
+        elif unit == "mm/tooth":
+            if value2.endswith('ipt'):
+                unit = "ipt"
+                value = UnitConverter.fromInch(value2[:-3])
+            elif value2.endswith('in/tooth'):
+                unit = "ipt"
+                value = UnitConverter.fromInch(value2[:-8])
+            elif value2.endswith('mm/tooth'):
+                unit = "mm/tooth"
+                value = UnitConverter.fromMetric(value2[:-8], 1)
+            elif GuiSettings.inch_mode:
+                unit = "ipt"
                 value = UnitConverter.fromInch(value2)
             else:
                 value = value2

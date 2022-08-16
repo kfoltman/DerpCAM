@@ -875,7 +875,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
     @classmethod
     def properties_drillbit(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed]
+        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
@@ -892,9 +892,12 @@ class ToolPresetTreeItem(CAMTreeItem):
             if present:
                 return value
         elif name == 'surf_speed':
-            return self.inventory_preset.toolbit.diameter * math.pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
+            return self.inventory_preset.toolbit.diameter * math.pi * self.inventory_preset.rpm if self.inventory_preset.rpm else None
         elif name == 'chipload':
-            return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
+            if isinstance(self.inventory_preset.toolbit, inventory.EndMillCutter):
+                return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
+            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+                return self.inventory_preset.vfeed / self.inventory_preset.rpm if self.inventory_preset.vfeed and self.inventory_preset.rpm else None
         else:
             return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
@@ -916,18 +919,26 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         elif name == 'surf_speed':
             if value:
-                rpm = value * 1000 / (self.inventory_preset.toolbit.diameter * math.pi)
+                rpm = value / (self.inventory_preset.toolbit.diameter * math.pi)
                 if rpm >= self.prop_rpm.min and rpm <= self.prop_rpm.max:
                     self.inventory_preset.rpm = rpm
             else:
                 self.inventory_preset.rpm = None
         elif name == 'chipload':
-            if value and self.inventory_preset.rpm:
-                hfeed = self.inventory_preset.rpm * value * (self.inventory_preset.toolbit.flutes or 2)
-                if hfeed >= self.prop_hfeed.min and hfeed <= self.prop_hfeed.max:
-                    self.inventory_preset.hfeed = hfeed
-            else:
-                self.inventory_preset.hfeed = None
+            if isinstance(self.inventory_preset.toolbit, inventory.EndMillCutter):
+                if value and self.inventory_preset.rpm:
+                    hfeed = self.inventory_preset.rpm * value * (self.inventory_preset.toolbit.flutes or 2)
+                    if hfeed >= self.prop_hfeed.min and hfeed <= self.prop_hfeed.max:
+                        self.inventory_preset.hfeed = hfeed
+                else:
+                    self.inventory_preset.hfeed = None
+            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+                if value and self.inventory_preset.rpm:
+                    vfeed = self.inventory_preset.rpm * value
+                    if vfeed >= self.prop_vfeed.min and vfeed <= self.prop_vfeed.max:
+                        self.inventory_preset.vfeed = vfeed
+                else:
+                    self.inventory_preset.vfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
         if name in ['offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
