@@ -925,6 +925,7 @@ class PeckDrill(UntabbedOperation):
             if self.dwell_retract:
                 gcode.dwell(self.dwell_retract)
             curz = nextz
+        gcode.rapid(z=machine_params.safe_z)
 
 class HelicalDrill(UntabbedOperation):
     def __init__(self, x, y, d, tool, props):
