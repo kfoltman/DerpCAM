@@ -129,6 +129,9 @@ class Serializable(object):
 
 class CutterMaterial(Serializable):
     properties = []
+    @staticmethod
+    def toString(value):
+        return value.name
 
 class CutterBase(Serializable):
     properties = [ MaterialProperty('material'), 'diameter', 'length', 'flutes' ]

@@ -772,11 +772,20 @@ class ToolListTreeItem(CAMListTreeItemWithChildren):
     def createChildItem(self, data):
         return ToolTreeItem(self.document, data, True)
 
+class MaterialEnumEditableProperty(EnumEditableProperty):
+    def descriptions(self):
+        res = []
+        mat = inventory.inventory.cutter_materials
+        for k, v in mat.items():
+            res.append((v, v.name))
+        return res
+
 class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatDistEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
     prop_length = FloatDistEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
+    prop_material = MaterialEnumEditableProperty("Material", "material", inventory.CutterMaterial, allow_none=False)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -799,9 +808,9 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length]
+            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material]
         elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_length]
+            return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material]
         return []
     def resetProperties(self):
         self.emitPropertyChanged()
