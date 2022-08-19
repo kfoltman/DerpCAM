@@ -40,6 +40,7 @@ class CAMMainWindow(QMainWindow):
         def addShortcut(action, shortcut):
             action.setShortcuts(shortcut)
             return action
+        self.mruList = self.configSettings.loadMru()
         self.viewer = canvas.DrawingViewer(self.document, self.configSettings)
         self.viewer.initUI()
         self.viewer.modeChanged.connect(self.operationEditMode)
@@ -75,6 +76,8 @@ class CAMMainWindow(QMainWindow):
             None,
             ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
         ])
+        self.mruActions = []
+        self.exitAction = self.fileMenu.actions()[-1]
         self.editMenu = self.addMenu("&Edit", [
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
@@ -109,9 +112,25 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.updateOperations()
         self.updateWindowTitle()
+        self.updateFileMenu()
         self.refreshNeeded = False
         self.newCAMNeeded = set()
         self.idleTimer = self.startTimer(500)
+    def updateFileMenu(self):
+        def fileAction(id, filename):
+            action = QAction(f"&{id + 1} {filename}", self.fileMenu)
+            action.triggered.connect(lambda checked: self.loadProjectIf(filename))
+            return action
+        sep = QAction(self.fileMenu)
+        sep.setSeparator(True)
+        if self.mruList:
+            actions = [fileAction(i, filename) for i, filename in enumerate(self.mruList)] + [sep]
+        else:
+            actions = []
+        while self.mruActions:
+            self.fileMenu.removeAction(self.mruActions.pop())
+        self.fileMenu.insertActions(self.exitAction, actions)
+        self.mruActions = actions
     def cleanFlagChanged(self, clean):
         self.setWindowModified(not clean)
     def timerEvent(self, event):
@@ -309,8 +328,16 @@ class CAMMainWindow(QMainWindow):
         self.updateSelection()
         self.projectDW.shapeTree.expandAll()
         self.projectDW.operTree.expandAll()
+    def loadProjectIf(self, fn):
+        if not self.handleUnsaved():
+            return
+        self.loadProject(fn)
     def loadProject(self, fn):
         self.document.loadProject(fn)
+        self.mruList = [i for i in self.mruList if i != fn]
+        self.mruList.insert(0, fn)
+        self.configSettings.saveMru(self.mruList)
+        self.updateFileMenu()
     def saveProject(self, fn):
         data = self.document.store()
         f = open(fn, "w")

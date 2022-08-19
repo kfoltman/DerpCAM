@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common.geom import GeometrySettings
 from DerpCAM.common.guiutils import GuiSettings
 
+import os.path
+
 class ConfigSetting(object):
     def __init__(self, attr_name, setting_pathname, def_value):
         self.attr_name = attr_name
@@ -68,6 +70,7 @@ class ConfigSettings(object):
         FloatConfigSetting('tab_dist', 'tabs/tab_dist', 200, 1),
         FloatConfigSetting('tab_min_length', 'tabs/tab_min_length', 50, 1),
     ]
+    NUM_MRU = 4
     def __init__(self):
         self.settings = self.createSettingsObj()
         for i in self.setting_list:
@@ -75,6 +78,24 @@ class ConfigSettings(object):
         self.load()
     def createSettingsObj(self):
         return QSettings("kfoltman", "DerpCAM")
+    def loadMru(self):
+        self.settings.sync()
+        res = []
+        for i in range(self.NUM_MRU):
+            label = f"mru{i}"
+            if self.settings.contains(label):
+                filename = self.settings.value(label)
+                if os.path.exists(filename):
+                    res.append(filename)
+        return res
+    def saveMru(self, data):
+        for i in range(self.NUM_MRU):
+            label = f"mru{i}"
+            if i < len(data):
+                self.settings.setValue(label, data[i])
+            else:
+                self.settings.remove(label)
+        self.settings.sync()
     def load(self):
         settings = self.settings
         settings.sync()
