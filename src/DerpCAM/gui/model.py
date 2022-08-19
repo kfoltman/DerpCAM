@@ -524,8 +524,8 @@ class CAMListTreeItem(CAMTreeItem):
         pass
     
 class DrawingTreeItem(CAMListTreeItem):
-    prop_x_offset = FloatDistEditableProperty("X offset", "x_offset", Format.coord, unit="mm")
-    prop_y_offset = FloatDistEditableProperty("Y offset", "y_offset", Format.coord, unit="mm")
+    prop_x_offset = FloatDistEditableProperty("X origin", "x_offset", Format.coord, unit="mm")
+    prop_y_offset = FloatDistEditableProperty("Y origin", "y_offset", Format.coord, unit="mm")
     def __init__(self, document):
         CAMListTreeItem.__init__(self, document, "Drawing")
     def resetProperties(self):
