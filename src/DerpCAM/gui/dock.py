@@ -190,6 +190,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.refreshToolList()
     def onToolListRefreshed(self):
         self.shapeTree.expandAll()
+        if any([i for i in self.shapeSelection() if isinstance(i, (model.ToolTreeItem, model.ToolPresetTreeItem))]):
+            self.selectionChanged.emit()
     def onCutterSelected(self, cutter_cycle):
         if cutter_cycle:
             self.operTree.expand(cutter_cycle.index())
@@ -197,13 +199,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
         preset = cutter_mgr.createPresetDialog(self, self.document, item.inventory_tool, False)
         if preset:
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
     def toolRevertFromInventory(self, item):
         if item.inventory_tool.base_object:
             self.document.opRevertTool(item)
             item.inventory_tool.resetTo(item.inventory_tool.base_object)
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
     def toolDelete(self, item):
         cycle = self.document.cycleForCutter(item.inventory_tool)
         if QMessageBox.question(self, "Delete cutter from project",
