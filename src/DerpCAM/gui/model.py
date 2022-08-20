@@ -228,6 +228,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         res['cy'] = self.centre.y
         res['r'] = self.r
         return res
+    def startEndPos(self):
+        p = geom.PathPoint(self.centre.x + self.r, self.centre.y)
+        return (p, p)
 
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def __init__(self, document, points, closed, untransformed=None, src_name=None):
@@ -304,6 +307,11 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
             y2 = centre.y + y1 * math.cos(major_angle) + x1 * math.sin(major_angle)
             points.append(geom.PathPoint(x2, y2))
         return DrawingPolylineTreeItem(document, points, closed, src_name="Ellipse")
+    def startEndPos(self):
+        if self.closed:
+            return (self.points[0], self.points[0])
+        else:
+            return (self.points[0].seg_start(), self.points[-1].seg_end())
         
 class DrawingTextStyleHAlign(EnumClass):
     LEFT = 0
@@ -513,6 +521,9 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         for i in polygons:
             self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y) for p in i], True))
         self.calcBounds()
+    def startEndPos(self):
+        if self.paths:
+            return (self.paths[0].seg_start(), self.paths[-1].seg_end())
 
 class CAMListTreeItem(CAMTreeItem):
     def __init__(self, document, name):

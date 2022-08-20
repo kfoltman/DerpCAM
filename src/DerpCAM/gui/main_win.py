@@ -267,6 +267,7 @@ class CAMMainWindow(QMainWindow):
             return
         if not self.needCutterType(model.cutterTypesForOperationType(operType)):
             return
+        shapeIds = canvas.sortSelections(selectionsUsed, shapeIds)
         for i in selectionsUsed:
             self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
         rowCount, cycle, operations = self.document.opCreateOperation(shapeIds, operType)
