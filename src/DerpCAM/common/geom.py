@@ -435,6 +435,14 @@ class Path(object):
                     xcoords.feed(q.x)
                     ycoords.feed(q.y)
         return (xcoords.min, ycoords.min, xcoords.max, ycoords.max)
+    def joined(self, other):
+        nodes = self.nodes + (self.nodes[0:1] if self.nodes and self.closed else []) + other.nodes + (other.nodes[0:1] if other.nodes and other.closed else [])
+        if nodes and nodes[0].seg_start() == nodes[-1].seg_end():
+            if nodes[-1].is_point():
+                nodes.pop()
+            return Path(nodes, True)
+        else:
+            return Path(nodes, False)
 
 class PathSegmentIterator(object):
     def __init__(self, path, index=0):

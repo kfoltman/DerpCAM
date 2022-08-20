@@ -10,6 +10,8 @@ class DrawingUIMode(object):
     MODE_NORMAL = 0
     MODE_ISLANDS = 1
     MODE_TABS = 2
+    MODE_ENTRY = 3
+    MODE_EXIT = 4
 
 class DocumentRenderer(object):
     def __init__(self, document):
@@ -160,9 +162,24 @@ class DrawingViewer(view.PathViewer):
         qp.setPen(QPen(QColor(144, 144, 144), 0))
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
+    def paintEntryExitEditor(self, e, qp):
+        op = self.mode_item
+        ee = op.entry_exit
+        translation = op.document.drawing.translation()
+        #shape = op.orig_shape.translated(*translation).toShape()
+        for i in ee:
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            qp.setPen(QPen(QColor(0, 255, 0, 128), 0))
+            qp.setBrush(QBrush(QColor(0, 255, 0, 128)))
+            pos = self.project(QPointF(i[0].x, i[0].y))
+            qp.drawEllipse(pos, 10, 10)
+            qp.setPen(QPen(QColor(255, 0, 0, 128), 0))
+            qp.setBrush(QBrush())
+            pos = self.project(QPointF(i[1].x, i[1].y))
+            qp.drawEllipse(pos, 8, 8)
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
-        translation = (-op.document.drawing.x_offset, -op.document.drawing.y_offset)
+        translation = op.document.drawing.translation()
         shape = op.orig_shape.translated(*translation).toShape()
         p = shape.boundary + shape.boundary[0:1]
         path = QPainterPath()
@@ -196,11 +213,17 @@ class DrawingViewer(view.PathViewer):
     def paintOverlays(self, e, qp):
         if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
             self.paintIslandsEditor(e, qp)
+        if self.mode in (DrawingUIMode.MODE_ENTRY, DrawingUIMode.MODE_EXIT) and self.mode_item:
+            self.paintEntryExitEditor(e, qp)
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
                 modeText = "Click on outlines to add/remove preferred locations for holding tabs"
             if self.mode == DrawingUIMode.MODE_ISLANDS:
                 modeText = "Click on outlines to toggle exclusion of areas from the pocket"
+            if self.mode == DrawingUIMode.MODE_ENTRY:
+                modeText = "Click on desired entry point for the contour"
+            if self.mode == DrawingUIMode.MODE_EXIT:
+                modeText = "Click on desired end of the cut"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
@@ -267,6 +290,24 @@ class DrawingViewer(view.PathViewer):
                         self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs | set([pt]))])
                     self.renderDrawing()
                     self.repaint()
+                elif self.mode == DrawingUIMode.MODE_ENTRY:
+                    pt = PathPoint(pos.x(), pos.y())
+                    erase = None
+                    for pp in self.mode_item.entry_exit:
+                        if dist(pt, pp[0]) < 5:
+                            erase = True
+                    if erase:
+                        self.document.opChangeProperty(self.mode_item.prop_entry_exit, [(self.mode_item, [])])
+                    else:
+                        self.document.opChangeProperty(self.mode_item.prop_entry_exit, [(self.mode_item, [(pt, pt)])])
+                        self.mode = DrawingUIMode.MODE_EXIT
+                    self.renderDrawing()
+                    self.repaint()
+                elif self.mode == DrawingUIMode.MODE_EXIT:
+                    sp = self.mode_item.entry_exit[0][0]
+                    pt = PathPoint(pos.x(), pos.y())
+                    self.document.opChangeProperty(self.mode_item.prop_entry_exit, [(self.mode_item, [(sp, pt)])])
+                    self.exitEditMode()
                 return
             if objs:
                 if e.modifiers() & Qt.ControlModifier:

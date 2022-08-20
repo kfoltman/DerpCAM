@@ -782,9 +782,9 @@ class TabbedOperation(Operation):
         return newtabs
 
 class Contour(TabbedOperation):
-    def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0):
+    def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
         assert shape.closed
-        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate})
+        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate, 'entry_exit' : entry_exit})
     def tabs_width(self):
         return self.tab_extend
     def build_paths(self, margin):
@@ -801,6 +801,29 @@ class Contour(TabbedOperation):
         else:
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
+        if self.entry_exit:
+            if len(contours) != 1:
+                # XXXKF unhandled edge case
+                raise ValueError("Entry/exit points not currently supported for multi-part contours")
+            if extra_width:
+                # XXXKF unhandled edge case
+                raise ValueError("Entry/exit points not currently supported for wide or trochoidal paths")
+            # XXXKF tabs not supported yet
+            path = contours[0]
+            orig_path = path.path.reverse() if path.path.orientation() else path.path
+            ee = self.entry_exit
+            contours = []
+            for i in ee:
+                sp, ep = ee[0]
+                pos, dist = orig_path.closest_point(sp)
+                pos2, dist2 = orig_path.closest_point(ep)
+                if pos < pos2:
+                    newpath = orig_path.subpath(pos, pos2)
+                else:
+                    newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
+                contours.append(toolpath.Toolpath(Path([sp], False).joined(newpath).joined(Path([ep], False)), path.tool))
+            contours = toolpath.Toolpaths(contours)
+            return contours, {}
         tabs = self.calc_tabs(contours)
         tabs_dict = {}
         if extra_width and not trc_rate:
@@ -1057,24 +1080,24 @@ class Operations(object):
                 self.add(Contour(shape, outside, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
         else:
             self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
-    def outside_contour(self, shape, tabs, widen=0, props=None):
+    def outside_contour(self, shape, tabs, widen=0, props=None, entry_exit=None):
         if shape.islands:
             for i in shape.islands:
                 self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen))
-    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
+        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen, entry_exit=entry_exit))
+    def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, entry_exit=None):
         if shape.islands:
             for i in shape.islands:
                 self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
         #self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
+        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, True, draft_angle_deg, layer_thickness, tabs, props)
-    def inside_contour(self, shape, tabs, widen=0, props=None):
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen))
-    def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None):
+    def inside_contour(self, shape, tabs, widen=0, props=None, entry_exit=None):
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen, entry_exit=entry_exit))
+    def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, entry_exit=None):
         #self.add(TrochoidalContour(shape, False, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
+        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
     def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
     def engrave(self, shape, props=None):

@@ -128,6 +128,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             if isinstance(item, model.OperationTreeItem):
                 if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
                     menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
+                    menu.addAction("Entry/exit points").triggered.connect(self.operationEntryExitPoints)
                 elif item.areIslandsEditable():
                     menu.addAction("Islands").triggered.connect(self.operationIslands)
                 elif item.operation == OperationType.OUTSIDE_PEEL:
@@ -319,6 +320,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.document.opChangeActive(changes)
     def operationHoldingTabs(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
+    def operationEntryExitPoints(self):
+        self.modeChanged.emit(canvas.DrawingUIMode.MODE_ENTRY)
     def operationIslands(self):
         self.modeChanged.emit(canvas.DrawingUIMode.MODE_ISLANDS)
     def cycleSetAsCurrent(self, item):

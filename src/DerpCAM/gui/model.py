@@ -1316,6 +1316,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_height = FloatDistEditableProperty("Tab Height", "tab_height", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join([f"({Format.coord(i.x)}, {Format.coord(i.y)})" for i in value]), edit_func=lambda item: item.editTabLocations())
+    prop_entry_exit = SetEditableProperty("Entry/Exit points", "entry_exit", format_func=lambda value: ("Applied" if value else "Not applied") + " - double-click to edit", edit_func=lambda item: item.editEntryExit())
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
@@ -1363,6 +1364,7 @@ class OperationTreeItem(CAMTreeItem):
         self.islands = set()
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
+        self.entry_exit = []
         PresetDerivedAttributes.resetPresetDerivedValues(self)
     def updateCheckState(self):
         if not self.active and self.cam is not None:
@@ -1373,6 +1375,8 @@ class OperationTreeItem(CAMTreeItem):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
         self.document.islandsEditRequested.emit(self)
+    def editEntryExit(self):
+        self.document.entryExitEditRequested.emit(self)
     def areIslandsEditable(self):
         if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
             return False
@@ -1390,7 +1394,7 @@ class OperationTreeItem(CAMTreeItem):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
         has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE)
         has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
-        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs']:
+        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'entry_exit']:
             return False
         if not has_islands and name == 'pocket_strategy':
             return False
@@ -1432,6 +1436,7 @@ class OperationTreeItem(CAMTreeItem):
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
+        dump['entry_exit'] = [[(pts[0].x, pts[0].y), (pts[1].x, pts[1].y)] for pts in self.entry_exit]
         dump['cutter'] = self.cutter.id
         dump['tool_preset'] = self.tool_preset.id if self.tool_preset else None
         return dump
@@ -1439,13 +1444,14 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set(geom.PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
+        self.entry_exit = [(geom.PathPoint(i[0][0], i[0][1]), geom.PathPoint(i[1][0], i[1][1])) for i in dump.get('entry_exit', [])]
         self.active = dump.get('active', True)
         self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
-            self.prop_dogbones,
+            self.prop_entry_exit, self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
             self.prop_direction,
@@ -1590,14 +1596,14 @@ class OperationTreeItem(CAMTreeItem):
             return
         if self.operation == OperationType.OUTSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
         elif self.operation == OperationType.INSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
         elif self.operation == self.operation == OperationType.REFINE and self.shape_to_refine is not None:
             assert pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG
             if self.is_external:
@@ -2206,6 +2212,7 @@ class DocumentModel(QObject):
     cutterSelected = pyqtSignal([CycleTreeItem])
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
+    entryExitEditRequested = pyqtSignal([OperationTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
     shapesUpdated = pyqtSignal([])

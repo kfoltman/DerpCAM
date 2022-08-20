@@ -57,6 +57,7 @@ class CAMMainWindow(QMainWindow):
         self.document.shapesUpdated.connect(self.onShapesUpdated)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
+        self.document.entryExitEditRequested.connect(self.projectDW.operationEntryExitPoints)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
         self.document.cutterSelected.connect(self.projectDW.onCutterSelected)
