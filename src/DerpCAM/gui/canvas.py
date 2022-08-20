@@ -331,9 +331,9 @@ class DrawingViewer(view.PathViewer):
         self.repaint()
 
 def sortSelections(selections, shape_ids):
-    selections = list(selections)
     if len(selections) < 2:
-        return selections
+        return shape_ids
+    selections = list(selections)
     n = len(selections)
     pos = []
     for i in selections:
