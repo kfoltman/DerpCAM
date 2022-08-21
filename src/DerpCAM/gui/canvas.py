@@ -373,14 +373,8 @@ class DrawingViewer(view.PathViewer):
         self.selection = set(selection)
         self.repaint()
 
-def sortSelections(selections, shape_ids):
-    if len(selections) < 2:
-        return shape_ids
-    selections = list(selections)
-    n = len(selections)
-    pos = []
-    for i in selections:
-        pos.append(i.startEndPos())
+def sortPoints(pos):
+    n = len(pos)
     first = 0
     startPos = PathPoint(0.0, 0.0)
     firstDist = pos[0][0].dist(startPos)
@@ -405,6 +399,14 @@ def sortSelections(selections, shape_ids):
         seq.append(nearestIdx)
         lastPoint = pos[nearestIdx][1]
         del deck[shortest]
+    return seq
+
+def sortSelections(selections, shape_ids):
+    if len(selections) < 2:
+        return shape_ids
+    selections = list(selections)
+    pos = [i.startEndPos() for i in selections]
+    seq = sortPoints(pos)
     # Map shape_id to order
     spos = {}
     for i, v in enumerate(seq):
