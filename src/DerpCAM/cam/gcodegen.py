@@ -802,28 +802,31 @@ class Contour(TabbedOperation):
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
         if self.entry_exit:
-            if len(contours) != 1:
-                # XXXKF unhandled edge case
-                raise ValueError("Entry/exit points not currently supported for multi-part contours")
+            if not contours:
+                return toolpath.Toolpaths(contours), {}
             if extra_width:
                 # XXXKF unhandled edge case
                 raise ValueError("Entry/exit points not currently supported for wide or trochoidal paths")
             # XXXKF tabs not supported yet
-            path = contours[0]
-            orig_path = path.path.reverse() if path.path.orientation() else path.path
             ee = self.entry_exit
-            contours = []
-            for i in ee:
-                sp, ep = ee[0]
+            cut_contours = []
+            for sp, ep in ee:
+                path = contours[0]
+                pos, min_dist = path.path.closest_point(sp)
+                for j in contours[1:]:
+                    pos, dist = j.path.closest_point(sp)
+                    if dist < min_dist:
+                        min_dist = dist
+                        path = j
+                orig_path = path.path.reverse() if path.path.orientation() else path.path
                 pos, dist = orig_path.closest_point(sp)
                 pos2, dist2 = orig_path.closest_point(ep)
                 if pos < pos2:
                     newpath = orig_path.subpath(pos, pos2)
                 else:
                     newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
-                contours.append(toolpath.Toolpath(Path([sp], False).joined(newpath).joined(Path([ep], False)), path.tool))
-            contours = toolpath.Toolpaths(contours)
-            return contours, {}
+                cut_contours.append(toolpath.Toolpath(Path([sp], False).joined(newpath).joined(Path([ep], False)), path.tool))
+            return toolpath.Toolpaths(cut_contours), {}
         tabs = self.calc_tabs(contours)
         tabs_dict = {}
         if extra_width and not trc_rate:
