@@ -801,9 +801,11 @@ class Contour(TabbedOperation):
         else:
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
+        if not contours:
+            return toolpath.Toolpaths(contours), {}
+        tabs = self.calc_tabs(contours)
+        tabs_dict = {}
         if self.entry_exit:
-            if not contours:
-                return toolpath.Toolpaths(contours), {}
             if extra_width:
                 # XXXKF unhandled edge case
                 raise ValueError("Entry/exit points not currently supported for wide or trochoidal paths")
@@ -826,10 +828,8 @@ class Contour(TabbedOperation):
                 else:
                     newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
                 cut_contours.append(toolpath.Toolpath(Path([sp], False).joined(newpath).joined(Path([ep], False)), path.tool))
-            return toolpath.Toolpaths(cut_contours), {}
-        tabs = self.calc_tabs(contours)
-        tabs_dict = {}
-        if extra_width and not trc_rate:
+            contours = toolpath.Toolpaths(cut_contours)
+        elif extra_width and not trc_rate:
             extra_width *= tool.diameter / 2
             widen_func = lambda contour: self.widen(contour, tool, extra_width)
             res = []
