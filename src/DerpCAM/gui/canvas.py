@@ -172,11 +172,13 @@ class DrawingViewer(view.PathViewer):
             qp.setPen(QPen(QColor(0, 255, 0, 128), 0))
             qp.setBrush(QBrush(QColor(0, 255, 0, 128)))
             pos = self.project(QPointF(i[0].x, i[0].y))
-            qp.drawEllipse(pos, 10, 10)
-            qp.setPen(QPen(QColor(255, 0, 0, 128), 0))
-            qp.setBrush(QBrush())
-            pos = self.project(QPointF(i[1].x, i[1].y))
-            qp.drawEllipse(pos, 8, 8)
+            if op.cutter:
+                r = op.cutter.diameter * self.scalingFactor() / 2
+                qp.drawEllipse(pos, r, r)
+                qp.setPen(QPen(QColor(255, 0, 0, 128), 0))
+                qp.setBrush(QBrush())
+                pos = self.project(QPointF(i[1].x, i[1].y))
+                qp.drawEllipse(pos, r, r)
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
         translation = op.document.drawing.translation()
