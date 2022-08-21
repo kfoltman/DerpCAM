@@ -245,9 +245,17 @@ class DrawingViewer(view.PathViewer):
             if self.mode == DrawingUIMode.MODE_ISLANDS:
                 modeText = "Click on outlines to toggle exclusion of areas from the pocket"
             if self.mode == DrawingUIMode.MODE_ENTRY:
-                modeText = "Click on desired entry point for the contour"
+                orientation = self.mode_item.contourOrientation()
+                if orientation:
+                    modeText = "Click on desired entry point for the contour running in counter-clockwise direction"
+                else:
+                    modeText = "Click on desired entry point for the contour running in clockwise direction"
             if self.mode == DrawingUIMode.MODE_EXIT:
-                modeText = "Click on desired end of the cut, clockwise from starting point"
+                orientation = self.mode_item.contourOrientation()
+                if orientation:
+                    modeText = "Click on desired end of the cut, counter-clockwise from starting point"
+                else:
+                    modeText = "Click on desired end of the cut, clockwise from starting point"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)

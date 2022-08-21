@@ -1810,6 +1810,12 @@ class OperationTreeItem(CAMTreeItem):
         if aspect == InvalidateAspect.CAM:
             return set([self] + self.document.refineOpsForShapes(set([self.shape_id])))
         return set([self])
+    def contourOrientation(self):
+        pda = PresetDerivedAttributes(self)
+        if self.operation == OperationType.OUTSIDE_CONTOUR:
+            return pda.direction == inventory.MillDirection.CONVENTIONAL
+        else:
+            return pda.direction == inventory.MillDirection.CLIMB
 
 class OperationsModel(QStandardItemModel):
     def __init__(self, document):

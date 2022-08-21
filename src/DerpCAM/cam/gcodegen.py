@@ -831,6 +831,9 @@ class Contour(TabbedOperation):
                 # For entry_exit, this is handled via twins
                 contours = res
         if self.entry_exit:
+            if extra_width and trc_rate:
+                # This will require handling segmentation
+                raise ValueError("Cannot use entry/exit with trochoidal paths yet")
             ee = self.entry_exit
             cut_contours = []
             for sp, ep in ee:
@@ -843,14 +846,15 @@ class Contour(TabbedOperation):
                         path = j
                 path_and_twins = twins.get(path, [path])
                 for path in path_and_twins:
-                    orig_path = path.path.reverse() if path.path.orientation() else path.path
+                    orig_path = path.path
                     pos, dist = orig_path.closest_point(sp)
                     pos2, dist2 = orig_path.closest_point(ep)
                     if pos < pos2:
                         newpath = orig_path.subpath(pos, pos2)
                     else:
                         newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
-                    cut_contours.append(toolpath.Toolpath(Path([sp], False).joined(newpath).joined(Path([ep], False)), path.tool))
+                    newpath = Path([sp], False).joined(newpath).joined(Path([ep], False))
+                    cut_contours.append(toolpath.Toolpath(newpath, path.tool))
             contours = cut_contours
         contours = toolpath.Toolpaths(contours)
         self.add_tabs_if_close(contours, tabs_dict, tabs, tool.diameter * sqrt(2))
