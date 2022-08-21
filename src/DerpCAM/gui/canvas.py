@@ -181,11 +181,26 @@ class DrawingViewer(view.PathViewer):
                 pos = self.project(QPointF(i[1].x, i[1].y))
                 qp.drawEllipse(pos, r, r)
         if self.mouse_point is not None:
-            qp.setPen(QPen(QColor(128, 128, 128, 128), 0))
-            pos = self.project(self.mouse_point)
+            erase = None
+            mp = PathPoint(self.mouse_point.x(), self.mouse_point.y())
+            for pp in self.mode_item.entry_exit:
+                if dist(mp, pp[0]) < 5:
+                    erase = pp[0]
+            if erase:
+                qp.setPen(QPen(QColor(255, 128, 128, 192), 0))
+            else:
+                qp.setPen(QPen(QColor(128, 128, 128, 128), 0))
+                if self.mode == DrawingUIMode.MODE_ENTRY:
+                    qp.setBrush(QBrush(QColor(128, 128, 128, 128)))
+            pos = self.project(self.mouse_point if erase is None else QPointF(erase.x, erase.y))
             if op.cutter:
                 r = op.cutter.diameter * self.scalingFactor() / 2
+                r2 = r * (2 ** 0.5)
                 qp.drawEllipse(pos, r, r)
+                if erase:
+                    qp.drawLine(pos + QPointF(-r2, -r2), pos + QPointF(r2, r2))
+                    qp.drawLine(pos + QPointF(r2, -r2), pos + QPointF(-r2, r2))
+            qp.setBrush(QBrush())
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
         translation = op.document.drawing.translation()
@@ -232,7 +247,7 @@ class DrawingViewer(view.PathViewer):
             if self.mode == DrawingUIMode.MODE_ENTRY:
                 modeText = "Click on desired entry point for the contour"
             if self.mode == DrawingUIMode.MODE_EXIT:
-                modeText = "Click on desired end of the cut"
+                modeText = "Click on desired end of the cut, clockwise from starting point"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
