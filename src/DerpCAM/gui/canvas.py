@@ -111,6 +111,7 @@ class DrawingViewer(view.PathViewer):
         self.dragging = False
         self.rubberband_rect = None
         self.start_point = None
+        self.mouse_point = None
         self.mode = DrawingUIMode.MODE_NORMAL
         self.mode_item = None
         self.flash_highlight = None
@@ -167,8 +168,8 @@ class DrawingViewer(view.PathViewer):
         ee = op.entry_exit
         translation = op.document.drawing.translation()
         #shape = op.orig_shape.translated(*translation).toShape()
+        qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
         for i in ee:
-            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
             qp.setPen(QPen(QColor(0, 255, 0, 128), 0))
             qp.setBrush(QBrush(QColor(0, 255, 0, 128)))
             pos = self.project(QPointF(i[0].x, i[0].y))
@@ -178,6 +179,12 @@ class DrawingViewer(view.PathViewer):
                 qp.setPen(QPen(QColor(255, 0, 0, 128), 0))
                 qp.setBrush(QBrush())
                 pos = self.project(QPointF(i[1].x, i[1].y))
+                qp.drawEllipse(pos, r, r)
+        if self.mouse_point is not None:
+            qp.setPen(QPen(QColor(128, 128, 128, 128), 0))
+            pos = self.project(self.mouse_point)
+            if op.cutter:
+                r = op.cutter.diameter * self.scalingFactor() / 2
                 qp.drawEllipse(pos, r, r)
     def paintIslandsEditor(self, e, qp):
         op = self.mode_item
@@ -328,24 +335,28 @@ class DrawingViewer(view.PathViewer):
         else:
             view.PathViewer.mousePressEvent(self, e)
     def mouseMoveEvent(self, e):
-        if not self.dragging and self.mode == DrawingUIMode.MODE_ISLANDS:
-            pos = self.unproject(e.localPos())
-            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
-            objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
-            if objs:
-                self.setCursor(Qt.PointingHandCursor)
-            else:
-                self.updateCursor()
-        if not self.dragging and self.start_point:
-            dist = e.localPos() - self.start_point
-            if dist.manhattanLength() > QApplication.startDragDistance():
-                self.dragging = True
         if self.dragging:
             sp = self.start_point
             ep = e.localPos()
             self.rubberband_rect = QRectF(QPointF(min(sp.x(), ep.x()), min(sp.y(), ep.y())), QPointF(max(sp.x(), ep.x()), max(sp.y(), ep.y())))
             self.startDeferredRepaint()
             self.repaint()
+        else:
+            if self.mode in (DrawingUIMode.MODE_ENTRY, DrawingUIMode.MODE_EXIT):
+                self.mouse_point = self.unproject(e.localPos())
+                self.repaint()            
+            elif self.mode == DrawingUIMode.MODE_ISLANDS:
+                pos = self.unproject(e.localPos())
+                objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
+                objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
+                if objs:
+                    self.setCursor(Qt.PointingHandCursor)
+                else:
+                    self.updateCursor()
+            elif self.start_point:
+                dist = e.localPos() - self.start_point
+                if dist.manhattanLength() > QApplication.startDragDistance():
+                    self.dragging = True
         view.PathViewer.mouseMoveEvent(self, e)
     def mouseReleaseEvent(self, e):
         if self.dragging:
