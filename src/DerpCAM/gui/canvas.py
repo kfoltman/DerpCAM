@@ -380,12 +380,13 @@ def sortSelections(selections, shape_ids):
     for i in selections:
         pos.append(i.startEndPos())
     first = 0
-    firstPos = (pos[0][0].y, pos[0][0].x)
+    startPos = PathPoint(0.0, 0.0)
+    firstDist = pos[0][0].dist(startPos)
     for i in range(1, n):
-        tryPos = (pos[i][0].y, pos[i][0].x)
-        if tryPos < firstPos:
+        tryDist = pos[i][0].dist(startPos)
+        if tryDist < firstDist:
             first = i
-            firstPos = tryPos
+            firstDist = tryDist
     deck = list(range(n))
     seq = [first]
     lastPoint = pos[first][1]
