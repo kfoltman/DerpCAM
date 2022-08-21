@@ -1491,7 +1491,14 @@ class OperationTreeItem(CAMTreeItem):
                     self.startUpdateCAM()
                     self.document.refreshToolList()
                 return
+        if name == 'direction' and self.entry_exit:
+            pda = PresetDerivedAttributes(self)
+            old_orientation = pda.direction
         setattr(self, name, value)
+        if name == 'direction' and self.entry_exit:
+            pda = PresetDerivedAttributes(self)
+            if pda.direction != old_orientation:
+                self.entry_exit = [(e, s) for s, e in self.entry_exit]
         self.onPropertyValueSet(name)
     def onPropertyValueSet(self, name):
         if name == 'cutter' and self.parent().cutter != self.cutter:
