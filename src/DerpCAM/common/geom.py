@@ -309,7 +309,7 @@ class Path(object):
             end = 1
         while i >= end:
             pi = self.nodes[i]
-            speed_hint = self.nodes[i + 1] if i < final else None
+            speed_hint = self.nodes[i + 1].speed_hint if i < final else None
             if not pi.is_arc():
                 res.append(pi.with_speed_hint(speed_hint))
             else: # arc
@@ -492,7 +492,7 @@ def dist_vec(a, b):
     return b.x - a.x, b.y - a.y
 
 def weighted(p1, p2, alpha):
-    return PathPoint(p1.x + (p2.x - p1.x) * alpha, p1.y + (p2.y - p1.y) * alpha)
+    return PathPoint(p1.x + (p2.x - p1.x) * alpha, p1.y + (p2.y - p1.y) * alpha, p2.speed_hint)
 
 def weighted_with_arcs(p1, p2, alpha):
     p1 = p1.seg_end()

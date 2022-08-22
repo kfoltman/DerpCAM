@@ -156,9 +156,13 @@ class GeomTest(unittest.TestCase):
         self.assertNear(Path([PathPoint(100, 0)] + path, False).length(), pi * 25 + 50)
         self.assertNear(Path([PathPoint(50, -50)] + path, False).length(), pi * 25 + 50)
 
-        path = [PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi), PathPoint(-50, 0)]
+        path = [PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi, 20), PathPoint(-50, 0, 30)]
         self.assertNear(Path(path, False).length(), pi * 50)
         self.assertNear(Path(path, False).reverse().length(), pi * 50)
+        rev = Path(path, False).reverse().nodes
+        self.assertEqual(rev[0].speed_hint, None)
+        self.assertEqual(rev[1].speed_hint, 30)
+        self.assertEqual(rev[2].speed_hint, 20)
 
         path = [PathPoint(0, 0), PathPoint(50, 0), PathArc(PathPoint(50, 0), PathPoint(-50, 0), CandidateCircle(0, 0, 50), 100, 0, pi), PathPoint(0, 0)]
         self.assertNear(Path(path, False).length(), pi * 50 + 100)
@@ -214,12 +218,23 @@ class GeomTest(unittest.TestCase):
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
 
     def testSubpath(self):
-        path = Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(20, 0), PathPoint(20, 0), PathPoint(30, 0)], False)
+        path = Path([PathPoint(0, 0), PathPoint(10, 0, 1), PathPoint(20, 0, 2), PathPoint(20, 0, 3), PathPoint(30, 0, 4)], False)
         self.assertEqual(path.length(), 30)
         self.assertEqual(path.subpath(-5, 11), Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)], False))
         self.assertEqual(path.subpath(0, 11), Path([PathPoint(0, 0), PathPoint(10, 0), PathPoint(11, 0)], False))
         self.assertEqual(path.subpath(11, 25), Path([PathPoint(11, 0), PathPoint(20, 0), PathPoint(25, 0)], False))
         self.assertEqual(path.subpath(25, 40), Path([PathPoint(25, 0), PathPoint(30, 0)], False))
+        self.assertEqual(path.subpath(5, 10).nodes[1].speed_hint, 1)
+        self.assertEqual(path.subpath(15, 20).nodes[1].speed_hint, 2)
+        self.assertEqual(path.subpath(5, 20).nodes[1].speed_hint, 1)
+
+        path = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2, Ellipsis), PathPoint(0, 0, 9) ], True)
+        subpath = path.subpath(1, 5)
+        self.assertNear(subpath.length(), 4)
+        self.assertEqual(subpath.nodes[1].c, path.nodes[1].c, 4)
+        self.assertNear(subpath.nodes[1].sstart, 0.1)
+        self.assertNear(subpath.nodes[1].sspan, 0.4)
+        self.assertEqual(subpath.nodes[1].speed_hint, Ellipsis)
 
 class TabsTest(unittest.TestCase):
     def testCut(self):
