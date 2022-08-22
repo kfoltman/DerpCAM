@@ -42,6 +42,7 @@ class Gcode(object):
         self.last_feed_index = None
         self.rpm = None
         self.last_rpm = None
+        self.last_coords = None
     def add(self, line):
         self.gcode.append(line)
     def add_dedup(self, line):
@@ -94,14 +95,22 @@ class Gcode(object):
                 self.add(self.enc_feed(feed))
             self.last_feed = feed
             self.last_feed_index = len(self.gcode) - 1
+    def add_dedup_g0g1(self, cmd, x=None, y=None, z=None):
+        coords = self.enc_coords(x, y, z)
+        if coords == self.last_coords:
+            return
+        self.add_dedup(cmd + coords)
+        self.last_coords = coords
     def rapid(self, x=None, y=None, z=None):
-        self.add("G0" + self.enc_coords(x, y, z))
+        self.add_dedup_g0g1("G0", x, y, z)
     def linear(self, x=None, y=None, z=None):
-        self.add_dedup("G1" + self.enc_coords(x, y, z))
+        self.add_dedup_g0g1("G1", x, y, z)
     def arc_cw(self, x=None, y=None, z=None, i=None, j=None, k=None):
         self.add("G2" + self.enc_coords_arc(x, y, z, i, j, k))
+        self.last_coords = self.enc_coords(x, y, z)
     def arc_ccw(self, x=None, y=None, z=None, i=None, j=None, k=None):
         self.add("G3" + self.enc_coords_arc(x, y, z, i, j, k))
+        self.last_coords = self.enc_coords(x, y, z)
     def arc(self, direction, x=None, y=None, z=None, i=None, j=None, k=None):
         (self.arc_ccw if direction > 0 else self.arc_cw)(x, y, z, i, j, k)
     def dwell(self, delay):
@@ -219,7 +228,10 @@ class Gcode(object):
                     tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
                     self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
-                    self.linear(x=pt.x, y=pt.y)
+                    if pt.speed_hint is toolpath.RapidMove:
+                        self.rapid(x=pt.x, y=pt.y)
+                    else:
+                        self.linear(x=pt.x, y=pt.y)
         lastpt = pt.seg_end()
         self.section_info(f"End subpath")
         return lastpt

@@ -468,7 +468,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
                     gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
-                    gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
+                    gen_path += [geom.PathPoint(x, y, toolpath.RapidMove) for x, y in item.path.coords]
             elif isinstance(item, cam.geometry.ArcData):
                 add_arcdata(gen_path, item)
         gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)

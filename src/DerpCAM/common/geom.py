@@ -84,9 +84,10 @@ class PathNode(object):
             raise ValueError(f"Invalid number of data items for a path node ({l})")
 
 class PathPoint(PathNode):
-    def __init__(self, x, y):
+    def __init__(self, x, y, speed_hint=None):
         self.x = x
         self.y = y
+        self.speed_hint = speed_hint
     def __repr__(self):
         return f"PathPoint({self.x:0.3f},{self.y:0.3f})"
     def seg_start(self):
@@ -113,6 +114,8 @@ class PathPoint(PathNode):
         return PathPoint(t[0], t[1])
     def translated(self, dx, dy):
         return PathPoint(self.x + dx, self.y + dy)
+    def with_speed_hint(self, speed_hint):
+        return PathPoint(self.x, self.y, speed_hint)
     def __eq__(self, other):
         return self.x == other.x and self.y == other.y
     def __ne__(self, other):
@@ -123,13 +126,14 @@ class PathPoint(PathNode):
         return PathPoint((self.x - cx) * scale + cx, (self.y - cy) * scale + cy)
 
 class PathArc(PathNode):
-    def __init__(self, p1, p2, c, steps, sstart, sspan):
+    def __init__(self, p1, p2, c, steps, sstart, sspan, speed_hint=None):
         self.p1 = p1
         self.p2 = p2
         self.c = c
         self.steps = max(3, steps)
         self.sstart = sstart
         self.sspan = sspan
+        self.speed_hint = speed_hint
         cp = c.centre()
         r1 = dist(cp, p1)
         r2 = dist(cp, p2)
@@ -161,12 +165,17 @@ class PathArc(PathNode):
     def seg_end(self):
         return self.p2
     def as_tuple(self):
+        if self.speed_hint is not None:
+            return ("ARC_CW" if self.sspan < 0 else "ARC_CCW", self.p1.as_tuple(), self.p2.as_tuple(), self.c.as_tuple(), self.steps, self.sstart, self.sspan, self.speed_hint)
         return ("ARC_CW" if self.sspan < 0 else "ARC_CCW", self.p1.as_tuple(), self.p2.as_tuple(), self.c.as_tuple(), self.steps, self.sstart, self.sspan)
     @staticmethod
     def from_tuple(t):
-        if len(t) != 7:
-            raise ValueError("Invalid number of data items in a point record")
-        return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6])
+        l = len(t)
+        if l == 7:
+            return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6])
+        if l == 8:
+            return PathArc(PathPoint.from_tuple(t[1]), PathPoint.from_tuple(t[2]), CandidateCircle.from_tuple(t[3]), t[4], t[5], t[6], t[7])
+        raise ValueError("Invalid number of data items in a point record")
     def angle_at_fraction(self, alpha):
         return self.sstart + self.sspan * alpha
     def at_fraction(self, alpha):
@@ -174,11 +183,11 @@ class PathArc(PathNode):
     def length(self):
         return abs(self.sspan) * self.c.r
     def reversed(self):
-        return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan)
+        return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan, self.speed_hint)
     def translated(self, dx, dy):
-        return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan)
+        return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan, self.speed_hint)
     def scaled(self, cx, cy, scale):
-        return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan)
+        return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan, self.speed_hint)
     def cut(self, alpha, beta):
         alpha = max(0, alpha)
         beta = min(1, beta)
@@ -188,7 +197,7 @@ class PathArc(PathNode):
         span = self.sspan * (beta - alpha)
         arc_start = self.c.at_angle(start)
         arc_end = self.c.at_angle(start + span)
-        return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span)]
+        return [arc_start, PathArc(arc_start, arc_end, self.c, self.steps, start, span, self.speed_hint)]
     def quadrant_seps(self):
         # Return extra points (other than start and end) needed to calculate the bounds, i.e. the points separating the quadrants of a circle
         # a1, a2 = angles 0..2*pi, choosen between start and end so that a1 <= a2
@@ -293,17 +302,18 @@ class Path(object):
             return sp, prev
     def reverse(self):
         res = []
-        i = len(self.nodes) - 1
+        i = final = len(self.nodes) - 1
         end = 0
         if self.closed:
             res.append(self.nodes[0])
             end = 1
         while i >= end:
             pi = self.nodes[i]
+            speed_hint = self.nodes[i + 1] if i < final else None
             if not pi.is_arc():
-                res.append(pi)
+                res.append(pi.with_speed_hint(speed_hint))
             else: # arc
-                res.append(pi.p2) # end point
+                res.append(pi.p2.with_speed_hint(speed_hint)) # end point
                 res.append(pi.reversed())
                 # Skip start point, as it is already inside the arc
                 i -= 1

@@ -3,6 +3,9 @@ from math import *
 from ..common.geom import *
 from .milling_tool import *
 
+class RapidMove(object):
+    pass
+
 class Tab(object):
     def __init__(self, start, end, helical_entry=None):
         self.start = start
