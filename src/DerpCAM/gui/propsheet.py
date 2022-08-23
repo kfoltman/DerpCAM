@@ -77,6 +77,12 @@ class EnumClass(object):
             if value == data[0]:
                 return data[1]
         return None
+    @classmethod
+    def toTuple(classInst, value):
+        for data in classInst.descriptions:
+            if value == data[0]:
+                return data
+        return None
 
 class FontEditableProperty(EditableProperty):
     def createEditor(self, parent, item, objects):

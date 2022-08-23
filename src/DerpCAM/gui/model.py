@@ -1211,6 +1211,19 @@ class PresetDerivedAttributes(object):
             dirty, value = attr.resolve(operation, preset)
             setattr(self, attr.name, value)
             self.dirty = self.dirty or dirty
+        # Material defaults
+        if operation.document.material.material is not None and operation.cutter is not None and isinstance(operation.cutter, inventory.EndMillCutter):
+            m = MaterialType.toTuple(operation.document.material.material)[2]
+            t = operation.cutter
+            st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated)
+            if self.rpm is None:
+                self.rpm = st.rpm
+            if self.hfeed is None:
+                self.hfeed = st.hfeed
+            if self.vfeed is None:
+                self.vfeed = st.vfeed
+            if self.doc is None:
+                self.doc = st.maxdoc
     def validate(self, errors):
         if self.vfeed is None:
             errors.append("Plunge rate is not set")
@@ -2318,7 +2331,7 @@ class DocumentModel(QObject):
         cycleForCutter = {}
         if 'tool' in data:
             # Old style singleton tool
-            material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
+            material = MaterialType.toTuple(self.material.material)[2] if self.material.material is not None else material_plastics
             tool = data['tool']
             prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'])
             std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, milling_tool.carbide_uncoated).clone_with_overrides(
