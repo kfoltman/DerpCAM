@@ -975,12 +975,26 @@ class MaterialType(EnumClass):
     WOOD = 0
     PLASTICS = 1
     ALU = 2
-    STEEL = 3
+    MILD_STEEL = 3
+    ALLOY_STEEL = 4
+    TOOL_STEEL = 5
+    STAINLESS_STEEL = 6
+    CAST_IRON = 7
+    MALLEABLE_IRON = 8
+    BRASS = 9
+    FOAM = 10
     descriptions = [
+        (FOAM, "Foam", milling_tool.material_foam),
         (WOOD, "Wood/MDF", milling_tool.material_wood),
         (PLASTICS, "Plastics", milling_tool.material_plastics),
         (ALU, "Aluminium", milling_tool.material_aluminium),
-        (STEEL, "Mild steel", milling_tool.material_mildsteel),
+        (BRASS, "Brass", milling_tool.material_brass),
+        (MILD_STEEL, "Mild steel", milling_tool.material_mildsteel),
+        (ALLOY_STEEL, "Alloy or MC steel", milling_tool.material_alloysteel),
+        (TOOL_STEEL, "Tool steel", milling_tool.material_toolsteel),
+        (STAINLESS_STEEL, "Stainless steel", milling_tool.material_stainlesssteel),
+        (CAST_IRON, "Cast iron - gray", milling_tool.material_castiron),
+        (MALLEABLE_IRON, "Cast iron - malleable", milling_tool.material_malleableiron),
     ]
 
 class WorkpieceTreeItem(CAMTreeItem):
@@ -992,8 +1006,8 @@ class WorkpieceTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
     def resetProperties(self):
-        self.material = MaterialType.WOOD
-        self.thickness = 3
+        self.material = None
+        self.thickness = None
         self.clearance = self.document.config_settings.clearance_z
         self.safe_entry_z = self.document.config_settings.safe_entry_z
         self.emitPropertyChanged()
@@ -1001,10 +1015,13 @@ class WorkpieceTreeItem(CAMTreeItem):
         return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
     def data(self, role):
         if role == Qt.DisplayRole:
+            mname = MaterialType.toString(self.material) if self.material is not None else "unknown material"
             if self.thickness is not None:
-                return QVariant("Workpiece: %s %s" % (Format.depth_of_cut(self.thickness), MaterialType.toString(self.material)))
+                return QVariant(f"Workpiece: {Format.depth_of_cut(self.thickness)} {mname}")
+            elif self.material is not None:
+                return QVariant(f"Workpiece: {mname}, unknown thickness")
             else:
-                return QVariant("Workpiece: ? %s" % (MaterialType.toString(self.material)))
+                return QVariant(f"Workpiece: unknown material or thickness")
         return CAMTreeItem.data(self, role)
     def onPropertyValueSet(self, name):
         #if name == 'material':
@@ -2581,8 +2598,6 @@ class DocumentModel(QObject):
             if item.error is not None:
                 raise ValueError(item.error)
         self.forEachOperation(validateOperation)
-        if self.material.material is None:
-            raise ValueError("Material type not set")
     def setOperSelection(self, selection):
         changes = []
         def setSelected(operation):

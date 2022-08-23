@@ -73,31 +73,40 @@ class CutterMaterial:
         self.sfm_multiplier = sfm_multiplier
 
 class Material:
-    def __init__(self, name, short_name, sfm, chipload_10mm, ramp_angle, depth_factor, cut_power):
+    def __init__(self, name, short_name, sfm, chipload_3mm, chipload_10mm, ramp_angle, depth_factor, cut_power):
         self.name = name
         self.short_name = short_name
-        self.sfm = sfm
+        self.sfm = sfm # for carbide tools
+        self.chipload_3mm = chipload_3mm # mm chipload at 10mm diameter
         self.chipload_10mm = chipload_10mm # mm chipload at 10mm diameter
         self.ramp_angle = ramp_angle # degrees
         self.depth_factor = depth_factor # multiplier of tool diameter
         self.cut_power = cut_power # HP / (in^3/min)
 
 # 1018, S235, EN3 etc. mild steels
-material_mildsteel = Material("mild steel", "stl", 350, 0.06, 1, 0.25, 1.0)
+material_mildsteel = Material("mild steel", "stl", 350, 0.016, 0.06, 1, 0.25, 1.0)
 # 4140, EN19 etc. low alloy steels
-material_alloysteel = Material("low alloy steel", "lastl", 250, 0.06, 1, 0.25, 1.6)
+material_alloysteel = Material("low alloy steel", "lastl", 250, 0.016, 0.06, 1, 0.25, 1.6)
 # Tool steels
-material_toolsteel = Material("tool steel", "tstl", 200, 0.05, 1, 0.2, 2)
+material_toolsteel = Material("tool steel", "tstl", 200, 0.01, 0.05, 1, 0.2, 2)
+# Stainless steels
+material_stainlesssteel = Material("stainless steel", "sstl", 200, 0.01, 0.05, 1, 0.2, 2)
 # Steel forgings
-material_forgedsteel = Material("forged steel", "fstl", 125, 0.05, 1, 0.2, 2)
+material_forgedsteel = Material("forged steel", "fstl", 125, 0.01, 0.05, 1, 0.2, 2)
+# Cast iron - gray
+material_castiron = Material("gray iron", "giron", 400, 0.015, 0.06, 1, 0.25, 1.2)
+# Cast iron - malleable
+material_malleableiron = Material("malleable iron", "miron", 200, 0.015, 0.06, 1, 0.25, 1.2)
 # Aluminium alloys
-material_aluminium = Material("aluminium alloy", "alu", 500, 0.08, 3, 0.5, 0.3)
+material_aluminium = Material("aluminium alloy", "alu", 500, 0.025, 0.08, 3, 0.5, 0.3)
 # Brasses
-material_brass = Material("brass", "brs", 400, 0.08, 3, 0.5, 0.8)
+material_brass = Material("brass", "brs", 400, 0.025, 0.08, 3, 0.5, 0.8)
 # Plastics
-material_plastics = Material("plastics", "pls", 800, 0.08, 5, 0.6, 0.4)
+material_plastics = Material("plastics", "pls", 800, 0.025, 0.08, 5, 0.6, 0.4)
 # Wood and engineered wood
-material_wood = Material("woods", "wd", 1600, 0.08, 25, 0.8, 0.2)
+material_wood = Material("woods", "wd", 1600, 0.025, 0.08, 10, 0.8, 0.2)
+# Plastic foam
+material_foam = Material("foams", "fm", 1600, 0.025, 0.08, 20, 1.6, 0.2)
 
 carbide_uncoated = CutterMaterial("uncoated carbide", "C-U", 1.0)
 carbide_TiN = CutterMaterial("TiN coated carbide", "C-TiN", 1.2)
