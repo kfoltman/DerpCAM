@@ -1914,7 +1914,7 @@ class DeletePresetUndoCommand(QUndoCommand):
         self.preset = preset
         self.was_default = False
     def undo(self):
-        self.preset.toolbit.presets.append(self.preset)
+        self.preset.toolbit.undeletePreset(self.preset)
         if self.was_default:
             self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
         self.document.refreshToolList()
@@ -2798,11 +2798,25 @@ class DocumentModel(QObject):
         self.undoStack.push(JoinItemsUndoCommand(self, items))
     def opAddDrawingItems(self, items):
         self.undoStack.push(AddDrawingItemsUndoCommand(self, items))
-    def opDeleteDrawingItems(self, shapes):
-        for i in shapes:
-            if not isinstance(i, DrawingItemTreeItem):
+    def opDeleteDrawingItems(self, items):
+        shapes = []
+        tools = []
+        presets = []
+        for i in items:
+            if isinstance(i, DrawingItemTreeItem):
+                shapes.append(i)
+            elif isinstance(i, ToolTreeItem):
+                tools.append(i)
+            elif isinstance(i, ToolPresetTreeItem):
+                presets.append(i)
+            else:
                 raise ValueError("Cannot delete an item of type: " + str(i.__class__.__name__))
-        self.undoStack.push(DeleteDrawingItemsUndoCommand(self, shapes))
+        if shapes:
+            self.undoStack.push(DeleteDrawingItemsUndoCommand(self, shapes))
+        for i in presets:
+            self.opDeletePreset(i.inventory_preset)
+        for i in tools:
+            self.opDeleteCycle(self.cycleForCutter(i.inventory_tool))
     def undo(self):
         self.undoStack.undo()
     def redo(self):

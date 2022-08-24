@@ -161,6 +161,9 @@ class CutterBase(Serializable):
     def deletePreset(self, preset):
         del self.presets[self.presets.index(preset)]
         IdSequence.unregister(preset)
+    def undeletePreset(self, preset):
+        self.presets.append(preset)
+        IdSequence.register(preset.id, preset)
         
 class MillDirection(EnumClass):
     CONVENTIONAL = 0
