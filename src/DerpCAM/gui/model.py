@@ -1215,15 +1215,22 @@ class PresetDerivedAttributes(object):
         if operation.document.material.material is not None and operation.cutter is not None and isinstance(operation.cutter, inventory.EndMillCutter):
             m = MaterialType.toTuple(operation.document.material.material)[2]
             t = operation.cutter
-            st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated)
-            if self.rpm is None:
-                self.rpm = st.rpm
-            if self.hfeed is None:
-                self.hfeed = st.hfeed
-            if self.vfeed is None:
-                self.vfeed = st.vfeed
-            if self.doc is None:
-                self.doc = st.maxdoc
+            try:
+                # Slotting penalty
+                f = 1
+                if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
+                    f = 0.8
+                st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f)
+                if self.rpm is None:
+                    self.rpm = st.rpm
+                if self.hfeed is None:
+                    self.hfeed = st.hfeed * f
+                if self.vfeed is None:
+                    self.vfeed = st.vfeed * f
+                if self.doc is None:
+                    self.doc = st.maxdoc
+            except ValueError:
+                pass
     def validate(self, errors):
         if self.vfeed is None:
             errors.append("Plunge rate is not set")

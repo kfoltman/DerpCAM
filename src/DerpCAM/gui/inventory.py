@@ -132,6 +132,8 @@ class CutterMaterial(Serializable):
     @staticmethod
     def toString(value):
         return value.name
+    def is_carbide(self):
+        return 'carbide' in self.name
 
 class CutterBase(Serializable):
     properties = [ MaterialProperty('material'), 'diameter', 'length', 'flutes' ]
