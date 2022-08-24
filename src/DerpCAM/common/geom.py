@@ -453,6 +453,8 @@ class Path(object):
             return Path(nodes, True)
         else:
             return Path(nodes, False)
+    def interpolated(self):
+        return Path(CircleFitter.interpolate_arcs(self.nodes, False, 1), self.closed)
 
 class PathSegmentIterator(object):
     def __init__(self, path, index=0):

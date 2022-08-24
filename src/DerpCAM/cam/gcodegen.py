@@ -811,8 +811,20 @@ class Contour(TabbedOperation):
             contour_paths = cam.contour.pseudotrochoidal(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened() if contour_paths else []
         else:
+            toolpaths = []
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool) for tp in contour_paths]).flattened() if contour_paths else []
+            for tp in contour_paths:
+                tp = tp.interpolated()
+                try_entry_paths = cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, self.props.margin + margin, tool.climb)
+                he = None
+                for tep in try_entry_paths:
+                    pos, dist = tep.closest_point(tp.seg_start())
+                    if dist <= tool.diameter * 0.708:
+                        cp = tep.point_at(pos)
+                        he = toolpath.HelicalEntry(cp, tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
+                        break
+                toolpaths.append(toolpath.Toolpath(tp, tool, helical_entry=he))
+            contours = toolpath.Toolpaths(toolpaths).flattened() if contour_paths else []
         if not contours:
             return toolpath.Toolpaths(contours), {}
         tabs = self.calc_tabs(contours)
