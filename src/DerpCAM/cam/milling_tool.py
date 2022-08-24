@@ -29,6 +29,8 @@ class Tool(object):
         self.rpm = None
         self.info = None
         self.short_info = None
+    def max_ramp_length(self, z_diff):
+        return 2 * self.diameter + 2 * z_diff
     def adjusted_hfeed(self, radial_engagement):
         if radial_engagement < 0.5:
             return self.hfeed / (2 * sqrt(radial_engagement * (1 - radial_engagement)))

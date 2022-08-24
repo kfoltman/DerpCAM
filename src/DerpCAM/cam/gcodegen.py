@@ -274,7 +274,7 @@ class Gcode(object):
         z_diff = old_z - new_z
         xy_diff = z_diff * tool.slope()
         tlengths = subpath.lengths()
-        max_ramp_length = max(20, 10 * tool.diameter)
+        max_ramp_length = tool.max_ramp_length(z_diff)
         if tlengths[-1] > max_ramp_length:
             subpath = subpath.subpath(0, max_ramp_length)
             tlengths = subpath.lengths()
