@@ -103,7 +103,7 @@ class OperationsRenderer(object):
             he = path.helical_entry
             if isinstance(he, toolpath.HelicalEntry):
                 pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
-                owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=False)
+                owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle2(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=True)
                 owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
             elif isinstance(he, toolpath.PlungeEntry):
                 sp = he.start
