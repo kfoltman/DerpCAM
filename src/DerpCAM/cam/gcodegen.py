@@ -483,7 +483,12 @@ class BaseCut2D(Cut):
             gcode.feed(subpath.tool.hfeed)
         else:
             z_already_cut_here = self.z_already_cut_here(subpath)
-            z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
+            if z_already_cut_here >= self.props.start_depth - 0.001:
+                # Haven't cut anything yet - be more cautious to avoid crashing
+                # into surface of the uncut stuck if it's crooked etc.
+                z_above_cut = self.machine_params.semi_safe_z
+            else:
+                z_above_cut = z_already_cut_here + self.machine_params.over_tab_safety
             if z_already_cut_here < self.curz:
                 z_already_cut_here = z_above_cut
                 gcode.move_z(z_already_cut_here, self.curz, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
@@ -731,9 +736,12 @@ class TabbedOperation(Operation):
         self.tabs = tabs
         for key, value in extra_attribs.items():
             setattr(self, key, value)
-        paths, tabs = self.build_paths(0)
+        paths, tabs, self.paths_for_helical_entry = self.build_paths(0)
         self.paths = paths
         self.flattened = paths.flattened() if paths else None
+        for tp in self.flattened:
+            if tp.helical_entry is None:
+                tp.helical_entry = self.helical_entry(tp.path, tp.tool)
         self.tabbed_for_path = {}
         if tabs:
             for i in self.flattened:
@@ -741,7 +749,7 @@ class TabbedOperation(Operation):
                     break
                 i.rendered_outlines = i.render_as_outlines()
                 tab_inst = i.usertabs(tabs[i], width=self.tabs_width())
-                self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst)
+                self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst, self.helical_entry)
                 for j in self.tabbed_for_path[i]:
                     if is_calculation_cancelled():
                         break
@@ -792,6 +800,12 @@ class TabbedOperation(Operation):
                 pt2 = path.offset_point(pos, self.tool.diameter / 2 * (1 if self.outside else -1))
                 newtabs.append(pt2)
         return newtabs
+    def helical_entry(self, tp, tool):
+        for tep in self.paths_for_helical_entry:
+            pos, dist = tep.closest_point(tp.seg_start())
+            if dist <= tool.diameter * 0.708:
+                cp = tep.point_at(pos)
+                return toolpath.HelicalEntry(cp, tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
 
 class Contour(TabbedOperation):
     def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
@@ -807,6 +821,7 @@ class Contour(TabbedOperation):
             self.tab_extend = 8 * pi / (tool.diameter * trc_rate)
         else:
             self.tab_extend = 1
+        paths_for_helical_entry = []
         if trc_rate and extra_width:
             contour_paths = cam.contour.pseudotrochoidal(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
             contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened() if contour_paths else []
@@ -814,19 +829,12 @@ class Contour(TabbedOperation):
             toolpaths = []
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
             for tp in contour_paths:
+                toolpaths.append(toolpath.Toolpath(tp, tool))
                 tp = tp.interpolated()
-                try_entry_paths = cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, self.props.margin + margin, tool.climb)
-                he = None
-                for tep in try_entry_paths:
-                    pos, dist = tep.closest_point(tp.seg_start())
-                    if dist <= tool.diameter * 0.708:
-                        cp = tep.point_at(pos)
-                        he = toolpath.HelicalEntry(cp, tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
-                        break
-                toolpaths.append(toolpath.Toolpath(tp, tool, helical_entry=he))
+                paths_for_helical_entry += cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, self.props.margin + margin, tool.climb)
             contours = toolpath.Toolpaths(toolpaths).flattened() if contour_paths else []
         if not contours:
-            return toolpath.Toolpaths(contours), {}
+            return toolpath.Toolpaths(contours), {}, paths_for_helical_entry
         tabs = self.calc_tabs(contours)
         tabs_dict = {}
         twins = {}
@@ -882,7 +890,7 @@ class Contour(TabbedOperation):
             contours = cut_contours
         contours = toolpath.Toolpaths(contours)
         self.add_tabs_if_close(contours, tabs_dict, tabs, tool.diameter * sqrt(2))
-        return contours, tabs_dict
+        return contours, tabs_dict, paths_for_helical_entry
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
     def widen(self, contour, tool, extension):
@@ -932,7 +940,7 @@ class ContourWithDraft(TabbedOperation):
         tabs = self.calc_tabs(contours.toolpaths)
         tabs_dict = {}
         self.add_tabs_if_close(contours, tabs_dict, tabs, self.tool.diameter * sqrt(2))
-        return contours, tabs_dict
+        return contours, tabs_dict, []
     def to_gcode(self, gcode, machine_params):
         Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
 

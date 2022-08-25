@@ -132,7 +132,7 @@ class Toolpath(object):
         assert self.is_tab
         return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
 
-    def cut_by_tabs(self, tabs):
+    def cut_by_tabs(self, tabs, helical_entry_func):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
         pos = 0
         res = []
@@ -148,6 +148,10 @@ class Toolpath(object):
             pos = tab.end
         if pos < self.tlength:
             res.append(self.subpath(pos, self.tlength, is_tab=False, helical_entry=helical_entry))
+        if helical_entry_func:
+            for i in res:
+                if i.helical_entry is None and not i.is_tab:
+                    i.helical_entry = helical_entry_func(i.path, i.tool)
         return res
 
     def flattened(self):
