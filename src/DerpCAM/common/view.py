@@ -80,7 +80,7 @@ class OperationsRenderer(object):
         pen = QPen(QColor(192, 0, 0), 0)
         for op in self.operations.operations:
             if op.paths:
-                lastpt = self.addRapids(owner, pen, op.paths, lastpt)
+                lastpt = self.addRapids(owner, pen, op.paths, lastpt, op)
         return lastpt
     def renderShapes(self, owner):
         penOutside = QPen(QColor(0, 0, 255), 0)
@@ -94,21 +94,29 @@ class OperationsRenderer(object):
         self.renderToolpaths(owner)
         self.renderRapids(owner)
         self.renderShapes(owner)
-    def addRapids(self, owner, pen, path, lastpt):
+    def addRapids(self, owner, pen, path, lastpt, op):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
-                lastpt = self.addRapids(owner, pen, tp, lastpt)
+                lastpt = self.addRapids(owner, pen, tp, lastpt, op)
             return lastpt
         if path.helical_entry:
             he = path.helical_entry
             if isinstance(he, toolpath.HelicalEntry):
-                owner.addLines(pen, circle(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
+                pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
+                owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=False)
+                owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
             elif isinstance(he, toolpath.PlungeEntry):
                 sp = he.start
                 d = path.tool.diameter / (2 * sqrt(2))
                 owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
         owner.addRapidLine(pen, lastpt, path.path.seg_start())
         return path.path.seg_end()
+    def pen2brush(self, owner, path, pen):
+        if not isinstance(pen, QPen):
+            pen2, slow = pen(path, owner.scalingFactor())
+        else:
+            pen2 = pen
+        return QBrush(pen2.color())
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
@@ -124,18 +132,12 @@ class OperationsRenderer(object):
         if stage == 1:
             t = time.time()
             # print ("Before buffer")
-            def pen2brush():
-                if not isinstance(pen, QPen):
-                    pen2, slow = pen(path, owner.scalingFactor())
-                else:
-                    pen2 = pen
-                return QBrush(pen2.color())
             #print ("->", len(outlines))
             outlines = getattr(path, 'rendered_outlines', None)
             if outlines is None:
                 path.rendered_outlines = outlines = path.render_as_outlines()
             for o in outlines:
-                owner.addPolygons(pen2brush, outlines, GeometrySettings.simplify_arcs)
+                owner.addPolygons(lambda: self.pen2brush(owner, path, pen), outlines, GeometrySettings.simplify_arcs)
             # print ("After buffer", time.time() - t)
             return
         if GeometrySettings.simplify_arcs:
