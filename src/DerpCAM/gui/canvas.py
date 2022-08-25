@@ -140,25 +140,31 @@ class DrawingViewer(view.PathViewer):
         self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
+    def paintGridPart(self, e, qp, grid):
+        size = self.size()
+        gridm = grid * self.scalingFactor()
+        gridres = 2 + int(size.height() / gridm)
+        if gridres > max(size.width(), size.height()) / 4:
+            return
+        gridfirst = int(self.unproject(QPointF(0, size.height())).y() / grid)
+        for i in range(gridres):
+            pt = self.project(QPointF(0, (i + gridfirst) * grid))
+            qp.drawLine(QLineF(0.0, pt.y(), size.width(), pt.y()))
+        gridfirst = int(self.unproject(QPointF(0, 0)).x() / grid)
+        gridres = 2 + int(size.width() / gridm)
+        for i in range(gridres):
+            pt = self.project(QPointF((i + gridfirst) * grid, 0))
+            qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
     def paintGrid(self, e, qp):
         size = self.size()
-
-        gridPen = QPen(QColor(224, 224, 224))
-        qp.setPen(gridPen)
         grid = self.configSettings.grid_resolution
         if grid > 0 and grid < 1000:
-            gridm = grid * self.scalingFactor()
-            gridres = 2 + int(size.height() / gridm)
-            gridfirst = int(self.unproject(QPointF(0, size.height())).y() / grid)
-            for i in range(gridres):
-                pt = self.project(QPointF(0, (i + gridfirst) * grid))
-                qp.drawLine(QLineF(0.0, pt.y(), size.width(), pt.y()))
-            gridfirst = int(self.unproject(QPointF(0, 0)).x() / grid)
-            gridres = 2 + int(size.width() / gridm)
-            for i in range(gridres):
-                pt = self.project(QPointF((i + gridfirst) * grid, 0))
-                qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
-
+            qp.setPen(QPen(QColor(208, 208, 208), 0))
+            self.paintGridPart(e, qp, grid)
+        grid = self.configSettings.grid_resolution_minor
+        if grid > 0 and grid < 1000:
+            qp.setPen(QPen(QColor(244, 244, 244), 0))
+            self.paintGridPart(e, qp, grid)
         zeropt = self.project(QPointF())
         qp.setPen(QPen(QColor(144, 144, 144), 0))
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))

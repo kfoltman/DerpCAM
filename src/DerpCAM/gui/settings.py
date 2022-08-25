@@ -56,6 +56,7 @@ class ConfigSettings(object):
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
+        FloatConfigSetting('grid_resolution_minor', 'display/grid_resolution_minor', 10, 2),
         ConfigSetting('input_directory', 'paths/input', ''),
         ConfigSetting('last_input_directory', 'paths/last_input', ''),
         ConfigSetting('gcode_directory', 'paths/gcode', ''),
@@ -203,8 +204,10 @@ class PreferencesDialog(QDialog):
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
-        self.gridSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
-        self.formDisplay.addRow("&Display grid (mm):", self.gridSpin)
+        self.gridMajorSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
+        self.formDisplay.addRow("&Display grid - major (mm):", self.gridMajorSpin)
+        self.gridMinorSpin = floatSpin(0, 1000, 2, self.config.grid_resolution_minor, "Spacing between display grid lines in mm")
+        self.formDisplay.addRow("D&isplay grid - minor (mm):", self.gridMinorSpin)
         self.drawArrowsCheck = QCheckBox("Draw &arrows on toolpaths (experimental)")
         self.drawArrowsCheck.setChecked(self.config.draw_arrows)
         self.formDisplay.addRow(self.drawArrowsCheck)
@@ -271,7 +274,8 @@ class PreferencesDialog(QDialog):
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
-        self.config.grid_resolution = self.gridSpin.value()
+        self.config.grid_resolution = self.gridMajorSpin.value()
+        self.config.grid_resolution_minor = self.gridMinorSpin.value()
         self.config.input_directory = self.inputDirEdit.value()
         self.config.gcode_directory = self.gcodeDirEdit.value()
         self.config.clearance_z = self.clearanceZSpin.value()
