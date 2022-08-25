@@ -80,7 +80,12 @@ class OperationsRenderer(object):
         pen = QPen(QColor(192, 0, 0), 0)
         for op in self.operations.operations:
             if op.paths:
-                lastpt = self.addRapids(owner, pen, op.paths, lastpt, op)
+                for i in op.flattened:
+                    if i in op.tabbed_for_path:
+                        for j in op.tabbed_for_path[i]:
+                            lastpt = self.addRapids(owner, pen, j, lastpt, op)
+                    else:
+                        lastpt = self.addRapids(owner, pen, i, lastpt, op)
         return lastpt
     def renderShapes(self, owner):
         penOutside = QPen(QColor(0, 0, 255), 0)
@@ -99,6 +104,7 @@ class OperationsRenderer(object):
             for tp in path.toolpaths:
                 lastpt = self.addRapids(owner, pen, tp, lastpt, op)
             return lastpt
+        #print (path.helical_entry, path.is_tab)
         if path.helical_entry:
             he = path.helical_entry
             if isinstance(he, toolpath.HelicalEntry):
