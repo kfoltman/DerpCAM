@@ -228,7 +228,7 @@ class Gcode(object):
                     tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
                     self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
                 else:
-                    if pt.speed_hint is toolpath.RapidMove:
+                    if not GeometrySettings.paranoid_mode and pt.speed_hint is toolpath.RapidMove:
                         self.rapid(x=pt.x, y=pt.y)
                     else:
                         self.linear(x=pt.x, y=pt.y)
