@@ -642,6 +642,7 @@ class Operation(object):
         self.tool = tool
         self.props = props
         self.rpm = props.rpm if props is not None else None
+        self.tabbed_for_path = {}
     def outline(self, margin):
         contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, margin, self.tool.climb)
         if contour_paths is None:
@@ -742,7 +743,6 @@ class TabbedOperation(Operation):
         for tp in self.flattened:
             if tp.helical_entry is None:
                 tp.helical_entry = self.helical_entry(tp.path, tp.tool)
-        self.tabbed_for_path = {}
         if tabs:
             for i in self.flattened:
                 if is_calculation_cancelled():
