@@ -59,6 +59,9 @@ class Tool(object):
         return self.maxdoc * self.diameter * self.vfeed
     def hp(self):
         return self.material.cut_power * self.mrr() / (25.4 ** 3)
+    def diagonal_factor(self):
+        slope = self.slope()
+        return sqrt(slope ** 2 + 1) / slope
     def set_info(self):
         self.info = "%d-flute %0.2fmm %s cutter cutting %s at %0.0f RPM and %0.0f mm/min" % (self.flutes, self.diameter, self.coating.name, self.material.name, self.rpm, self.hfeed)
         if int(self.diameter * 100) % 100 == 0:

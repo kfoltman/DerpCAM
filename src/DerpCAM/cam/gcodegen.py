@@ -501,7 +501,7 @@ class BaseCut2D(Cut):
             # horizontal component of the feed rate. In this case, we're making
             # a 3D move, so some of the programmed feed rate goes into the vertical
             # component instead.
-            speed_ratio *= sqrt(subpath.tool.slope() ** 2 + 1) / subpath.tool.slope()
+            speed_ratio *= subpath.tool.diagonal_factor()
             gcode.feed(subpath.tool.hfeed * speed_ratio)
             if isinstance(subpath.helical_entry, toolpath.HelicalEntry):
                 # Descend helically to the indicated helical entry point
@@ -1034,14 +1034,16 @@ class HelicalDrill(UntabbedOperation):
 
     def to_gcode(self, gcode, machine_params):
         rate_factor = self.tool.full_plunge_feed_ratio
+
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
         for d in self.diameters():
-            self.to_gcode_ring(gcode, d, rate_factor if first else 1, machine_params, first)
+            self.to_gcode_ring(gcode, d, (rate_factor if first else 1) * self.tool.diagonal_factor(), machine_params, first)
             first = False
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
-        gcode.section_info(f"Diagonal exit towards centre/safe Z")
+        gcode.section_info(f"Exit to centre/safe Z")
+        gcode.linear(x=self.x, y=self.y)
         gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
         gcode.section_info(f"End helical drill")
 
