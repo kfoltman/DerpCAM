@@ -334,17 +334,20 @@ class CAMMainWindow(QMainWindow):
         if not self.handleUnsaved():
             return
         self.loadProject(fn)
-    def loadProject(self, fn):
-        self.document.loadProject(fn)
+    def addToMru(self, fn):
         self.mruList = [i for i in self.mruList if i != fn]
         self.mruList.insert(0, fn)
         self.configSettings.saveMru(self.mruList)
+    def loadProject(self, fn):
+        self.document.loadProject(fn)
+        self.addToMru(fn)
         self.updateFileMenu()
     def saveProject(self, fn):
         data = self.document.store()
         f = open(fn, "w")
         json.dump(data, f, indent=2)
         f.close()
+        self.addToMru(fn)
     def fileNew(self):
         if not self.handleUnsaved():
             return
