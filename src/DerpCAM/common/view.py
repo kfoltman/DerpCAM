@@ -115,6 +115,11 @@ class OperationsRenderer(object):
                 sp = he.start
                 d = path.tool.diameter / (2 * sqrt(2))
                 owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
+        else:
+            pt = path.path.seg_start()
+            if pt.dist(lastpt) > 1.0 / GeometrySettings.RESOLUTION:
+                r = 8
+                owner.addScaledPolygon(QBrush(pen.color()), [pt, pt.translated(r, r), pt.translated(-r, r), pt], QPointF(pt.x, pt.y), r)
         owner.addRapidLine(pen, lastpt, path.path.seg_start())
         return path.path.seg_end()
     def pen2brush(self, owner, path, pen):
