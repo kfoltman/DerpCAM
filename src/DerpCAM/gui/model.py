@@ -1219,7 +1219,7 @@ class PresetDerivedAttributes(object):
                 # Slotting penalty
                 f = 1
                 if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
-                    f = 0.8
+                    f = 0.6
                 st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length)
                 if self.rpm is None:
                     self.rpm = st.rpm
