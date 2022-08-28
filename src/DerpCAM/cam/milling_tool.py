@@ -105,10 +105,10 @@ material_castiron = Material("gray iron", "giron", 400, 100, 0.015, 0.06, 1, 0.2
 # Cast iron - malleable
 material_malleableiron = Material("malleable iron", "miron", 200, 50, 0.015, 0.06, 1, 0.25, 1.2, 22)
 # Aluminium alloys
-#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.025, 0.08, 3, 0.5, 0.3, 0.22)
+#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.025, 0.08, 3, 0.5, 0.3, 22)
 material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.016, 0.06, 5, 0.25, 0.3, 22)
 # Brasses
-#material_brass = Material("brass", "brs", 400, 120, 0.025, 0.08, 3, 0.5, 0.8, 0.22)
+#material_brass = Material("brass", "brs", 400, 120, 0.025, 0.08, 3, 0.5, 0.8, 22)
 material_brass = Material("brass", "brs", 400, 120, 0.016, 0.06, 4, 0.25, 0.8, 22)
 # Plastics
 material_plastics = Material("plastics", "pls", 800, 800, 0.025, 0.08, 5, 0.6, 0.4, 30)
@@ -144,6 +144,6 @@ def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=
     tool.material = material
     tool.coating = coating
     tool.rpm = rpm
-    tool.stepover = material.stepover
+    tool.stepover = material.stepover / 100
     tool.set_info()
     return tool

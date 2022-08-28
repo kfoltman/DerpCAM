@@ -1230,7 +1230,7 @@ class PresetDerivedAttributes(object):
                 if self.doc is None:
                     self.doc = st.maxdoc
                 if self.stepover is None:
-                    self.stepover = st.stepover
+                    self.stepover = st.stepover * 100
             except ValueError:
                 pass
     def validate(self, errors):
@@ -1746,6 +1746,13 @@ class OperationTreeItem(CAMTreeItem):
             pda.validate(errors)
             if errors:
                 raise ValueError("\n".join(errors))
+            if pda.rpm is not None:
+                mp = self.document.gcode_machine_params
+                if mp.min_rpm is not None and pda.rpm < mp.min_rpm:
+                    self.addWarning(f"Spindle speed {pda.rpm:1f} lower than the minimum of {mp.min_rpm:1f}")
+                if mp.max_rpm is not None and pda.rpm > mp.max_rpm:
+                    self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
+
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
