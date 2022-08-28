@@ -90,7 +90,7 @@ class Material:
         self.cut_power = cut_power # HP / (in^3/min)
 
 # 1018, S235, EN3 etc. mild steels
-material_mildsteel = Material("mild steel", "stl", 350, 80, 0.016, 0.06, 1, 0.25, 1.0)
+material_mildsteel = Material("mild steel", "stl", 350, 80, 0.016, 0.06, 3, 0.25, 1.0)
 # 4140, EN19 etc. low alloy steels
 material_alloysteel = Material("low alloy steel", "lastl", 250, 70, 0.016, 0.06, 1, 0.25, 1.6)
 # Tool steels
