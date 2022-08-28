@@ -78,7 +78,7 @@ class CutterMaterial:
         self.sfm_multiplier = sfm_multiplier
 
 class Material:
-    def __init__(self, name, short_name, sfm_carbide, sfm_hss, chipload_3mm, chipload_10mm, ramp_angle, depth_factor, cut_power):
+    def __init__(self, name, short_name, sfm_carbide, sfm_hss, chipload_3mm, chipload_10mm, ramp_angle, depth_factor, cut_power, stepover):
         self.name = name
         self.short_name = short_name
         self.sfm_carbide = sfm_carbide
@@ -88,33 +88,34 @@ class Material:
         self.ramp_angle = ramp_angle # degrees
         self.depth_factor = depth_factor # multiplier of tool diameter
         self.cut_power = cut_power # HP / (in^3/min)
+        self.stepover = stepover
 
 # 1018, S235, EN3 etc. mild steels
-material_mildsteel = Material("mild steel", "stl", 350, 80, 0.016, 0.06, 3, 0.25, 1.0)
+material_mildsteel = Material("mild steel", "stl", 350, 80, 0.016, 0.06, 3, 0.25, 1.0, 22)
 # 4140, EN19 etc. low alloy steels
-material_alloysteel = Material("low alloy steel", "lastl", 250, 70, 0.016, 0.06, 1, 0.25, 1.6)
+material_alloysteel = Material("low alloy steel", "lastl", 250, 70, 0.016, 0.06, 1, 0.25, 1.6, 22)
 # Tool steels
-material_toolsteel = Material("tool steel", "tstl", 200, 50, 0.01, 0.05, 1, 0.2, 2)
+material_toolsteel = Material("tool steel", "tstl", 200, 50, 0.01, 0.05, 1, 0.2, 2, 22)
 # Stainless steels
-material_stainlesssteel = Material("stainless steel", "sstl", 200, 50, 0.01, 0.05, 1, 0.2, 2)
+material_stainlesssteel = Material("stainless steel", "sstl", 200, 50, 0.01, 0.05, 1, 0.2, 2, 22)
 # Steel forgings
-material_forgedsteel = Material("forged steel", "fstl", 125, 30, 0.01, 0.05, 1, 0.2, 2)
+material_forgedsteel = Material("forged steel", "fstl", 125, 30, 0.01, 0.05, 1, 0.2, 2, 22)
 # Cast iron - gray
-material_castiron = Material("gray iron", "giron", 400, 100, 0.015, 0.06, 1, 0.25, 1.2)
+material_castiron = Material("gray iron", "giron", 400, 100, 0.015, 0.06, 1, 0.25, 1.2, 22)
 # Cast iron - malleable
-material_malleableiron = Material("malleable iron", "miron", 200, 50, 0.015, 0.06, 1, 0.25, 1.2)
+material_malleableiron = Material("malleable iron", "miron", 200, 50, 0.015, 0.06, 1, 0.25, 1.2, 22)
 # Aluminium alloys
-#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.025, 0.08, 3, 0.5, 0.3)
-material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.016, 0.06, 5, 0.25, 0.3)
+#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.025, 0.08, 3, 0.5, 0.3, 0.22)
+material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.016, 0.06, 5, 0.25, 0.3, 22)
 # Brasses
-#material_brass = Material("brass", "brs", 400, 120, 0.025, 0.08, 3, 0.5, 0.8)
-material_brass = Material("brass", "brs", 400, 120, 0.016, 0.06, 4, 0.25, 0.8)
+#material_brass = Material("brass", "brs", 400, 120, 0.025, 0.08, 3, 0.5, 0.8, 0.22)
+material_brass = Material("brass", "brs", 400, 120, 0.016, 0.06, 4, 0.25, 0.8, 22)
 # Plastics
-material_plastics = Material("plastics", "pls", 800, 800, 0.025, 0.08, 5, 0.6, 0.4)
+material_plastics = Material("plastics", "pls", 800, 800, 0.025, 0.08, 5, 0.6, 0.4, 30)
 # Wood and engineered wood
-material_wood = Material("woods", "wd", 1600, 1600, 0.025, 0.08, 10, 0.8, 0.2)
+material_wood = Material("woods", "wd", 1600, 1600, 0.025, 0.08, 10, 0.8, 0.2, 40)
 # Plastic foam
-material_foam = Material("foams", "fm", 1600, 1600, 0.025, 0.08, 20, 1.6, 0.2)
+material_foam = Material("foams", "fm", 1600, 1600, 0.025, 0.08, 20, 1.6, 0.2, 40)
 
 carbide_uncoated = CutterMaterial("uncoated carbide", "C-U", 1.0)
 carbide_TiN = CutterMaterial("TiN coated carbide", "C-TiN", 1.2)
@@ -123,7 +124,7 @@ carbide_AlTiN = CutterMaterial("AlTiN coated carbide", "C-AlTiN", 1.3)
 min_rpm = 2800
 max_rpm = 24000
 
-def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor = 1):
+def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None):
     msfm = material.sfm_hss if is_hss else material.sfm_carbide
     sfm = msfm * coating.sfm_multiplier * sfm_factor
     rpm = 12 * sfm / (pi * diameter / 25.4)
@@ -142,5 +143,6 @@ def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor 
     tool.material = material
     tool.coating = coating
     tool.rpm = rpm
+    tool.stepover = material.stepover
     tool.set_info()
     return tool
