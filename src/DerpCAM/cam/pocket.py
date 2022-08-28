@@ -466,7 +466,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         for item in hsm_path:
             MoveStyle = cam.geometry.MoveStyle
             if isinstance(item, cam.geometry.LineData):
-                if item.move_style == MoveStyle.RAPID_OUTSIDE:
+                idist = gen_path[-1].seg_end().dist(geom.PathPoint(item.start.x, item.start.y))
+                if item.move_style == MoveStyle.RAPID_OUTSIDE and idist >= 1.0 / geom.GeometrySettings.RESOLUTION:
                     gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
                     gen_path += [geom.PathPoint(x, y, toolpath.RapidMove if item.move_style == MoveStyle.RAPID_INSIDE else None) for x, y in item.path.coords]
