@@ -13,6 +13,8 @@ class GeometrySettings:
     grbl_output = False
     spindle_control = False
     spindle_warmup = 0
+    spindle_min_rpm = None
+    spindle_max_rpm = None
     paranoid_mode = False
 
 def PtsToInts(points, res=None):

@@ -54,6 +54,8 @@ class ConfigSettings(object):
         BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
+        FloatConfigSetting('spindle_min_rpm', 'gcode/spindle_min_rpm', 8000, 1),
+        FloatConfigSetting('spindle_max_rpm', 'gcode/spindle_max_rpm', 24000, 1),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
         FloatConfigSetting('grid_resolution_minor', 'display/grid_resolution_minor', 10, 2),
@@ -118,6 +120,8 @@ class ConfigSettings(object):
         GeometrySettings.grbl_output = self.grbl_output
         GeometrySettings.spindle_control = self.spindle_control
         GeometrySettings.spindle_warmup = self.spindle_warmup
+        GeometrySettings.spindle_min_rpm = self.spindle_min_rpm
+        GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
         GuiSettings.inch_mode = self.display_inches
 
 class DirectorySelector(QWidget):
@@ -201,6 +205,10 @@ class PreferencesDialog(QDialog):
         self.formCAM.addRow(self.spindleControlCheck)
         self.warmupSpin = floatSpin(0, 60, 1, self.config.spindle_warmup, "Time in seconds to wait for the spindle to get up to target speed.")
         self.formCAM.addRow("&Spin-up time (seconds):", self.warmupSpin)
+        self.minRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_min_rpm, "Minimum spindle speed (that still provides usable torque) in revolutions per minute.")
+        self.formCAM.addRow("&Minimum RPM:", self.minRPMSpin)
+        self.maxRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_max_rpm, "Maximum spindle speed in revolutions per minute.")
+        self.formCAM.addRow("&Minimum RPM:", self.maxRPMSpin)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
@@ -273,6 +281,8 @@ class PreferencesDialog(QDialog):
         self.config.grbl_output = self.grblOutputCheck.isChecked()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()
+        self.config.spindle_min_rpm = self.minRPMSpin.value()
+        self.config.spindle_max_rpm = self.maxRPMSpin.value()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
         self.config.grid_resolution = self.gridMajorSpin.value()
         self.config.grid_resolution_minor = self.gridMinorSpin.value()

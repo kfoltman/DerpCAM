@@ -1220,7 +1220,7 @@ class PresetDerivedAttributes(object):
                 f = 1
                 if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
                     f = 0.6
-                st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length)
+                st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params)
                 if self.rpm is None:
                     self.rpm = st.rpm
                 if self.hfeed is None:
@@ -2448,7 +2448,8 @@ class DocumentModel(QObject):
         self.load(data)
         self.projectLoaded.emit()
     def makeMachineParams(self):
-        self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
+        self.gcode_machine_params = gcodegen.MachineParams(safe_z=self.material.clearance, semi_safe_z=self.material.safe_entry_z,
+            min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm)
     def newDocument(self):
         self.reinitDocument()
         self.filename = None

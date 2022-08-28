@@ -124,14 +124,15 @@ carbide_AlTiN = CutterMaterial("AlTiN coated carbide", "C-AlTiN", 1.3)
 min_rpm = 2800
 max_rpm = 24000
 
-def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None):
+def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None):
     msfm = material.sfm_hss if is_hss else material.sfm_carbide
     sfm = msfm * coating.sfm_multiplier * sfm_factor
     rpm = 12 * sfm / (pi * diameter / 25.4)
-    if rpm < min_rpm:
-        raise ValueError("RPM %f below the spindle minimum" % rpm)
-    if rpm > max_rpm:
-        rpm = max_rpm
+    if machine_params:
+        if machine_params.min_rpm is not None and rpm < machine_params.min_rpm:
+            raise ValueError(f"Calculated RPM {rpm:1f} below the spindle minimum {machine_params.min_rpm:1f}")
+        if machine_params.max_rpm is not None and rpm > machine_params.max_rpm:
+            rpm = machine_params.max_rpm
     dia_factor = log(diameter / 3) / log (10 / 3)
     chipload = material.chipload_3mm * pow(material.chipload_10mm / material.chipload_3mm, dia_factor)
     feed = flutes * chipload * rpm

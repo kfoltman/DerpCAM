@@ -328,9 +328,11 @@ class Gcode(object):
         return lastpt
 
 class MachineParams(object):
-    def __init__(self, safe_z, semi_safe_z):
+    def __init__(self, safe_z, semi_safe_z, min_rpm=None, max_rpm=None):
         self.safe_z = safe_z
         self.semi_safe_z = semi_safe_z
+        self.min_rpm = min_rpm
+        self.max_rpm = max_rpm
         self.over_tab_safety = 0.2
 
 class Cut(object):
