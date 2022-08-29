@@ -263,6 +263,11 @@ class FloatDistEditableProperty(FloatEditableProperty):
     def toEditString(self, value):
         return self.toDisplayString(value)
     def validateString(self, value):
+        if value == "":
+            if self.allow_none:
+                return None, None
+            if self.default_value is not None:
+                return self.default_value, None
         value, unit = UnitConverter.parse(value, self.unit)
         return FloatEditableProperty.validateString(self, value)[0], unit
 
