@@ -17,11 +17,12 @@ debug_sections = True
 old_trochoidal_code = False
 
 class OperationProps(object):
-    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0):
+    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0):
         self.depth = depth
         self.start_depth = start_depth
         self.tab_depth = tab_depth
         self.margin = margin
+        self.roughing_offset = roughing_offset
         self.zigzag = zigzag
         self.angle = angle
         self.rpm = None
@@ -699,11 +700,11 @@ class Engrave(UntabbedOperation):
 
 class FaceMill(UntabbedOperation):
     def build_paths(self, margin):
-        return cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag)
+        return cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset)
 
 class Pocket(UntabbedOperation):
     def build_paths(self, margin):
-        return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
+        return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset)
 
 class HSMOperation(UntabbedOperation):
     def __init__(self, shape, tool, props, shape_to_refine):
@@ -711,7 +712,7 @@ class HSMOperation(UntabbedOperation):
 
 class HSMPocket(HSMOperation):
     def build_paths(self, margin):
-        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
+        return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset)
 
 class PocketWithDraft(UntabbedOperation):
     def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):

@@ -58,18 +58,32 @@ def calculate_tool_margin(shape, tool, displace):
             boundary_transformed_nonoverlap = []
     return boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap
 
-def contour_parallel(shape, tool, displace=0):
+def pts2path(pts, orientation):
+    path = geom.Path(pts, True)
+    if path.orientation() != orientation:
+        return path.reverse()
+    return path
+
+def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap):
+    for b in boundary_transformed:
+        for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
+            tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
+    for h in islands_transformed_nonoverlap:
+        for pts in shapes.Shape._intersection(h, *boundary_transformed):
+            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
+
+def contour_parallel(shape, tool, displace=0, roughing_offset=0):
     if not shape.closed:
         raise ValueError("Cannot mill pockets of open polylines")
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
     tps = []
     tps_islands = []
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace + roughing_offset)
     for path in islands_transformed_nonoverlap:
         for ints in shapes.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
-    displace_now = displace
+    displace_now = displace + roughing_offset
     stepover = tool.stepover * tool.diameter
     # No idea why this was here given the joinClosePaths call later on is
     # already merging the island paths.
@@ -90,6 +104,9 @@ def contour_parallel(shape, tool, displace=0):
     tps = toolpath.joinClosePaths(tps_islands + tps)
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
+    if roughing_offset:
+        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
+        finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap)
     return toolpath.Toolpaths(tps)
 
 class AxisParallelRow(object):
@@ -175,9 +192,9 @@ def process_rows(rows, tool):
             tps.append(toolpath.Toolpath(geom.Path(sum([i.nodes for i in path], []), False), tool))
     return tps
 
-def axis_parallel(shape, tool, angle, margin, zigzag):
+def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0):
     offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin + roughing_offset)
 
     coords = sum([i.int_points for i in boundary_transformed], [])
     xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
@@ -239,20 +256,11 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
     tps = process_rows(rows, tool)
     if not tps:
         raise ValueError("Milled area is empty")
-
-    def pts2path(pts, orientation):
-        path = geom.Path(pts, True)
-        if path.orientation() != orientation:
-            return path.reverse()
-        return path
-
+    if roughing_offset:
+        # Recalculate final shapes without the roughing offset
+        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
     # Add a final pass around the perimeter
-    for b in boundary_transformed:
-        for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
-            tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
-    for h in islands_transformed_nonoverlap:
-        for pts in shapes.Shape._intersection(h, *boundary_transformed):
-            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
+    finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap)
     return toolpath.Toolpaths(tps)
 
 pyvlock = threading.RLock()
@@ -390,7 +398,13 @@ def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
         was_previously_cut = True
     return gen_path, was_previously_cut, None
 
-def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None):
+def add_finishing_outlines(tps, polygon, tool, from_outside):
+    if not from_outside:
+        tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+    for h in polygon.interiors:
+        tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+
+def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None, roughing_offset=0):
     from DerpCAM import cam
     import DerpCAM.cam.geometry
     already_cut = None
@@ -407,7 +421,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
             return toolpath.Toolpaths(tps)
     alltps = []
-    all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
+    all_inputs = shape_to_polygons(shape, tool, displace + roughing_offset, from_outside)
     if zigzag:
         arc_dir = cam.geometry.ArcDir.Closest
     else:
@@ -466,8 +480,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         for item in hsm_path:
             MoveStyle = cam.geometry.MoveStyle
             if isinstance(item, cam.geometry.LineData):
-                idist = gen_path[-1].seg_end().dist(geom.PathPoint(item.start.x, item.start.y))
-                if item.move_style == MoveStyle.RAPID_OUTSIDE and idist >= 1.0 / geom.GeometrySettings.RESOLUTION:
+                if item.move_style == MoveStyle.RAPID_OUTSIDE:
                     gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
                     gen_path += [geom.PathPoint(x, y, toolpath.RapidMove if item.move_style == MoveStyle.RAPID_INSIDE else None) for x, y in item.path.coords]
@@ -475,10 +488,10 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 add_arcdata(gen_path, item)
         gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
         # Add a final pass around the perimeter
-        if not from_outside:
-            tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
-        for h in polygon.interiors:
-            tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+        if not roughing_offset:
+            add_finishing_outlines(tps, polygon, tool, from_outside)
+        else:
+            add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
         alltps += tps
         outer_progress += 1000
     return toolpath.Toolpaths(alltps)
