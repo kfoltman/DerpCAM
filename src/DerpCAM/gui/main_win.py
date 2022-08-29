@@ -115,7 +115,7 @@ class CAMMainWindow(QMainWindow):
         self.updateWindowTitle()
         self.updateFileMenu()
         self.refreshNeeded = False
-        self.newCAMNeeded = set()
+        self.resetCAMNeeded()
         self.idleTimer = self.startTimer(500)
     def updateFileMenu(self):
         def fileAction(id, filename):
@@ -150,8 +150,10 @@ class CAMMainWindow(QMainWindow):
             self.refreshNeeded = False
         if self.newCAMNeeded:
             subset = list(self.newCAMNeeded)
-            self.newCAMNeeded = set()
+            self.resetCAMNeeded()
             self.document.startUpdateCAM(subset)
+    def resetCAMNeeded(self):
+        self.newCAMNeeded = set()
     def scheduleCAMUpdate(self, item):
         self.newCAMNeeded |= item
         for i in item:
@@ -342,6 +344,7 @@ class CAMMainWindow(QMainWindow):
         self.document.loadProject(fn)
         self.addToMru(fn)
         self.updateFileMenu()
+        self.resetCAMNeeded()
     def saveProject(self, fn):
         data = self.document.store()
         f = open(fn, "w")

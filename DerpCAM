@@ -76,6 +76,7 @@ else:
     w.showMaximized()
     try:
         doLoad(args)
+        w.resetCAMNeeded()
     except Exception as e:
         QMessageBox.critical(w, "Error while loading a project/drawing", str(e))
     if args.close:
