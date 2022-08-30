@@ -135,7 +135,7 @@ def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=
     rpm = 12 * sfm / (pi * diameter / 25.4)
     if machine_params:
         if machine_params.min_rpm is not None and rpm < machine_params.min_rpm:
-            raise ValueError(f"Calculated RPM {rpm:1f} below the spindle minimum {machine_params.min_rpm:1f}")
+            raise ValueError(f"Calculated spindle speed of {rpm:0.1f} is below the spindle minimum of {machine_params.min_rpm:0.1f}")
         if machine_params.max_rpm is not None and rpm > machine_params.max_rpm:
             rpm = machine_params.max_rpm
     dia_factor = log(diameter / 3) / log (10 / 3)

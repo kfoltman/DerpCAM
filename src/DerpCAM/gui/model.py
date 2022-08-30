@@ -1203,7 +1203,7 @@ class PresetDerivedAttributes(object):
         inventory.EndMillCutter : {i.name : i for i in attrs_all},
         inventory.DrillBitCutter : {i.name : i for i in attrs_common},
     }
-    def __init__(self, operation, preset=None):
+    def __init__(self, operation, preset=None, addError=None):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
@@ -1219,31 +1219,34 @@ class PresetDerivedAttributes(object):
             t = operation.cutter
             try:
                 if isinstance(operation.cutter, inventory.EndMillCutter):
-                    # Slotting penalty
-                    f = 1
-                    if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
-                        f = 0.6
-                    st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params)
-                    if self.rpm is None:
-                        self.rpm = st.rpm
-                    if self.hfeed is None:
-                        self.hfeed = st.hfeed * f
-                    if self.vfeed is None:
-                        self.vfeed = st.vfeed * f
-                    if self.doc is None:
-                        self.doc = st.maxdoc
-                    if self.stepover is None:
-                        self.stepover = st.stepover * 100
+                    if not all([self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover]):
+                        # Slotting penalty
+                        f = 1
+                        if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
+                            f = 0.6
+                        st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params)
+                        if self.rpm is None:
+                            self.rpm = st.rpm
+                        if self.hfeed is None:
+                            self.hfeed = st.hfeed * f
+                        if self.vfeed is None:
+                            self.vfeed = st.vfeed * f
+                        if self.doc is None:
+                            self.doc = st.maxdoc * f
+                        if self.stepover is None:
+                            self.stepover = st.stepover * 100
                 elif isinstance(operation.cutter, inventory.DrillBitCutter):
-                    st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
-                    if self.rpm is None:
-                        self.rpm = st.rpm
-                    if self.vfeed is None:
-                        self.vfeed = st.vfeed
-                    if self.doc is None:
-                        self.doc = st.maxdoc
-            except ValueError:
-                pass
+                    if not all([self.rpm, self.vfeed, self.doc]):
+                        st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
+                        if self.rpm is None:
+                            self.rpm = st.rpm
+                        if self.vfeed is None:
+                            self.vfeed = st.vfeed
+                        if self.doc is None:
+                            self.doc = st.maxdoc
+            except ValueError as e:
+                if addError:
+                    addError(str(e))
     def validate(self, errors):
         if self.vfeed is None:
             errors.append("Plunge rate is not set")
@@ -1749,7 +1752,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
             tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
 
-            pda = PresetDerivedAttributes(self)
+            pda = PresetDerivedAttributes(self, addError=lambda error: errors.append(error))
             pda.validate(errors)
             if errors:
                 raise ValueError("\n".join(errors))
