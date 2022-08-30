@@ -78,11 +78,13 @@ class CutterMaterial:
         self.sfm_multiplier = sfm_multiplier
 
 class Material:
-    def __init__(self, name, short_name, sfm_carbide, sfm_hss, chipload_3mm, chipload_10mm, ramp_angle, depth_factor, cut_power, stepover):
+    def __init__(self, name, short_name, sfm_carbide, sfm_hss, drill_sfm_carbide, drill_sfm_hss, chipload_3mm, chipload_10mm, ramp_angle, depth_factor, cut_power, stepover):
         self.name = name
         self.short_name = short_name
         self.sfm_carbide = sfm_carbide
         self.sfm_hss = sfm_hss
+        self.drill_sfm_carbide = drill_sfm_carbide
+        self.drill_sfm_hss = drill_sfm_hss
         self.chipload_3mm = chipload_3mm # mm chipload at 10mm diameter
         self.chipload_10mm = chipload_10mm # mm chipload at 10mm diameter
         self.ramp_angle = ramp_angle # degrees
@@ -91,31 +93,31 @@ class Material:
         self.stepover = stepover
 
 # 1018, S235, EN3 etc. mild steels
-material_mildsteel = Material("mild steel", "stl", 350, 80, 0.016, 0.06, 3, 0.25, 1.0, 22)
+material_mildsteel = Material("mild steel", "stl", 350, 80, 230, 100, 0.016, 0.06, 3, 0.25, 1.0, 22)
 # 4140, EN19 etc. low alloy steels
-material_alloysteel = Material("low alloy steel", "lastl", 250, 70, 0.016, 0.06, 1, 0.25, 1.6, 22)
+material_alloysteel = Material("low alloy steel", "lastl", 250, 70, 130, 70, 0.016, 0.06, 1, 0.25, 1.6, 22)
 # Tool steels
-material_toolsteel = Material("tool steel", "tstl", 200, 50, 0.01, 0.05, 1, 0.2, 2, 22)
+material_toolsteel = Material("tool steel", "tstl", 200, 50, 100, 50, 0.01, 0.05, 1, 0.2, 2, 22)
 # Stainless steels
-material_stainlesssteel = Material("stainless steel", "sstl", 200, 50, 0.01, 0.05, 1, 0.2, 2, 22)
+material_stainlesssteel = Material("stainless steel", "sstl", 200, 50, 100, 30, 0.01, 0.05, 1, 0.2, 2, 22)
 # Steel forgings
-material_forgedsteel = Material("forged steel", "fstl", 125, 30, 0.01, 0.05, 1, 0.2, 2, 22)
+material_forgedsteel = Material("forged steel", "fstl", 125, 30, 60, 40, 0.01, 0.05, 1, 0.2, 2, 22)
 # Cast iron - gray
-material_castiron = Material("gray iron", "giron", 400, 100, 0.015, 0.06, 1, 0.25, 1.2, 22)
+material_castiron = Material("gray iron", "giron", 400, 100, 250, 90, 0.015, 0.06, 1, 0.25, 1.2, 22)
 # Cast iron - malleable
-material_malleableiron = Material("malleable iron", "miron", 200, 50, 0.015, 0.06, 1, 0.25, 1.2, 22)
+material_malleableiron = Material("malleable iron", "miron", 200, 50, 160, 70, 0.015, 0.06, 1, 0.25, 1.2, 22)
 # Aluminium alloys
-#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.025, 0.08, 3, 0.5, 0.3, 22)
-material_aluminium = Material("aluminium alloy", "alu", 500, 150, 0.016, 0.06, 5, 0.25, 0.3, 22)
+#material_aluminium = Material("aluminium alloy", "alu", 500, 150, 500, 200, 0.025, 0.08, 3, 0.5, 0.3, 22)
+material_aluminium = Material("aluminium alloy", "alu", 500, 150, 500, 200, 0.016, 0.06, 5, 0.25, 0.3, 22)
 # Brasses
-#material_brass = Material("brass", "brs", 400, 120, 0.025, 0.08, 3, 0.5, 0.8, 22)
-material_brass = Material("brass", "brs", 400, 120, 0.016, 0.06, 4, 0.25, 0.8, 22)
+#material_brass = Material("brass", "brs", 400, 120, 330, 150, 0.025, 0.08, 3, 0.5, 0.8, 22)
+material_brass = Material("brass", "brs", 400, 120, 330, 150, 0.016, 0.06, 4, 0.25, 0.8, 22)
 # Plastics
-material_plastics = Material("plastics", "pls", 800, 800, 0.025, 0.08, 5, 0.6, 0.4, 30)
+material_plastics = Material("plastics", "pls", 800, 800, 800, 200, 0.025, 0.08, 5, 0.6, 0.4, 30)
 # Wood and engineered wood
-material_wood = Material("woods", "wd", 1600, 1600, 0.025, 0.08, 10, 0.8, 0.2, 40)
+material_wood = Material("woods", "wd", 1600, 1600, 800, 200, 0.025, 0.08, 10, 0.8, 0.2, 40)
 # Plastic foam
-material_foam = Material("foams", "fm", 1600, 1600, 0.025, 0.08, 20, 1.6, 0.2, 40)
+material_foam = Material("foams", "fm", 1600, 1600, 800, 200, 0.025, 0.08, 20, 1.6, 0.2, 40)
 
 carbide_uncoated = CutterMaterial("uncoated carbide", "C-U", 1.0)
 carbide_TiN = CutterMaterial("TiN coated carbide", "C-TiN", 1.2)
@@ -124,8 +126,11 @@ carbide_AlTiN = CutterMaterial("AlTiN coated carbide", "C-AlTiN", 1.3)
 min_rpm = 2800
 max_rpm = 24000
 
-def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None):
-    msfm = material.sfm_hss if is_hss else material.sfm_carbide
+def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None, is_drill=False):
+    if is_drill:
+        msfm = material.drill_sfm_hss if is_hss else material.drill_sfm_carbide
+    else:
+        msfm = material.sfm_hss if is_hss else material.sfm_carbide
     sfm = msfm * coating.sfm_multiplier * sfm_factor
     rpm = 12 * sfm / (pi * diameter / 25.4)
     if machine_params:
@@ -135,11 +140,26 @@ def standard_tool(diameter, flutes, material, coating, is_hss=False, sfm_factor=
             rpm = machine_params.max_rpm
     dia_factor = log(diameter / 3) / log (10 / 3)
     chipload = material.chipload_3mm * pow(material.chipload_10mm / material.chipload_3mm, dia_factor)
-    feed = flutes * chipload * rpm
-    angle = material.ramp_angle
-    plunge = Tool.calc_vfeed(feed, angle)
-    doc = material.depth_factor * diameter
-    tool = Tool(diameter, feed, plunge, doc)
+    if is_drill:
+        plunge = feed = chipload * rpm
+    else:
+        feed = flutes * chipload * rpm
+        angle = material.ramp_angle
+        plunge = Tool.calc_vfeed(feed, angle)
+    if is_drill:
+        if is_hss:
+            doc = 3 * diameter
+        else:
+            # Peck drilling is discouraged for carbide?
+            doc = 5 * diameter
+    else:
+        doc = material.depth_factor * diameter
+    if flute_length is not None:
+        doc = min(doc, flute_length)
+    if is_drill:
+        tool = Tool(diameter, 0, plunge, doc)
+    else:
+        tool = Tool(diameter, feed, plunge, doc)
     tool.flutes = flutes
     tool.material = material
     tool.coating = coating
