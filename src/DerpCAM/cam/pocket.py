@@ -307,6 +307,7 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
         boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
         polygon = Polygon(boundary)
         islands_offset = []
+        holes = []
         for island in shape.islands:
             island_offsets = shapes.Shape._offset(geom.PtsToInts(island), True, tdist)
             island_offsets = pyclipper.SimplifyPolygons(island_offsets)
@@ -314,8 +315,14 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
                 island_offset_pts = geom.PtsFromInts(island_offset)
                 islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
-                polygon = polygon.difference(Polygon(ii))
-        all_inputs += objects_to_polygons(polygon)
+                if not from_outside:
+                    polygon = polygon.difference(Polygon(ii))
+                else:
+                    holes.append(Polygon(ii))
+        if from_outside:
+            all_inputs.append((polygon, holes))
+        else:
+            all_inputs += objects_to_polygons(polygon)
     return all_inputs
 
 # only works for closed linestrings
@@ -429,6 +436,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
     num_polys = len(all_inputs)
     outer_progress = 0
     for polygon in all_inputs:
+        if from_outside:
+            polygon, islands = polygon
         tps = []
         step = tool.diameter * tool.stepover
         tactic = cam.geometry.StartPointTactic.WIDEST
@@ -437,9 +446,9 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
             adaptive = False
             if adaptive:
                 polygon, tps = add_outer_passes(polygon, tool)
-            outside_poly = Polygon(polygon.exterior)
-            stock = outside_poly.buffer(tool.diameter)
             if shape_to_refine:
+                outside_poly = Polygon(polygon.exterior)
+                stock = outside_poly.buffer(tool.diameter)
                 already_cut_outline = MultiPolygon()
                 for i in shape_to_refine:
                     for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
@@ -447,16 +456,17 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 already_cut = already_cut_for_this = stock.difference(already_cut_outline.buffer(tool.diameter / 2))
                 polygon = stock.difference(outside_poly)
             else:
+                td = tool.diameter
+                stock = polygon.buffer(td / 2)
+                for i in islands:
+                    polygon = polygon.difference(i)
                 # Generous margins
-                already_cut_for_this = stock.difference(outside_poly)
-                # Ensure enough overlap
-                #outside_poly = outside_poly.buffer(tool.diameter / 2)
-                for i in polygon.interiors:
-                    already_cut_for_this = already_cut_for_this.difference(Polygon(i))
-                    outside_poly = outside_poly.difference(Polygon(i))
-                polygon = outside_poly
+                already_cut_for_this = stock.difference(polygon)
+                for i in islands:
+                    already_cut_for_this = already_cut_for_this.difference(i)
         else:
             already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
+        #polygon = polygon.difference(already_cut_for_this)
         with pyvlock:
             tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
         has_entry_circle = tp.starting_angle is not None
@@ -547,7 +557,9 @@ def refine_shape_internal(shape, previous, current, min_entry_dia):
 
 def refine_shape_external(shape, previous, current, min_entry_dia):
     alltps = []
-    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
+    entire_shape, holes = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
+    for i in holes:
+        entire_shape = entire_shape.difference(i)
     previous_milled_outline = entire_shape.buffer(previous / 2)
     previous_milled = previous_milled_outline.buffer(-previous / 2)
     mill_slot = previous_milled_outline.difference(previous_milled)
