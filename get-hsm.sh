@@ -7,7 +7,7 @@ else
 fi
 if [ -f HSM_experiment/src/geometry.py ]; then
     cd src/DerpCAM/cam
-    for i in geometry helpers voronoi_centers; do
+    for i in geometry helpers voronoi_centers debug; do
         rm $i.py
         ln -s ../../../HSM_experiment/src/$i.py $i.py || exit 1
     done
