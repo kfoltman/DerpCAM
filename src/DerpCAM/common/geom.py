@@ -972,7 +972,7 @@ def dxf_polyline_to_points(entity, scaling=1):
             cy = mid.y + c * cos(angle)
             sa = atan2(lasty - cy, lastx - cx)
             ea = sa + theta
-            points += circle(cx, cy, r, 1000, sa, ea)
+            points += circle2(cx, cy, r, 1000, sa, ea)
             points.append(PathPoint(x, y))
         else:
             points.append(PathPoint(x, y))
