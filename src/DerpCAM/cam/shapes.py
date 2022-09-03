@@ -33,10 +33,13 @@ class Shape(object):
                 ls = shapely.geometry.LinearRing(pts)
             else:
                 ls = shapely.geometry.LineString(pts)
+            ls = ls.simplify(1.0 / GeometrySettings.RESOLUTION)
             lso = ls.parallel_offset(abs(offset), 'right' if offset > 0 else 'left', 4)
+            lso = lso.simplify(1.0 / GeometrySettings.RESOLUTION)
             return Path([PathPoint(x, y) for x, y in lso.coords], closed)
         tps = [toolpath.Toolpath(offset_path(self.boundary, self.closed, offset), tool)] + [
             toolpath.Toolpath(offset_path(island, True, offset), tool) for island in self.islands ]
+        tps = [tp for tp in tps if not tp.is_empty()]
         return toolpath.Toolpaths(tps)
     @staticmethod
     def _offset(points, closed, dist):
