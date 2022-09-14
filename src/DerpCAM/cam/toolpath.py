@@ -70,7 +70,7 @@ class HelicalEntry(object):
         self.climb = climb
 
 class Toolpath(object):
-    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False, is_cleanup=False):
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False, is_cleanup=False, helical_from_top=False):
         assert isinstance(path, Path)
         self.path = path
         self.tool = tool
@@ -81,6 +81,7 @@ class Toolpath(object):
         self.optimize_lines_cache = None
         self.segmentation = segmentation
         self.was_previously_cut = was_previously_cut
+        self.helical_from_top = helical_from_top
         self.is_cleanup = is_cleanup
         if segmentation and helical_entry is None and segmentation[0][0] == 0 and isinstance(segmentation[0][2], HelicalEntry):
             helical_entry = segmentation[0][2]
@@ -131,6 +132,10 @@ class Toolpath(object):
     def without_circles(self):
         assert self.is_tab
         return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
+
+    def with_helical_from_top(self):
+        assert not self.is_tab
+        return Toolpath(self.path, self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=True)
 
     def cut_by_tabs(self, tabs, helical_entry_func):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
