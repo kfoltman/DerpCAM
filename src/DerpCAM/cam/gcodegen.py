@@ -337,25 +337,12 @@ class MachineParams(object):
         self.max_rpm = max_rpm
         self.over_tab_safety = 0.2
 
-class Cut(object):
-    def __init__(self, machine_params, props, tool):
-        self.machine_params = machine_params
-        self.props = props
-        self.tool = tool
-
-# A bit unfortunate name, might be changed in future
-class CutPath2D(object):
-    def __init__(self, path):
-        self.subpaths_full = [path.transformed()]
-
-class TabbedCutPath2D(CutPath2D):
-    def __init__(self, path_notabs, path_withtabs):
-        CutPath2D.__init__(self, path_notabs)
-        if old_trochoidal_code:
-            self.subpaths_tabbed_deep = self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
-        else:
-            self.subpaths_tabbed = [p.with_helical_from_top() if not p.is_tab and p.helical_entry is not None and not (p is path_withtabs[0] and not path_withtabs[-1].is_tab) else p for p in path_withtabs]
-            self.subpaths_tabbed_deep = [(p.without_circles() if p.is_tab else p) for p in path_withtabs]
+# 2D model:
+# BaseCutPath derived classes store the toolpath(s) to be used for the entire
+# depth. This can be the basic toolpath for untabbed cuts, or basic toolpath
+# and tab related variants for tabbed cuts.
+#
+# CutLayer2D is a single slice at a certain depth.
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False, helical_from_top=False):
@@ -365,52 +352,122 @@ class CutLayer2D(object):
         self.force_join = force_join
         self.helical_from_top = helical_from_top
 
-# Simple tabbed 2D toolpath
-class BaseCut2D(Cut):
-    def __init__(self, machine_params, props, tool, toolpath):
-        Cut.__init__(self, machine_params, props, tool)
-        if toolpath is not None:
-            self.prepare_paths(toolpath)
+class BaseCutPath(object):
+    def __init__(self, machine_params, props, tool):
+        self.machine_params = machine_params
+        self.props = props
+        self.tool = tool
 
-    def prepare_paths(self, toolpath):
-        self.cutpaths = [CutPath2D(toolpath)]
-
-    def build(self, gcode):
-        for cutpath in self.cutpaths:
-            self.build_cutpath(gcode, cutpath)
-
-    def build_cutpath(self, gcode, cutpath):
-        layers = self.layers_for_cutpath(cutpath)
-        self.start_cutpath(gcode, cutpath)
-        for layer in layers:
-            self.build_layer(gcode, layer, cutpath)
-        self.end_cutpath(gcode, cutpath)
-
-    def layers_for_cutpath(self, cutpath):
+# Simple 2D case, just follow the same toolpath level after level.
+class CutPath2D(BaseCutPath):
+    def __init__(self, machine_params, props, tool, path):
+        BaseCutPath.__init__(self, machine_params, props, tool)
+        self.subpaths_full = [path.transformed()]
+    def depth_of_cut(self, depth):
+        # Axial engagement
+        # XXXKF add provisions for finish passes here
+        return self.tool.maxdoc
+    def to_layers(self):
+        # This assumes always going down
         layers = []
         prev_depth = self.props.start_depth
         while True:
             depth = self.next_depth(prev_depth)
             if depth is None:
                 break
-            layers += self.layers_at_depth(prev_depth, depth, cutpath)
+            layers += self.cutlayers_for_layer(prev_depth, depth)
             prev_depth = depth
         return layers
+    def next_depth(self, depth):
+        if depth <= self.props.depth:
+            return None
+        depth_of_cut = self.depth_of_cut(depth)
+        return max(self.props.depth, depth - depth_of_cut)
+    def cutlayers_for_layer(self, prev_depth, depth):
+        return [CutLayer2D(prev_depth, depth, self.subpaths_for_layer(prev_depth, depth))]
+    def subpaths_for_layer(self, prev_depth, depth):
+        return self.subpaths_full
+    def z_to_be_cut(self, layer, subpath):
+        return layer.depth
+    def z_already_cut_here(self, layer, subpath):
+        return layer.prev_depth
 
-    def layers_at_depth(self, prev_depth, depth, cutpath):
-        return [self.cutlayer_for_layer(prev_depth, depth, cutpath)]
+# 2D case with tabs - handles these differences vs simple case:
+# * selecting of subpaths depending on Z
+# * determining Z depth for starting the cut and cutting, depending on tab vs
+#   no tab
+class TabbedCutPath2D(CutPath2D):
+    def __init__(self, machine_params, props, tool, path_notabs, path_withtabs, tab_depth):
+        CutPath2D.__init__(self, machine_params, props, tool, path_notabs)
+        self.tab_depth = tab_depth
+        self.over_tab_z = self.tab_depth + machine_params.over_tab_safety
+        if old_trochoidal_code:
+            self.subpaths_tabbed_deep = self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
+        else:
+            self.subpaths_tabbed = [p.with_helical_from_top() if not p.is_tab and p.helical_entry is not None and not (p is path_withtabs[0] and not path_withtabs[-1].is_tab) else p for p in path_withtabs]
+            self.subpaths_tabbed_deep = [(p.without_circles() if p.is_tab else p) for p in path_withtabs]
+    def subpaths_for_layer(self, prev_depth, depth):
+        if depth >= self.tab_depth:
+            return self.subpaths_full
+        if prev_depth >= self.tab_depth:
+            # First pass through the tabs, potentially need to use trochoidal to cut the tabs
+            return self.subpaths_tabbed
+        # Further passes through the tabs, use simplified paths without circles to save time
+        return self.subpaths_tabbed_deep
+    def next_depth(self, depth):
+        next_depth = CutPath2D.next_depth(self, depth)
+        if old_trochoidal_code and next_depth is not None:
+            # Is there a tab depth in between the current and the new depth?
+            if depth > self.tab_depth and next_depth < self.tab_depth:
+                # Make sure that the full tab depth is milled with non-interrupted
+                # paths before switching to the interrupted (tabbed) path. This is
+                # to prevent accidentally using a non-trochoidal path for the last pass
+                return self.tab_depth
+        return next_depth
+    def z_already_cut_here(self, layer, subpath):
+        return max(self.tab_depth, layer.prev_depth) if subpath.is_tab else layer.prev_depth
+    def z_to_be_cut(self, layer, subpath):
+        if not subpath.is_tab:
+            return layer.depth
+        # First cut of the tab should be at exact tab depth, the next ones can be at
+        # over_tab_z because the tab is already cut and there's no point in rubbing the
+        # cutter against the bottom of the cut.
+        return self.over_tab_z if layer.prev_depth < self.tab_depth else self.tab_depth
 
-    def cutlayer_for_layer(self, prev_depth, depth, cutpath):
-        return CutLayer2D(prev_depth, depth, self.subpaths_for_layer(prev_depth, depth, cutpath))
+class BaseCut(object):
+    def __init__(self, machine_params, props, tool):
+        self.machine_params = machine_params
+        self.props = props
+        self.tool = tool
 
-    def subpaths_for_layer(self, prev_depth, depth, cutpath):
-        return cutpath.subpaths_full
+# Simple tabbed 2D toolpath
+class BaseCut2D(BaseCut):
+    def __init__(self, machine_params, props, tool, cutpaths):
+        BaseCut.__init__(self, machine_params, props, tool)
+        self.cutpaths = cutpaths
 
-    def build_layer(self, gcode, layer, cutpath):
-        self.prev_depth = layer.prev_depth
-        self.depth = layer.depth
+    def build(self, gcode):
+        for cutpath in self.cutpaths:
+            self.build_cutpath(gcode, cutpath)
+
+    def build_cutpath(self, gcode, cutpath):
+        self.start_cutpath(gcode, cutpath)
+        for layer in self.layers_for_cutpath(cutpath):
+            self.build_layer(gcode, cutpath, layer)
+        self.end_cutpath(gcode, cutpath)
+
+    def layers_for_cutpath(self, cutpath):
+        return cutpath.to_layers()
+
+    def build_layer(self, gcode, cutpath, layer):
         subpaths = layer.subpaths
         assert subpaths
+        self.start_layer(gcode, layer)
+        for subpath in subpaths:
+            self.build_subpath(gcode, cutpath, layer, subpath)
+
+    def start_layer(self, gcode, layer):
+        subpaths = layer.subpaths
         # Not a continuous path, need to jump to a new place
         firstpt = subpaths[0].path.seg_start()
         if subpaths[0].helical_entry:
@@ -427,18 +484,12 @@ class BaseCut2D(Cut):
                 # Note: it's not ideal because of the helical entry, but it's
                 # good enough.
                 gcode.rapid(x=firstpt.x, y=firstpt.y)
-            self.lastpt = firstpt
         else:
             # Minor discrepancies might lead to problems with arcs etc. so fix them
             # by adding a simple line segment.
-            if dist(self.lastpt, firstpt) >= 0.001:
+            if dist(self.lastpt, firstpt) >= 1e-6:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
-                self.lastpt = firstpt
-        # print ("Layer at %f, %d subpaths" % (self.depth, len(subpaths)))
-        for subpath in subpaths:
-            # print ("Start", self.lastpt, subpath.points[0])
-            self.build_subpath(gcode, subpath)
-            # print ("End", self.lastpt, subpath.points[-1])
+        self.lastpt = firstpt
 
     def start_subpath(self, subpath):
         pass
@@ -446,33 +497,27 @@ class BaseCut2D(Cut):
     def end_subpath(self, subpath):
         pass
 
-    def build_subpath(self, gcode, subpath):
+    def build_subpath(self, gcode, cutpath, layer, subpath):
         # This will always be false for subpaths_full.
-        newz = self.z_to_be_cut(subpath)
+        newz = cutpath.z_to_be_cut(layer, subpath)
         self.start_subpath(subpath)
-        self.enter_or_leave_cut(gcode, subpath, newz)
+        self.enter_or_leave_cut(gcode, cutpath, layer, subpath, newz)
         assert self.lastpt is not None
         assert isinstance(self.lastpt, PathPoint)
         self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
         assert isinstance(self.lastpt, PathNode)
         self.end_subpath(subpath)
 
-    def enter_or_leave_cut(self, gcode, subpath, newz):
+    def enter_or_leave_cut(self, gcode, cutpath, layer, subpath, newz):
         if newz != self.curz:
             if newz < self.curz:
-                self.enter_cut(gcode, subpath, newz)
+                self.enter_cut(gcode, cutpath, layer, subpath, newz)
             else:
                 # Leave a cut, always uses a rapid move
                 gcode.move_z(newz, self.curz, subpath.tool, self.machine_params.semi_safe_z)
                 self.curz = newz
 
-    def z_already_cut_here(self, subpath):
-        return self.prev_depth
-
-    def z_to_be_cut(self, subpath):
-        return self.depth
-
-    def enter_cut(self, gcode, subpath, newz):
+    def enter_cut(self, gcode, cutpath, layer, subpath, newz):
         # Z slightly above the previous cuts. There will be no ramping or helical
         # entry above that, just a straight plunge. However, the speed of the
         # plunge will be dependent on whether a ramped or helical entry is used
@@ -490,7 +535,7 @@ class BaseCut2D(Cut):
             gcode.rapid(z=newz)
             gcode.feed(subpath.tool.hfeed)
         else:
-            z_already_cut_here = self.z_already_cut_here(subpath)
+            z_already_cut_here = cutpath.z_already_cut_here(layer, subpath)
             if z_already_cut_here >= self.props.start_depth - 0.001:
                 # Haven't cut anything yet - be more cautious to avoid crashing
                 # into surface of the uncut stuck if it's crooked etc.
@@ -546,72 +591,6 @@ class BaseCut2D(Cut):
         gcode.rapid(z=self.machine_params.safe_z)
         self.curz = self.machine_params.safe_z
 
-    def next_depth(self, depth):
-        if depth <= self.props.depth:
-            return None
-        doc = self.doc(depth)
-        return max(self.props.depth, depth - doc)
-
-    def doc(self, depth):
-        # XXXKF add provisions for finish passes here
-        return self.tool.maxdoc
-
-class Cut2DWithTabs(BaseCut2D):
-    def __init__(self, machine_params, props, tool, toolpath_notabs, toolpath_withtabs):
-        if props.tab_depth is not None and props.tab_depth < props.depth:
-            raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (props.tab_depth, props.depth))
-        self.toolpath_notabs = toolpath_notabs
-        self.toolpath_withtabs = toolpath_withtabs
-        self.tab_depth = props.tab_depth if props.tab_depth is not None else props.depth
-        self.over_tab_z = self.tab_depth + machine_params.over_tab_safety
-        BaseCut2D.__init__(self, machine_params, props, tool, (toolpath_notabs, toolpath_withtabs))
-
-    def prepare_paths(self, toolpath):
-        toolpath_notabs, toolpath_withtabs = toolpath
-        self.cutpaths = [TabbedCutPath2D(toolpath_notabs, toolpath_withtabs)]
-
-    def subpaths_for_layer(self, prev_depth, depth, cutpath):
-        if depth >= self.tab_depth:
-            return cutpath.subpaths_full
-        if prev_depth >= self.tab_depth:
-            # First pass through the tabs, potentially need to use trochoidal to cut the tabs
-            return cutpath.subpaths_tabbed
-        # Further passes through the tabs, use simplified paths without circles to save time
-        return cutpath.subpaths_tabbed_deep
-
-    def next_depth(self, depth):
-        if depth <= self.props.depth:
-            return None
-        doc = self.doc(depth)
-        # Is there a tab depth in between the current and the new depth?
-        if old_trochoidal_code and depth > self.tab_depth and depth - doc < self.tab_depth:
-            # Make sure that the full tab depth is milled with non-interrupted
-            # paths before switching to the interrupted (tabbed) path. This is
-            # to prevent accidentally using a non-trochoidal path for the last pass
-            depth = max(self.props.depth, self.tab_depth)
-        else:
-            depth = max(self.props.depth, depth - doc)
-        return depth
-
-    def z_already_cut_here(self, subpath):
-        return max(self.tab_depth, self.prev_depth) if subpath.is_tab else self.prev_depth
-
-    def z_to_be_cut(self, subpath):
-        if not subpath.is_tab:
-            return self.depth
-        # First cut of the tab should be at exact tab depth, the next ones can be at
-        # over_tab_z because the tab is already cut and there's no point in rubbing the
-        # cutter against the bottom of the cut.
-        return self.over_tab_z if self.prev_depth < self.tab_depth else self.tab_depth
-
-    def start_subpath(self, subpath):
-        if subpath.is_tab and debug_tabs:
-            gcode.add("(tab start)")
-
-    def end_subpath(self, subpath):
-        if subpath.is_tab and debug_tabs:
-            gcode.add("(tab end)")
-
 class Cut2DWithDraft(BaseCut2D):
     def __init__(self, machine_params, props, tool, shape, toolpaths_func, outline_func, outside, draft_angle_deg, layer_thickness):
         BaseCut2D.__init__(self, machine_params, props, tool, None)
@@ -628,7 +607,7 @@ class Cut2DWithDraft(BaseCut2D):
         self.flattened = toolpaths.flattened() if isinstance(toolpaths, toolpath.Toolpaths) else [toolpaths]
         for i in self.flattened:
             i.helical_entry = None
-        self.cutpaths = [CutPath2D(p) for p in self.flattened]
+        self.cutpaths = [CutPath2D(machine_params, props, tool, p) for p in self.flattened]
     def layers_at_depth(self, prev_depth, depth, cutpath):
         base_layers = [self.cutlayer_for_layer(prev_depth, depth, cutpath)]
         if depth > self.props.depth:
@@ -643,7 +622,7 @@ class Cut2DWithDraft(BaseCut2D):
             draftval = self.draft * height
             contour = self.outline_func(self.props.margin + draftval)
             flattened = contour.flattened() if isinstance(contour, toolpath.Toolpaths) else [contour]
-            paths = [CutPath2D(p) for p in flattened]
+            paths = [CutPath2D(self.machine_params, self.props, self.tool, p) for p in flattened]
             assert len(paths) == 1
             draft_layers += [CutLayer2D(prev_depth, depth, paths[0].subpaths_full, force_join=True)]
             prev_depth = depth
@@ -700,7 +679,7 @@ class UntabbedOperation(Operation):
             i.rendered_outlines = i.render_as_outlines()
     def to_gcode(self, gcode, machine_params):
         for path in self.flattened:
-            BaseCut2D(machine_params, self.props, self.tool, path).build(gcode)
+            BaseCut2D(machine_params, self.props, self.tool, [CutPath2D(machine_params, self.props, self.tool, path)]).build(gcode)
     def to_preview(self):
         return [(self.props.depth, i) for i in self.flattened]
 
@@ -774,15 +753,17 @@ class TabbedOperation(Operation):
                         break
                     j.rendered_outlines = j.render_as_outlines()
     def to_gcode(self, gcode, machine_params):
-        tab_depth = self.props.tab_depth
-        if tab_depth is None:
-            tab_depth = self.props.depth
+        props = self.props
+        tab_depth = props.tab_depth if props.tab_depth is not None else props.depth
+        if tab_depth < self.props.depth:
+            raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, props.depth))
         for path in self.flattened:
             tabbed = self.tabbed_for_path.get(path, None)
             if tabbed is not None:
-                Cut2DWithTabs(machine_params, self.props, self.tool, path, tabbed).build(gcode)
+                cutpaths = [TabbedCutPath2D(machine_params, props, self.tool, path, tabbed, tab_depth)]
             else:
-                BaseCut2D(machine_params, self.props, self.tool, path).build(gcode)
+                cutpaths = [CutPath2D(machine_params, props, self.tool, path)]
+            BaseCut2D(machine_params, props, self.tool, cutpaths).build(gcode)
     def tabs_width(self):
         return 1
     def to_preview(self):
@@ -860,26 +841,7 @@ class Contour(TabbedOperation):
         tabs_dict = {}
         twins = {}
         if extra_width and not trc_rate:
-            extra_width *= tool.diameter / 2
-            widen_func = lambda contour: self.widen(contour, tool, extra_width)
-            res = []
-            for contour in contours:
-                widened = toolpath.Toolpath(contour.path, tool, transform=widen_func).transformed()
-                if isinstance(widened, toolpath.Toolpath):
-                    moretabs = []
-                    for pt in tabs:
-                        pos, dist = contour.path.closest_point(pt)
-                        if dist < tool.diameter * sqrt(2):
-                            pt2 = contour.path.offset_point(pos, extra_width)
-                            moretabs.append(pt)
-                            moretabs.append(pt2)
-                    tabs_dict[widened] = moretabs
-                    res.append(widened)
-                    twins[contour] = [widened]
-                else:
-                    widened = widened.flattened()
-                    res += widened
-                    twins[contour] = widened
+            res = self.widened_contours(contours, tool, extra_width * tool.diameter / 2, twins)
             if not self.entry_exit:
                 # For entry_exit, this is handled via twins
                 contours = res
@@ -887,33 +849,56 @@ class Contour(TabbedOperation):
             if extra_width and trc_rate:
                 # This will require handling segmentation
                 raise ValueError("Cannot use entry/exit with trochoidal paths yet")
-            ee = self.entry_exit
-            cut_contours = []
-            for sp, ep in ee:
-                path = contours[0]
-                pos, min_dist = path.path.closest_point(sp)
-                for j in contours[1:]:
-                    pos, dist = j.path.closest_point(sp)
-                    if dist < min_dist:
-                        min_dist = dist
-                        path = j
-                path_and_twins = twins.get(path, [path])
-                for path in path_and_twins:
-                    orig_path = path.path
-                    pos, dist = orig_path.closest_point(sp)
-                    pos2, dist2 = orig_path.closest_point(ep)
-                    if pos < pos2:
-                        newpath = orig_path.subpath(pos, pos2)
-                    else:
-                        newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
-                    newpath = Path([sp], False).joined(newpath).joined(Path([ep], False))
-                    cut_contours.append(toolpath.Toolpath(newpath, path.tool))
-            contours = cut_contours
+            contours = self.apply_entry_exit(contours, twins)
         contours = toolpath.Toolpaths(contours)
         self.add_tabs_if_close(contours, tabs_dict, tabs, tool.diameter * sqrt(2))
         return contours, tabs_dict, paths_for_helical_entry
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
+    def apply_entry_exit(self, contours, twins):
+        ee = self.entry_exit
+        cut_contours = []
+        for sp, ep in ee:
+            path = contours[0]
+            pos, min_dist = path.path.closest_point(sp)
+            for j in contours[1:]:
+                pos, dist = j.path.closest_point(sp)
+                if dist < min_dist:
+                    min_dist = dist
+                    path = j
+            path_and_twins = twins.get(path, [path])
+            for path in path_and_twins:
+                orig_path = path.path
+                pos, dist = orig_path.closest_point(sp)
+                pos2, dist2 = orig_path.closest_point(ep)
+                if pos < pos2:
+                    newpath = orig_path.subpath(pos, pos2)
+                else:
+                    newpath = orig_path.subpath(pos, path.tlength).joined(orig_path.subpath(0, pos2))
+                newpath = Path([sp], False).joined(newpath).joined(Path([ep], False))
+                cut_contours.append(toolpath.Toolpath(newpath, path.tool))
+        return cut_contours
+    def widened_contours(self, contours, tool, extension, twins):
+        widen_func = lambda contour: self.widen(contour, tool, extension)
+        res = []
+        for contour in contours:
+            widened = toolpath.Toolpath(contour.path, tool, transform=widen_func).transformed()
+            if isinstance(widened, toolpath.Toolpath):
+                moretabs = []
+                for pt in tabs:
+                    pos, dist = contour.path.closest_point(pt)
+                    if dist < tool.diameter * sqrt(2):
+                        pt2 = contour.path.offset_point(pos, extension)
+                        moretabs.append(pt)
+                        moretabs.append(pt2)
+                tabs_dict[widened] = moretabs
+                res.append(widened)
+                twins[contour] = [widened]
+            else:
+                widened = widened.flattened()
+                res += widened
+                twins[contour] = widened
+        return res
     def widen(self, contour, tool, extension):
         path = contour.path
         if not path.closed:
