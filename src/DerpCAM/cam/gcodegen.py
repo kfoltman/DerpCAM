@@ -391,21 +391,39 @@ class CutPath2D(BaseCutPath):
         return layer.depth
     def z_already_cut_here(self, layer, subpath):
         return layer.prev_depth
+    def to_preview(self):
+        preview = []
+        for i in self.subpaths_full:
+            preview.append((self.props.depth, i))
+        return preview
 
 # 2D case with tabs - handles these differences vs simple case:
+# * creating a "tabbed" version of the original toolpath
 # * selecting of subpaths depending on Z
 # * determining Z depth for starting the cut and cutting, depending on tab vs
 #   no tab
 class TabbedCutPath2D(CutPath2D):
-    def __init__(self, machine_params, props, tool, path_notabs, path_withtabs, tab_depth):
+    def __init__(self, machine_params, props, tool, path_notabs, tabs, tabs_width, tab_depth, helical_entry_func):
         CutPath2D.__init__(self, machine_params, props, tool, path_notabs)
         self.tab_depth = tab_depth
         self.over_tab_z = self.tab_depth + machine_params.over_tab_safety
+        self.subpaths_tabbed, self.subpaths_tabbed_deep = self.generate_tabbed_versions(path_notabs, tabs, tabs_width, helical_entry_func)
+        self.generate_preview(self.subpaths_full)
+    def generate_tabbed_versions(self, path_notabs, tabs, tabs_width, helical_entry_func):
+        tab_inst = path_notabs.usertabs(tabs, width=tabs_width)
+        path_withtabs = path_notabs.cut_by_tabs(tab_inst, helical_entry_func)
         if old_trochoidal_code:
-            self.subpaths_tabbed_deep = self.subpaths_tabbed = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
+            paths_withtabs = paths_withtabs_deep = [(p.transformed() if not p.is_tab else p) for p in path_withtabs]
         else:
-            self.subpaths_tabbed = [p.with_helical_from_top() if not p.is_tab and p.helical_entry is not None and not (p is path_withtabs[0] and not path_withtabs[-1].is_tab) else p for p in path_withtabs]
-            self.subpaths_tabbed_deep = [(p.without_circles() if p.is_tab else p) for p in path_withtabs]
+            paths_withtabs = [p.with_helical_from_top() if not p.is_tab and p.helical_entry is not None and not (p is path_withtabs[0] and not path_withtabs[-1].is_tab) else p for p in path_withtabs]
+            paths_withtabs_deep = [(p.without_circles() if p.is_tab else p) for p in path_withtabs]
+        self.generate_preview(paths_withtabs)
+        return paths_withtabs, paths_withtabs_deep
+    def generate_preview(self, subpaths):
+        for subpath in subpaths:
+            if is_calculation_cancelled():
+                return
+            subpath.rendered_outlines = subpath.render_as_outlines()
     def subpaths_for_layer(self, prev_depth, depth):
         if depth >= self.tab_depth:
             return self.subpaths_full
@@ -433,6 +451,11 @@ class TabbedCutPath2D(CutPath2D):
         # over_tab_z because the tab is already cut and there's no point in rubbing the
         # cutter against the bottom of the cut.
         return self.over_tab_z if layer.prev_depth < self.tab_depth else self.tab_depth
+    def to_preview(self):
+        preview = []
+        for i in self.subpaths_tabbed:
+            preview.append((self.tab_depth if i.is_tab else self.props.depth, i))
+        return preview
 
 class BaseCut(object):
     def __init__(self, machine_params, props, tool):
@@ -481,8 +504,6 @@ class BaseCut2D(BaseCut):
                 gcode.linear(x=firstpt.x, y=firstpt.y)
             else:
                 self.go_to_safe_z(gcode)
-                # Note: it's not ideal because of the helical entry, but it's
-                # good enough.
                 gcode.rapid(x=firstpt.x, y=firstpt.y)
         else:
             # Minor discrepancies might lead to problems with arcs etc. so fix them
@@ -725,8 +746,9 @@ class OutsidePeelHSM(HSMOperation):
         return cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine)
 
 class TabbedOperation(Operation):
-    def __init__(self, shape, tool, props, outside, tabs, extra_attribs):
+    def __init__(self, shape, tool, machine_params, props, outside, tabs, extra_attribs):
         Operation.__init__(self, shape, tool, props)
+        self.machine_params = machine_params
         self.outside = outside
         self.tabs = tabs
         for key, value in extra_attribs.items():
@@ -739,43 +761,24 @@ class TabbedOperation(Operation):
                 tp.helical_entry = self.helical_entry(tp.path, tp.tool)
             if not self.allow_helical_entry and tp.helical_entry is not None:
                 tp.helical_entry = None
-        if tabs:
-            for i in self.flattened:
-                if is_calculation_cancelled():
-                    break
-                i.rendered_outlines = i.render_as_outlines()
-                tab_inst = i.usertabs(tabs[i], width=self.tabs_width())
-                self.tabbed_for_path[i] = i.cut_by_tabs(tab_inst, self.helical_entry)
-                for j in self.tabbed_for_path[i]:
-                    if not self.allow_helical_entry and j.helical_entry is not None:
-                        j.helical_entry = None
-                    if is_calculation_cancelled():
-                        break
-                    j.rendered_outlines = j.render_as_outlines()
-    def to_gcode(self, gcode, machine_params):
-        props = self.props
-        tab_depth = props.tab_depth if props.tab_depth is not None else props.depth
-        if tab_depth < self.props.depth:
-            raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, props.depth))
+        self.tab_depth = props.tab_depth if props.tab_depth is not None else props.depth
+        self.cutpaths = []
         for path in self.flattened:
-            tabbed = self.tabbed_for_path.get(path, None)
-            if tabbed is not None:
-                cutpaths = [TabbedCutPath2D(machine_params, props, self.tool, path, tabbed, tab_depth)]
+            if path in tabs:
+                self.cutpaths.append(TabbedCutPath2D(self.machine_params, props, self.tool, path, tabs[path], self.tabs_width(), self.tab_depth, self.helical_entry))
             else:
-                cutpaths = [CutPath2D(machine_params, props, self.tool, path)]
-            BaseCut2D(machine_params, props, self.tool, cutpaths).build(gcode)
+                self.cutpaths.append(CutPath2D(self.machine_params, props, self.tool, path))
+    def to_gcode(self, gcode, machine_params):
+        if self.tab_depth < self.props.depth:
+            raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, self.props.depth))
+        BaseCut2D(machine_params, self.props, self.tool, self.cutpaths).build(gcode)
     def tabs_width(self):
         return 1
     def to_preview(self):
         tab_depth = self.props.start_depth if self.props.tab_depth is None else self.props.tab_depth
         preview = []
-        for path in self.flattened:
-            tabbed = self.tabbed_for_path.get(path, None)
-            if tabbed is not None:
-                for i in tabbed:
-                    preview.append((tab_depth if i.is_tab else self.props.depth, i))
-            else:
-                preview.append((self.props.depth, path))
+        for path in self.cutpaths:
+            preview += path.to_preview()
         return preview
     def add_tabs_if_close(self, contours, tabs_dict, tabs, maxd):
         for i in contours.flattened():
@@ -808,9 +811,9 @@ class TabbedOperation(Operation):
                 return toolpath.HelicalEntry(cp, tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
 
 class Contour(TabbedOperation):
-    def __init__(self, shape, outside, tool, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
+    def __init__(self, shape, outside, tool, machine_params, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
         assert shape.closed
-        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate, 'entry_exit' : entry_exit, 'allow_helical_entry' : props.allow_helical_entry})
+        TabbedOperation.__init__(self, shape, tool, machine_params, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate, 'entry_exit' : entry_exit, 'allow_helical_entry' : props.allow_helical_entry})
     def tabs_width(self):
         return self.tab_extend
     def build_paths(self, margin):
@@ -908,7 +911,7 @@ class Contour(TabbedOperation):
             points = CircleFitter.interpolate_arcs(points, False, 1)
         offset = cam.contour.plain(shapes.Shape(points, True), 0, True, extension, not path.orientation())
         if not offset:
-            raise ValueError("Empty contour")
+            raise ValueError("Cannot widen the contour")
         if len(offset) == 1:
             extension = toolpath.Toolpath(offset[0], tool)
             if toolpath.startWithClosestPoint(extension, points[0], tool.diameter):
@@ -921,8 +924,8 @@ class Contour(TabbedOperation):
         return toolpath.Toolpaths(widened)
 
 class TrochoidalContour(TabbedOperation):
-    def __init__(self, shape, outside, tool, props, nrad, nspeed, tabs):
-        TabbedOperation.__init__(self, shape, tool, props, outside, tabs, { 'nrad' : nrad * 0.5 * tool.diameter, 'nspeed' : nspeed, 'allow_helical_entry' : True})
+    def __init__(self, shape, outside, tool, machine_params, props, nrad, nspeed, tabs):
+        TabbedOperation.__init__(self, shape, tool, machine_params, props, outside, tabs, { 'nrad' : nrad * 0.5 * tool.diameter, 'nspeed' : nspeed, 'allow_helical_entry' : True})
     def build_paths(self, margin):
         nrad = self.nrad
         nspeed = self.nspeed
@@ -938,8 +941,8 @@ class TrochoidalContour(TabbedOperation):
         return 1 + self.nrad
 
 class ContourWithDraft(TabbedOperation):
-    def __init__(self, shape, outside, tool, props, draft_angle_deg, layer_thickness):
-        TabbedOperation.__init__(self, shape, tool, props, outside, 0, {'draft_angle_deg' : draft_angle_deg, 'layer_thickness' : layer_thickness, 'allow_helical_entry' : False})
+    def __init__(self, shape, outside, tool, machine_params, props, draft_angle_deg, layer_thickness):
+        TabbedOperation.__init__(self, shape, tool, machine_params, props, outside, 0, {'draft_angle_deg' : draft_angle_deg, 'layer_thickness' : layer_thickness, 'allow_helical_entry' : False})
     def build_paths(self, margin):
         contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, self.props.margin + margin, self.tool.climb)
         contours = toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
@@ -1127,29 +1130,29 @@ class Operations(object):
         if tabs:
             draft = tan(draft_angle_deg * pi / 180)
             draft_height = props.start_depth - props.tab_depth
-            self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
+            self.add(ContourWithDraft(shape, outside, self.tool, self.machine_params, props, draft_angle_deg, layer_thickness))
             if props.depth < props.tab_depth:
-                self.add(Contour(shape, outside, self.tool, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
+                self.add(Contour(shape, outside, self.tool, self.machine_params, props.clone(start_depth=props.tab_depth, margin=draft * draft_height), tabs=tabs))
         else:
-            self.add(ContourWithDraft(shape, outside, self.tool, props, draft_angle_deg, layer_thickness))
+            self.add(ContourWithDraft(shape, outside, self.tool, self.machine_params, props, draft_angle_deg, layer_thickness))
     def outside_contour(self, shape, tabs, widen=0, props=None, entry_exit=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=0, extra_width=widen))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=widen, entry_exit=entry_exit))
+                self.add(Contour(shapes.Shape(i, True), False, self.tool, self.machine_params, props or self.props, tabs=0, extra_width=widen))
+        self.add(Contour(shape, True, self.tool, self.machine_params, props or self.props, tabs=tabs, extra_width=widen, entry_exit=entry_exit))
     def outside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, entry_exit=None):
         if shape.islands:
             for i in shape.islands:
-                self.add(Contour(shapes.Shape(i, True), False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
+                self.add(Contour(shapes.Shape(i, True), False, self.tool, self.machine_params, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed))
         #self.add(TrochoidalContour(shape, True, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, True, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
+        self.add(Contour(shape, True, self.tool, self.machine_params, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
     def outside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, True, draft_angle_deg, layer_thickness, tabs, props)
     def inside_contour(self, shape, tabs, widen=0, props=None, entry_exit=None):
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=-widen, entry_exit=entry_exit))
+        self.add(Contour(shape, False, self.tool, self.machine_params, props or self.props, tabs=tabs, extra_width=-widen, entry_exit=entry_exit))
     def inside_contour_trochoidal(self, shape, nrad, nspeed, tabs, props=None, entry_exit=None):
         #self.add(TrochoidalContour(shape, False, self.tool, props or self.props, nrad=nrad, nspeed=nspeed, tabs=tabs))
-        self.add(Contour(shape, False, self.tool, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
+        self.add(Contour(shape, False, self.tool, self.machine_params, props or self.props, tabs=tabs, extra_width=nrad, trc_rate=nspeed, entry_exit=entry_exit))
     def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
     def engrave(self, shape, props=None):
