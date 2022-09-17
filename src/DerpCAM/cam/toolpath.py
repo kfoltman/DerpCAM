@@ -156,7 +156,7 @@ class Toolpath(object):
         if helical_entry_func:
             for i in res:
                 if i.helical_entry is None and not i.is_tab:
-                    i.helical_entry = helical_entry_func(i.path, i.tool)
+                    i.helical_entry = helical_entry_func(i.path)
         return res
 
     def flattened(self):

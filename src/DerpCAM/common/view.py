@@ -35,8 +35,8 @@ class OperationsRenderer(object):
         b = None
         for op in self.operations.operations:
             opb = op.shape.bounds
-            if op.paths:
-                opb = max_bounds(opb, op.paths.bounds)
+            for depth, paths in op.to_preview():
+                opb = max_bounds(opb, paths.bounds)
             if b is None:
                 b = opb
             else:
@@ -61,12 +61,13 @@ class OperationsRenderer(object):
     def renderToolpaths(self, owner, alpha_scale=1.0):
         # Toolpaths
         for op in self.operations.operations:
-            if op.paths:
+            preview = op.to_preview()
+            if preview:
                 for stage in (1, 2):
                     # Null passes (we should probably warn about these)
                     if op.props.start_depth <= op.props.depth:
                         continue
-                    for depth, toolpath in op.to_preview():
+                    for depth, toolpath in preview:
                         alpha = int(255 * alpha_scale * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
                             pen = self.toolPenFunc(toolpath, alpha, op)
