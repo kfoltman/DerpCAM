@@ -648,16 +648,15 @@ class Cut2DWithDraft(BaseCut2D):
             draft_layers += [CutLayer2D(prev_depth, depth, paths[0].subpaths_full, force_join=True)]
             prev_depth = depth
         return base_layers + draft_layers
-    def subpaths_for_layer(self, prev_depth, depth, cutpath):
-        return cutpath.subpaths_full
 
 class Operation(object):
-    def __init__(self, shape, tool, props):
+    def __init__(self, shape, tool, machine_params, props):
         self.shape = shape
         self.tool = tool
+        self.machine_params = machine_params
         self.props = props
         self.rpm = props.rpm if props is not None else None
-        self.tabbed_for_path = {}
+        self.cutpaths = []
     def outline(self, margin):
         contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, margin, self.tool.climb)
         if contour_paths is None:
@@ -670,21 +669,25 @@ class Operation(object):
             return self.operation_name() + ", " + ("%0.2fmm deep" % (self.props.start_depth - self.props.depth))
     def operation_name(self):
         return self.__class__.__name__
+    def to_gcode(self, gcode):
+        BaseCut2D(self.machine_params, self.props, self.tool, self.cutpaths).build(gcode)
+    def to_preview(self):
+        return sum([path.to_preview() for path in self.cutpaths], [])
 
 class ToolChangeOperation(Operation):
-    def __init__(self, cutter):
-        Operation.__init__(self, None, None, None)
+    def __init__(self, cutter, machine_params):
+        Operation.__init__(self, None, None, machine_params, None)
         self.cutter = cutter
     def to_text(self):
         return "Tool change: " + self.cutter.name
     def to_preview(self):
         return []
-    def to_gcode(self, gcode, machine_params):
+    def to_gcode(self, gcode):
         gcode.prompt_for_tool(self.cutter.name)
 
 class UntabbedOperation(Operation):
-    def __init__(self, shape, tool, props, extra_attribs={}):
-        Operation.__init__(self, shape, tool, props)
+    def __init__(self, shape, tool, machine_params, props, extra_attribs={}):
+        Operation.__init__(self, shape, tool, machine_params, props)
         for key, value in extra_attribs.items():
             setattr(self, key, value)
         paths = self.build_paths(0)
@@ -698,11 +701,7 @@ class UntabbedOperation(Operation):
             if is_calculation_cancelled():
                 break
             i.rendered_outlines = i.render_as_outlines()
-    def to_gcode(self, gcode, machine_params):
-        for path in self.flattened:
-            BaseCut2D(machine_params, self.props, self.tool, [CutPath2D(machine_params, self.props, self.tool, path)]).build(gcode)
-    def to_preview(self):
-        return [(self.props.depth, i) for i in self.flattened]
+        self.cutpaths = [CutPath2D(self.machine_params, self.props, self.tool, path) for path in self.flattened]
 
 class Engrave(UntabbedOperation):
     def build_paths(self, margin):
@@ -719,23 +718,23 @@ class Pocket(UntabbedOperation):
         return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset)
 
 class HSMOperation(UntabbedOperation):
-    def __init__(self, shape, tool, props, shape_to_refine):
-        UntabbedOperation.__init__(self, shape, tool, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
+    def __init__(self, shape, tool, machine_params, props, shape_to_refine):
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
 
 class HSMPocket(HSMOperation):
     def build_paths(self, margin):
         return cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset)
 
 class PocketWithDraft(UntabbedOperation):
-    def __init__(self, shape, tool, props, draft_angle_deg, layer_thickness):
-        UntabbedOperation.__init__(self, shape, tool, props)
+    def __init__(self, shape, tool, machine_params, props, draft_angle_deg, layer_thickness):
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props)
         self.draft_angle_deg = draft_angle_deg
         self.layer_thickness = layer_thickness
         self.outside = False
     def build_paths(self, margin):
         return cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin)
-    def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, False, self.draft_angle_deg, self.layer_thickness).build(gcode)
+    def to_gcode(self, gcode):
+        Cut2DWithDraft(self.machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, False, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
@@ -747,8 +746,7 @@ class OutsidePeelHSM(HSMOperation):
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, machine_params, props, outside, tabs, extra_attribs):
-        Operation.__init__(self, shape, tool, props)
-        self.machine_params = machine_params
+        Operation.__init__(self, shape, tool, machine_params, props)
         self.outside = outside
         self.tabs = tabs
         for key, value in extra_attribs.items():
@@ -768,18 +766,12 @@ class TabbedOperation(Operation):
                 self.cutpaths.append(TabbedCutPath2D(self.machine_params, props, self.tool, path, tabs[path], self.tabs_width(), self.tab_depth, self.helical_entry))
             else:
                 self.cutpaths.append(CutPath2D(self.machine_params, props, self.tool, path))
-    def to_gcode(self, gcode, machine_params):
+    def to_gcode(self, gcode):
         if self.tab_depth < self.props.depth:
             raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, self.props.depth))
-        BaseCut2D(machine_params, self.props, self.tool, self.cutpaths).build(gcode)
+        Operation.to_gcode(self, gcode)
     def tabs_width(self):
         return 1
-    def to_preview(self):
-        tab_depth = self.props.start_depth if self.props.tab_depth is None else self.props.tab_depth
-        preview = []
-        for path in self.cutpaths:
-            preview += path.to_preview()
-        return preview
     def add_tabs_if_close(self, contours, tabs_dict, tabs, maxd):
         for i in contours.flattened():
             if i not in tabs_dict:
@@ -844,7 +836,7 @@ class Contour(TabbedOperation):
         tabs_dict = {}
         twins = {}
         if extra_width and not trc_rate:
-            res = self.widened_contours(contours, tool, extra_width * tool.diameter / 2, twins)
+            res = self.widened_contours(contours, tool, extra_width * tool.diameter / 2, twins, tabs, tabs_dict)
             if not self.entry_exit:
                 # For entry_exit, this is handled via twins
                 contours = res
@@ -881,7 +873,7 @@ class Contour(TabbedOperation):
                 newpath = Path([sp], False).joined(newpath).joined(Path([ep], False))
                 cut_contours.append(toolpath.Toolpath(newpath, path.tool))
         return cut_contours
-    def widened_contours(self, contours, tool, extension, twins):
+    def widened_contours(self, contours, tool, extension, twins, tabs, tabs_dict):
         widen_func = lambda contour: self.widen(contour, tool, extension)
         res = []
         for contour in contours:
@@ -950,8 +942,8 @@ class ContourWithDraft(TabbedOperation):
         tabs_dict = {}
         self.add_tabs_if_close(contours, tabs_dict, tabs, self.tool.diameter * sqrt(2))
         return contours, tabs_dict, []
-    def to_gcode(self, gcode, machine_params):
-        Cut2DWithDraft(machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
+    def to_gcode(self, gcode):
+        Cut2DWithDraft(self.machine_params, self.props, self.tool, self.shape, self.build_paths, self.outline, self.outside, self.draft_angle_deg, self.layer_thickness).build(gcode)
 
 class RetractSchedule(object):
     pass
@@ -971,20 +963,20 @@ class RetractBy(RetractSchedule):
         return min(z + self.peck_depth, props.start_depth)
 
 class PeckDrill(UntabbedOperation):
-    def __init__(self, x, y, tool, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
+    def __init__(self, x, y, tool, machine_params, props, dwell_bottom=0, dwell_retract=0, retract=None, slow_retract=False):
         shape = shapes.Shape.circle(x, y, r=0.5 * tool.diameter)
         self.x = x
         self.y = y
-        UntabbedOperation.__init__(self, shape, tool, props)
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props)
         self.dwell_bottom = dwell_bottom
         self.dwell_retract = dwell_retract
         self.retract = retract or RetractToSemiSafe()
         self.slow_retract = slow_retract
     def build_paths(self, margin):
         return toolpath.Toolpath(Path([PathPoint(self.x, self.y)], True), self.tool)
-    def to_gcode(self, gcode, machine_params):
+    def to_gcode(self, gcode):
         gcode.rapid(x=self.x, y=self.y)
-        gcode.rapid(z=machine_params.semi_safe_z)
+        gcode.rapid(z=self.machine_params.semi_safe_z)
         gcode.feed(self.tool.vfeed)
         curz = self.props.start_depth
         doc = self.tool.maxdoc
@@ -993,7 +985,7 @@ class PeckDrill(UntabbedOperation):
             gcode.linear(z=nextz)
             if self.dwell_bottom:
                 gcode.dwell(self.dwell_bottom)
-            retrz = self.retract.get(nextz, self.props, machine_params.semi_safe_z)
+            retrz = self.retract.get(nextz, self.props, self.machine_params.semi_safe_z)
             if self.slow_retract:
                 gcode.linear(z=retrz)
             else:
@@ -1001,10 +993,10 @@ class PeckDrill(UntabbedOperation):
             if self.dwell_retract:
                 gcode.dwell(self.dwell_retract)
             curz = nextz
-        gcode.rapid(z=machine_params.safe_z)
+        gcode.rapid(z=self.machine_params.safe_z)
 
 class HelicalDrill(UntabbedOperation):
-    def __init__(self, x, y, d, tool, props):
+    def __init__(self, x, y, d, tool, machine_params, props):
         d -= props.margin
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
@@ -1014,7 +1006,7 @@ class HelicalDrill(UntabbedOperation):
         self.d = d
         self.tool = tool
         shape = shapes.Shape.circle(x, y, r=0.5*self.d)
-        UntabbedOperation.__init__(self, shape, tool, props)
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props)
     def build_paths(self, margin):
         coords = []
         for cd in self.diameters():
@@ -1041,19 +1033,19 @@ class HelicalDrill(UntabbedOperation):
                 dias.append(self.d)
             return dias
 
-    def to_gcode(self, gcode, machine_params):
+    def to_gcode(self, gcode):
         rate_factor = self.tool.full_plunge_feed_ratio
 
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
         for d in self.diameters():
-            self.to_gcode_ring(gcode, d, (rate_factor if first else 1) * self.tool.diagonal_factor(), machine_params, first)
+            self.to_gcode_ring(gcode, d, (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
             first = False
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
         gcode.section_info(f"Exit to centre/safe Z")
         gcode.linear(x=self.x, y=self.y)
-        gcode.rapid(x=self.x, y=self.y, z=machine_params.safe_z)
+        gcode.rapid(x=self.x, y=self.y, z=self.machine_params.safe_z)
         gcode.section_info(f"End helical drill")
 
     def to_gcode_ring(self, gcode, d, rate_factor, machine_params, first):
@@ -1076,15 +1068,15 @@ class HelicalDrill(UntabbedOperation):
 # First make a helical entry and then enlarge to the target diameter
 # by side milling
 class HelicalDrillFullDepth(HelicalDrill):
-    def to_gcode(self, gcode, machine_params):
+    def to_gcode(self, gcode):
         # Do the first pass at a slower rate because of full radial engagement downwards
         rate_factor = self.tool.full_plunge_feed_ratio
         if self.d < self.min_dia:
-            self.to_gcode_ring(gcode, self.d, rate_factor, machine_params, True)
+            self.to_gcode_ring(gcode, self.d, rate_factor, self.machine_params, True)
         else:
             # Mill initial hole by helical descent into desired depth
             d = self.min_dia
-            self.to_gcode_ring(gcode, d, rate_factor, machine_params, True)
+            self.to_gcode_ring(gcode, d, rate_factor, self.machine_params, True)
             gcode.feed(self.tool.hfeed)
             # Bore it out at full depth to the final diameter
             while d < self.d:
@@ -1094,7 +1086,7 @@ class HelicalDrillFullDepth(HelicalDrill):
                 d += self.tool.diameter * self.tool.stepover_fulldepth
             r = max(0, (self.d - self.tool.diameter) / 2)
             gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
-        gcode.rapid(z=machine_params.safe_z)
+        gcode.rapid(z=self.machine_params.safe_z)
 
 def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
     draft = tan(draft_angle_deg * pi / 180)
@@ -1156,25 +1148,25 @@ class Operations(object):
     def inside_contour_with_draft(self, shape, draft_angle_deg, layer_thickness, tabs, props=None):
         self.contour_with_draft(shape, False, draft_angle_deg, layer_thickness, tabs, props)
     def engrave(self, shape, props=None):
-        self.add(Engrave(shape, self.tool, props or self.props))
+        self.add(Engrave(shape, self.tool, self.machine_params, props or self.props))
     def pocket(self, shape, props=None):
-        self.add(Pocket(shape, self.tool, props or self.props))
+        self.add(Pocket(shape, self.tool, self.machine_params, props or self.props))
     def pocket_hsm(self, shape, props=None, shape_to_refine=None):
-        self.add(HSMPocket(shape, self.tool, props or self.props, shape_to_refine))
+        self.add(HSMPocket(shape, self.tool, self.machine_params, props or self.props, shape_to_refine))
     def pocket_with_draft(self, shape, draft_angle_deg, layer_thickness, props=None):
-        self.add(PocketWithDraft(shape, self.tool, props or self.props, draft_angle_deg, layer_thickness))
+        self.add(PocketWithDraft(shape, self.tool, self.machine_params, props or self.props, draft_angle_deg, layer_thickness))
     def outside_peel(self, shape, props=None):
-        self.add(OutsidePeel(shape, self.tool, props or self.props))
+        self.add(OutsidePeel(shape, self.tool, self.machine_params, props or self.props))
     def outside_peel_hsm(self, shape, props=None, shape_to_refine=None):
-        self.add(OutsidePeelHSM(shape, self.tool, props or self.props, shape_to_refine))
+        self.add(OutsidePeelHSM(shape, self.tool, self.machine_params, props or self.props, shape_to_refine))
     def face_mill(self, shape, props=None):
-        self.add(FaceMill(shape, self.tool, props or self.props))
+        self.add(FaceMill(shape, self.tool, self.machine_params, props or self.props))
     def peck_drill(self, x, y, props=None):
-        self.add(PeckDrill(x, y, self.tool, props or self.props))
+        self.add(PeckDrill(x, y, self.tool, self.machine_params, props or self.props))
     def helical_drill(self, x, y, d, props=None):
-        self.add(HelicalDrill(x, y, d, self.tool, props or self.props))
+        self.add(HelicalDrill(x, y, d, self.tool, self.machine_params, props or self.props))
     def helical_drill_full_depth(self, x, y, d, props=None):
-        self.add(HelicalDrillFullDepth(x, y, d, self.tool, props or self.props))
+        self.add(HelicalDrillFullDepth(x, y, d, self.tool, self.machine_params, props or self.props))
     def to_gcode(self):
         gcode = Gcode()
         gcode.reset()
@@ -1183,7 +1175,7 @@ class Operations(object):
         for operation in self.operations:
             gcode.section_info(f"Start operation: {type(operation).__name__}")
             gcode.begin_section(operation.rpm)
-            operation.to_gcode(gcode, self.machine_params)
+            operation.to_gcode(gcode)
             gcode.section_info(f"End operation: {type(operation).__name__}")
         gcode.rapid(x=0, y=0)
         gcode.finish()

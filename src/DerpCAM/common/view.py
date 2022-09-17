@@ -79,13 +79,11 @@ class OperationsRenderer(object):
         # Red rapid moves
         pen = QPen(QColor(192, 0, 0), 0)
         for op in self.operations.operations:
-            if op.paths:
-                for i in op.flattened:
-                    if i in op.tabbed_for_path:
-                        for j in op.tabbed_for_path[i]:
-                            lastpt = self.addRapids(owner, pen, j, lastpt, op)
-                    else:
-                        lastpt = self.addRapids(owner, pen, i, lastpt, op)
+            for i in op.cutpaths:
+                last_depth = self.operations.machine_params.safe_z
+                for depth, subpath in i.to_preview():
+                    lastpt = self.addRapids(owner, pen, subpath, lastpt, op, depth < last_depth)
+                    last_depth = depth
         return lastpt
     def renderShapes(self, owner):
         penOutside = QPen(QColor(0, 0, 255), 0)
@@ -99,31 +97,30 @@ class OperationsRenderer(object):
         self.renderToolpaths(owner)
         self.renderRapids(owner)
         self.renderShapes(owner)
-    def addRapids(self, owner, pen, path, lastpt, op):
-        if isinstance(path, toolpath.Toolpaths):
-            for tp in path.toolpaths:
-                lastpt = self.addRapids(owner, pen, tp, lastpt, op)
-            return lastpt
+    def addRapids(self, owner, pen, path, lastpt, op, is_descend):
+        assert not isinstance(path, toolpath.Toolpaths)
         #print (path.helical_entry, path.is_tab)
-        if path.helical_entry:
-            he = path.helical_entry
-            if isinstance(he, toolpath.HelicalEntry):
-                pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
-                owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle2(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=True)
-                owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
-            elif isinstance(he, toolpath.PlungeEntry):
-                sp = he.start
-                d = path.tool.diameter / (2 * sqrt(2))
-                owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
-        else:
-            pt = path.path.seg_start()
-            brush = QBrush(pen.color())
-            if pt.dist(lastpt) < 1.0 / GeometrySettings.RESOLUTION:
-                # Highlight the puzzling reentry moves in pink
-                brush = QBrush(QColor(255, 0, 255))
-            r = 8
-            owner.addScaledPolygon(brush, [pt, pt.translated(r, r), pt.translated(-r, r), pt], QPointF(pt.x, pt.y), r)
-        owner.addRapidLine(pen, lastpt, path.path.seg_start())
+        if is_descend:
+            if path.helical_entry:
+                he = path.helical_entry
+                if isinstance(he, toolpath.HelicalEntry):
+                    pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
+                    owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle2(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=True)
+                    owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
+                elif isinstance(he, toolpath.PlungeEntry):
+                    sp = he.start
+                    d = path.tool.diameter / (2 * sqrt(2))
+                    owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
+            else:
+                pt = path.path.seg_start()
+                brush = QBrush(pen.color())
+                if pt.dist(lastpt) < 1.0 / GeometrySettings.RESOLUTION:
+                    # Highlight the puzzling reentry moves in pink
+                    brush = QBrush(QColor(255, 0, 255))
+                r = 8
+                owner.addScaledPolygon(brush, [pt, pt.translated(r, r), pt.translated(-r, r), pt], QPointF(pt.x, pt.y), r)
+        if lastpt != path.path.seg_start():
+            owner.addRapidLine(pen, lastpt, path.path.seg_start())
         return path.path.seg_end()
     def pen2brush(self, owner, path, pen):
         if not isinstance(pen, QPen):

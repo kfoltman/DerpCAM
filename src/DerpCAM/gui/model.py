@@ -2845,6 +2845,7 @@ class DocumentModel(QObject):
 class OpExporter(object):
     def __init__(self, document):
         document.waitForUpdateCAM()
+        self.machine_params = document.gcode_machine_params
         self.operations = gcodegen.Operations(document.gcode_machine_params)
         self.all_cutters = set([])
         self.cutter = None
@@ -2856,7 +2857,7 @@ class OpExporter(object):
     def process_operation(self, item):
         if item.cam:
             if item.cutter != self.cutter and len(self.all_cutters) > 1:
-                self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
+                self.operations.add(gcodegen.ToolChangeOperation(item.cutter, self.machine_params))
                 self.cutter = item.cutter
             self.operations.add_all(item.cam.operations)
     def write(self, fn):
