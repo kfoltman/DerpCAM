@@ -29,7 +29,17 @@ class Tab(object):
 
 class Tabs(object):
     def __init__(self, tabs):
-        self.tabs = tabs
+        last = 0
+        last_tab = None
+        newtabs = []
+        # Merge overlapping tabs
+        for tab in sorted(tabs, key=lambda tab: tab.start):
+            if last_tab is not None and tab.start < last_tab.end:
+                last_tab.end = max(last_tab.end, tab.end)
+            else:
+                newtabs.append(tab)
+                last_tab = tab
+        self.tabs = newtabs
     def cut(self, slen, elen, tlen):
         result = [(slen, elen)]
         for tab in self.tabs:
@@ -419,7 +429,7 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
         for start in candidates:
             # Size of the helical entry hole
             mr = tool.min_helix_diameter
-            d = (tool.diameter + 2 * mr) + margin
+            d = (tool.diameter + 2 * mr) + 2 * margin
             c = IntPath(circle(start.x, start.y, d / 2))
             # Check if it sticks outside of the final shape
             # XXXKF could be optimized by doing a simple bounds check first

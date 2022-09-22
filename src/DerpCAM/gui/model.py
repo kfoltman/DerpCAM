@@ -1825,7 +1825,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = None
             if isinstance(self.shape, list) and len(self.shape) == 1:
                 self.shape = self.shape[0]
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
+            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
