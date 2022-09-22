@@ -340,12 +340,27 @@ class MachineParams(object):
         self.max_rpm = max_rpm
         self.over_tab_safety = 0.2
 
-# 2D model:
+# 2D model, from inputs to outputs:
+#
+# OffsetRange is a range of offset (margin) values for a certain depth.
+#
+# LayerInfo describes a single Z-axis slice, either primary (rough cut)
+# or secondary (sublayers, used for wall profiles - a rough cut is refined using
+# a series of finer passes that progress upwards by a small amount until the
+# previous primary layer and extend the cut according to the wall profile,
+# this is faster than achieving the same outcome using full primary layers,
+# especially for wide pockets - the only part cut in secondary layers is the
+# outside)
+#
 # BaseCutPath derived classes store the toolpath(s) to be used for the entire
 # depth. This can be the basic toolpath for untabbed cuts, or basic toolpath
 # and tab related variants for tabbed cuts.
 #
-# CutLayer2D is a single slice at a certain depth.
+# CutLayer2D is a single uninterrupted toolpath instance (tabbed or not) at a
+# certain depth. It is produced by CutPath classes based on the shape
+# provided from outside, series of LayerInfo objects and optionally OffsetRange
+# when CutPathWallProfile is used. CalculatedSubpaths is the intermediate
+# stage.
 
 class CutLayer2D(object):
     def __init__(self, prev_depth, depth, subpaths, force_join=False, helical_from_top=False):
@@ -836,14 +851,17 @@ class FaceMill(UntabbedOperation):
         return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None, None)
 
 class Pocket(UntabbedOperation):
-    def build_paths(self, margin):
-        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset).flattened(), None, None)
     def build_cutpaths(self):
         return [CutPathWallProfile(self.machine_params, self.props, self.tool, None, self.subpaths_for_margin, True)]
+    def build_paths(self, margin):
+        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset).flattened(), None, None)
     def subpaths_for_margin(self, margin, is_sublayer):
         if is_sublayer:
             # Edges only (this is used for refining the wall profile after a roughing pass)
-            paths = cam.contour.plain(self.shape, self.tool.diameter, False, self.props.margin + margin, self.tool.climb)
+            paths = []
+            for i in self.shape.islands:
+                paths += cam.contour.plain(shapes.Shape(i, True), self.tool.diameter, True, self.props.margin + margin, self.tool.climb)
+            paths += cam.contour.plain(self.shape, self.tool.diameter, False, self.props.margin + margin, self.tool.climb)
             return PathOutput([toolpath.Toolpath(path, self.tool) for path in paths], None, None)
         else:
             # Full pocket (roughing pass)
