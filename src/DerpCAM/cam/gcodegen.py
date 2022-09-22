@@ -394,14 +394,12 @@ class LayerInfo(object):
     TAB_ABOVE = 0
     TAB_FIRST = 1
     TAB_BELOW = 2
-    def __init__(self, prev_depth, depth, offsets, tab_status):
+    def __init__(self, prev_depth, depth, offsets, is_sublayer, tab_status):
         self.prev_depth = prev_depth
         self.depth = depth
         self.offsets = offsets
+        self.is_sublayer = is_sublayer
         self.tab_status = tab_status
-        self.sublayers = []
-    def add_sublayer(self, sublayer):
-        self.sublayers.append(sublayer)
 
 class LayerSchedule(object):
     def __init__(self, machine_params, props, tool, has_tabs):
@@ -421,7 +419,7 @@ class LayerSchedule(object):
         tab_depth = self.props.actual_tab_depth()
         return new_depth
     def major_layer_list(self):
-        # This assumes always going down
+        # Start by rough milling from the top down
         layers = []
         prev_depth = self.props.start_depth
         total_depth = self.props.start_depth - self.props.depth
@@ -433,30 +431,41 @@ class LayerSchedule(object):
             if depth is None:
                 break
             layer_end_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - depth, total_depth)
-            layer = LayerInfo(prev_depth, depth, OffsetRange(layer_end_offset, end_offset, stepover), self.tab_status(prev_depth, depth, True))
+            layer = self.layer_info(prev_depth, depth, OffsetRange(layer_end_offset, end_offset, stepover), False)
             layers.append(layer)
             if layer_end_offset < layer_start_offset:
                 raise ValueError("Wall profile undercuts are not permitted")
-            if layer_end_offset > layer_start_offset:
+            prev_depth = depth
+            layer_start_offset = layer_end_offset
+        depth = self.props.depth
+        # Refine from the bottom up
+        sublayers = []
+        for layer in layers[::-1]:
+            depth = layer.depth
+            prev_depth = layer.prev_depth
+            layer_start_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - prev_depth, total_depth)
+            if layer_start_offset < layer_end_offset:
                 sublayer_end_offset = layer_end_offset
                 sublayer_start = depth + self.props.sublayer_thickness
                 sublayer_end = depth
                 while sublayer_end < prev_depth:
                     sublayer_start_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - sublayer_start, total_depth)
                     if sublayer_start_offset < sublayer_end_offset - self.props.offset_tolerance:
-                        offset = OffsetRange(sublayer_start_offset, max(sublayer_end_offset - stepover, sublayer_start_offset), stepover)
-                        layer.add_sublayer(LayerInfo(sublayer_start, sublayer_end, offset, self.tab_status(sublayer_start, sublayer_end, False)))
+                        offsets = OffsetRange(sublayer_start_offset, max(sublayer_end_offset - stepover, sublayer_start_offset), stepover)
+                        sublayers.append(self.layer_info(sublayer_start, sublayer_end, offsets, True))
                         sublayer_end_offset = sublayer_start_offset
                     sublayer_end = sublayer_start
                     sublayer_start = min(prev_depth, sublayer_end + self.props.sublayer_thickness)
-            prev_depth = depth
-            layer_start_offset = layer_end_offset
+            layer_end_offset = layer_start_offset
+        layers += sublayers
         return layers
-    def tab_status(self, prev_depth, depth, is_major):
+    def layer_info(self, top, bottom, offsets, is_subpath):
+        return LayerInfo(top, bottom, offsets, is_subpath, self.tab_status(top, bottom, is_subpath))
+    def tab_status(self, prev_depth, depth, is_subpath):
         tab_depth = self.props.actual_tab_depth()
         if not self.has_tabs or depth >= tab_depth:
             return LayerInfo.TAB_ABOVE
-        if is_major and depth < tab_depth and prev_depth >= tab_depth:
+        if not is_subpath and depth < tab_depth and prev_depth >= tab_depth:
             return LayerInfo.TAB_FIRST
         return LayerInfo.TAB_BELOW
 
@@ -526,10 +535,9 @@ class CutPathWallProfile(BaseCutPath):
         self.calculated_layers = {}
         self.to_layers()
     def cutlayers_for_layer(self, layer):
-        return sum([self.cutlayers_for_sublayer(sublayer, True) for sublayer in layer.sublayers],
-            self.cutlayers_for_sublayer(layer, False))
+        return self.cutlayers_for_sublayer(layer, False)
     def cutlayers_for_sublayer(self, layer, is_sublayer):
-        if self.is_pocket and not is_sublayer:
+        if self.is_pocket and not layer.is_sublayer:
             # Use pocket logic for the entire thing
             return self.cutlayers_for_margin(layer, layer.offsets.start_offset, is_sublayer)
         else:
