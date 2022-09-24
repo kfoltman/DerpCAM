@@ -59,6 +59,8 @@ class OperationsRenderer(object):
     def toolPenFunc(self, toolpath, alpha, op):
         return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
     def depth2intensity(self, z, thickness):
+        if z >= -0.001:
+            return 0.1
         return 0.25 + 0.75 * -z / thickness
     def renderToolpaths(self, owner, alpha_scale=1.0):
         # Toolpaths
@@ -105,7 +107,6 @@ class OperationsRenderer(object):
         self.renderShapes(owner)
     def addRapids(self, owner, pen, path, lastpt, op, is_descend):
         assert not isinstance(path, toolpath.Toolpaths)
-        #print (path.helical_entry, path.is_tab)
         if is_descend:
             if path.helical_entry:
                 he = path.helical_entry
