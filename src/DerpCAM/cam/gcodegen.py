@@ -423,7 +423,7 @@ class LayerSchedule(object):
         depth_of_cut = self.depth_of_cut(prev_depth)
         new_depth = max(self.props.depth, prev_depth - depth_of_cut)
         tab_depth = self.props.actual_tab_depth()
-        return new_depth
+        return round(new_depth, 3)
     def major_layer_list(self):
         # Start by rough milling from the top down
         layers = []
@@ -461,7 +461,7 @@ class LayerSchedule(object):
                         sublayers.append(self.layer_info(sublayer_start, sublayer_end, offsets, True))
                         sublayer_end_offset = sublayer_start_offset
                     sublayer_end = sublayer_start
-                    sublayer_start = min(prev_depth, sublayer_end + self.props.sublayer_thickness)
+                    sublayer_start = min(prev_depth, round(sublayer_end + self.props.sublayer_thickness, 3))
             layer_end_offset = layer_start_offset
         layers += sublayers
         return layers
