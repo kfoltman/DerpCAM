@@ -1019,7 +1019,7 @@ class Contour(TabbedOperation):
         tabs_dict = {}
         twins = {}
         if extra_width and not trc_rate:
-            res = self.widened_contours(contours, tool, extra_width * tool.diameter / 2, twins, tab_locations, tabs_dict)
+            res = self.widened_contours(contours, tool, extra_width * tool.diameter / 2, twins, tab_locations, tabs_dict, paths_for_helical_entry)
             if not self.entry_exit:
                 # For entry_exit, this is handled via twins
                 contours = res
@@ -1061,7 +1061,7 @@ class Contour(TabbedOperation):
                     newpath = orig_path
                 cut_contours.append(toolpath.Toolpath(newpath, path.tool))
         return cut_contours
-    def widened_contours(self, contours, tool, extension, twins, tabs, tabs_dict):
+    def widened_contours(self, contours, tool, extension, twins, tabs, tabs_dict, paths_for_helical_entry):
         res = []
         for contour in contours:
             points = contour.path.nodes
@@ -1076,6 +1076,7 @@ class Contour(TabbedOperation):
                         # Replace with a combination of the original and the offset path
                         orig_contour = contour
                         contour = toolpath.Toolpath(offset_tp.path.joined(contour.path), tool)
+                        paths_for_helical_entry.append(contour.path)
                         merged = True
                         # Convert single-contour tabs to pairs
                         moretabs = []
@@ -1089,6 +1090,7 @@ class Contour(TabbedOperation):
                                 moretabs.append(pt2)
                         tabs_dict[contour] = moretabs
                 if not merged:
+                    paths_for_helical_entry += offset
                     offset = [toolpath.Toolpath(i, tool) for i in offset]
                     res += offset
                     res.append(contour)
