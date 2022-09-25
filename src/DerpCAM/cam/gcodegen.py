@@ -502,7 +502,7 @@ class CutLayerTree(object):
     def finish_level(self):
         self.last_layer = self.this_layer
         self.this_layer = []
-        if self.roots is None:
+        if not self.roots:
             self.roots = self.last_layer
     def flatten(self):
         # self.dump()
