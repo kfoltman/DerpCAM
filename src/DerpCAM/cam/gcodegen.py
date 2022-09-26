@@ -596,18 +596,18 @@ class CutPathWallProfile(BaseCutPath):
         self.requested_layers = set()
         self.cut_layers = self.to_layers()
     def cutlayers_for_layer(self, layer):
-        return self.cutlayers_for_sublayer(layer, False)
-    def cutlayers_for_sublayer(self, layer, is_sublayer):
+        return self.cutlayers_for_sublayer(layer)
+    def cutlayers_for_sublayer(self, layer):
         if self.is_pocket and not layer.is_sublayer:
             # Use pocket logic for the entire thing
-            return self.cutlayers_for_margin(layer, layer.offsets.start_offset, is_sublayer)
+            return self.cutlayers_for_margin(layer, layer.offsets.start_offset)
         else:
             cutlayers = []
             for offset in layer.offsets.values():
-                cutlayers += self.cutlayers_for_margin(layer, offset, is_sublayer)
+                cutlayers += self.cutlayers_for_margin(layer, offset)
             return cutlayers
-    def cutlayers_for_margin(self, layer, margin, is_sublayer):
-        key = (margin, is_sublayer, layer.tab_status)
+    def cutlayers_for_margin(self, layer, margin):
+        key = (margin, layer.is_sublayer, layer.tab_status)
         layer_depth = layer.depth
         csubpaths = self.calculated_layers.get(key)
         if csubpaths is not None:
@@ -616,10 +616,10 @@ class CutPathWallProfile(BaseCutPath):
             subpaths = csubpaths.subpaths
         else:
             # Continuous (non-tab) version first, need it for everything else
-            key2 = (margin, is_sublayer, LayerInfo.TAB_ABOVE)
+            key2 = (margin, layer.is_sublayer, LayerInfo.TAB_ABOVE)
             csubpaths = self.calculated_layers.get(key2)
             if csubpaths is None:
-                path_output = self.build_layer_func(margin, is_sublayer)
+                path_output = self.build_layer_func(margin, layer.is_sublayer)
                 if path_output is None:
                     subpaths = []
                 else:
@@ -633,7 +633,7 @@ class CutPathWallProfile(BaseCutPath):
                 subpaths = csubpaths.subpaths
             if key2 != key:
                 # Split by tabs but without "untrochoidifying" yet
-                key3 = (margin, is_sublayer, LayerInfo.TAB_FIRST)
+                key3 = (margin, layer.is_sublayer, LayerInfo.TAB_FIRST)
                 csubpaths = self.calculated_layers.get(key3)
                 if csubpaths is None:
                     subpaths = [subpath.tabify(self) for subpath in subpaths]
@@ -974,13 +974,13 @@ class TabbedOperation(Operation):
                     if dist < maxd:
                         thistabs.append(t)
                 tabs_dict[i] = thistabs
-    def calc_tab_locations_on_contours(self, contours):
+    def calc_tab_locations_on_contours(self, contours, margin):
         newtabs = []
         path = Path(self.shape.boundary, self.shape.closed)
         # Offset the tabs
         for pt in self.tabs:
             pos, dist = path.closest_point(pt)
-            pt2 = path.offset_point(pos, self.tool.diameter / 2 * (1 if self.outside else -1))
+            pt2 = path.offset_point(pos, (margin + self.tool.diameter / 2) * (1 if self.outside else -1))
             newtabs.append(pt2)
         return newtabs
 
@@ -1015,7 +1015,7 @@ class Contour(TabbedOperation):
             contours = toolpath.Toolpaths(toolpaths).flattened() if contour_paths else []
         if not contours:
             return None
-        tab_locations = self.calc_tab_locations_on_contours(contours)
+        tab_locations = self.calc_tab_locations_on_contours(contours, margin)
         tabs_dict = {}
         twins = {}
         if extra_width and not trc_rate:
@@ -1108,7 +1108,7 @@ class TrochoidalContour(TabbedOperation):
         if not self.outside:
             nrad = -nrad
         trochoidal_func = lambda contour: shapes.trochoidal_transform(contour, nrad, nspeed)
-        newtabs = self.calc_tab_locations_on_contours(contours)
+        newtabs = self.calc_tab_locations_on_contours(contours, margin)
         contours = toolpath.Toolpaths([toolpath.Toolpath(tp.path, tool, transform=trochoidal_func) for tp in contours.toolpaths])
         return contours, self.nrad, {}
     def tab_length(self):
