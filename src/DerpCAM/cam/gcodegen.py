@@ -740,6 +740,8 @@ class BaseCut2D(BaseCut):
         pass
 
     def build_subpath(self, gcode, cutpath, layer, subpath):
+        if subpath.path.length() < 0.001:
+            return
         # This will always be false for subpaths_full.
         newz = cutpath.z_to_be_cut(layer, subpath)
         self.start_subpath(subpath)
