@@ -860,11 +860,18 @@ class Operation(object):
     def to_preview(self):
         return sum([path.to_preview() for path in self.cutpaths], [])
     def helical_entry(self, tp, paths_for_helical_entry):
+        if not self.props.allow_helical_entry:
+            return
+        mindist = self.tool.diameter * 0.708
+        cp = None
         for tep in paths_for_helical_entry:
             pos, dist = tep.closest_point(tp.seg_start())
-            if dist <= self.tool.diameter * 0.708:
+            if dist <= mindist:
+                mindist = dist
                 cp = tep.point_at(pos)
-                return toolpath.HelicalEntry(cp, self.tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
+        if cp is not None:
+            return toolpath.HelicalEntry(cp, self.tool.min_helix_diameter / 2, cp.angle_to(tp.seg_start()))
+        return None
 
 class ToolChangeOperation(Operation):
     def __init__(self, cutter, machine_params):
@@ -1008,6 +1015,8 @@ class Contour(TabbedOperation):
         else:
             toolpaths = []
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
+            if not contour_paths:
+                return None
             for tp in contour_paths:
                 toolpaths.append(toolpath.Toolpath(tp, tool))
                 tp = tp.interpolated()
