@@ -250,8 +250,14 @@ class Gcode(object):
             old_z = already_cut_z
         return old_z
 
-    def helical_move_z(self, new_z, old_z, helical_entry, tool, semi_safe_z, already_cut_z=None):
-        self.section_info(f"Start helical move from {old_z:0.3f} to {new_z:0.3f}")
+    def helical_move_z(self, new_z, old_z, helical_entry, tool, semi_safe_z, already_cut_z=None, from_top=False, top_z=None):
+        if from_top:
+            self.section_info(f"Start from-top helical move from {top_z:0.3f} to {new_z:0.3f}")
+            self.rapid(z=top_z)
+            old_z = top_z
+            already_cut_z = top_z
+        else:
+            self.section_info(f"Start helical move from {old_z:0.3f} to {new_z:0.3f}")
         c, r = helical_entry.point, helical_entry.r
         if new_z >= old_z:
             self.rapid(z=new_z)
@@ -557,12 +563,15 @@ class BaseCutPath(object):
         # cutter against the bottom of the cut.
         tab_depth = self.props.actual_tab_depth()
         return self.over_tab_z if layer.prev_depth < tab_depth else tab_depth
-    def adjust_helical_entry(self, subpaths):
-        allow_helical_entry = self.props.allow_helical_entry
-        for tp in subpaths:
-            if allow_helical_entry and tp.helical_entry is None and self.helical_entry_func is not None:
-                tp.helical_entry = self.helical_entry_func(tp.path)
-            if not allow_helical_entry and tp.helical_entry is not None:
+    def correct_helical_entry(self, subpaths):
+        if self.props.allow_helical_entry:
+            for tp in subpaths:
+                if tp.helical_entry is None and self.helical_entry_func is not None:
+                    tp.helical_entry = self.helical_entry_func(tp.path)
+            if subpaths and subpaths[0].helical_entry:
+                subpaths[0].helical_from_top = False
+        else:
+            for tp in subpaths:
                 tp.helical_entry = None
 
 # Simple 2D case, just follow the same toolpath level after level.
@@ -570,7 +579,7 @@ class CutPath2D(BaseCutPath):
     def __init__(self, machine_params, props, tool, helical_entry_func, path):
         BaseCutPath.__init__(self, machine_params, props, tool, helical_entry_func)
         self.subpaths_full = [path.transformed()]
-        self.adjust_helical_entry(self.subpaths_full)
+        self.correct_helical_entry(self.subpaths_full)
         self.generate_preview(self.subpaths_full)
         self.cut_layers = self.to_layers()
     def subpaths_for_layer(self, layer):
@@ -625,7 +634,7 @@ class CutPathWallProfile(BaseCutPath):
                 else:
                     assert isinstance(path_output, PathOutput)
                     subpaths = [path.optimize() for path in path_output.paths]
-                    self.adjust_helical_entry(subpaths)
+                    self.correct_helical_entry(subpaths)
                 self.generate_preview(subpaths)
                 csubpaths = CalculatedSubpaths(subpaths, layer.depth)
                 self.calculated_layers[key2] = csubpaths
@@ -642,9 +651,9 @@ class CutPathWallProfile(BaseCutPath):
                 else:
                     subpaths = csubpaths.subpaths
                 if key3 != key:
-                    # Untrochoidify if needed
+                    # Untrochoidify and remove helical entry from top of stock if needed
                     assert layer.tab_status == LayerInfo.TAB_BELOW
-                    subpaths = [subpath.untrochoidify() for subpath in subpaths]
+                    subpaths = [subpath.for_tab_below() for subpath in subpaths]
                     csubpaths = CalculatedSubpaths(subpaths, layer.depth)
                     self.calculated_layers[key] = csubpaths
         self.requested_layers.add(csubpaths)
@@ -805,9 +814,8 @@ class BaseCut2D(BaseCut):
                 # If first layer with tabs, do all helical ramps for post-tab
                 # reentry from the very top, because they haven't been cut yet
                 curz = self.curz
-                if subpath.helical_from_top:
-                    curz = max(curz, self.props.start_depth)
-                self.lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut)
+                self.lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, 
+                    from_top = subpath.helical_from_top and curz < self.props.start_depth, top_z=self.props.start_depth)
             else:
                 if newz < self.curz:
                     self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)

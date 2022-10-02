@@ -85,10 +85,15 @@ class TabMaker(object):
         self.tab_length = tab_length
     def tabify(self, cut_path, path_notabs):
         tab_inst = path_notabs.usertabs(self.tab_locations, self.max_tab_distance, width=self.tab_length)
-        path_notabs.roll_by_tabs(tab_inst, cut_path.helical_entry_func)
+        # Make sure the original path starts right after a tab, to eliminate the
+        # need for additional re-entry at the start of the path
+        breakpoint = path_notabs.roll_breakpoint(tab_inst)
+        path_notabs.roll_by_tabs(breakpoint, cut_path.helical_entry_func)
+        tab_inst.roll(breakpoint, path_notabs.tlength)
+        # Create a tabbed version of the rolled path (it starts right after the tab)
         paths_withtabs = path_notabs.cut_by_tabs(tab_inst, cut_path.helical_entry_func)
-        cut_path.adjust_helical_entry(paths_withtabs)
-        paths_withtabs = [p.with_helical_from_top() if not p.is_tab and p.helical_entry is not None and not (p is paths_withtabs[0] and not paths_withtabs[-1].is_tab) else p for p in paths_withtabs]
+        cut_path.correct_helical_entry(paths_withtabs)
+        paths_withtabs = [p.with_helical_from_top(not p.is_tab and i != 0) for i, p in enumerate(paths_withtabs)]
         cut_path.generate_preview(paths_withtabs)
         return paths_withtabs
 
@@ -145,12 +150,12 @@ class Toolpath(object):
 
     def lines_to_arcs(self):
         if self.lines_to_arcs_cache is None:
-            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, tab_maker = self.tab_maker)
+            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker)
         return self.lines_to_arcs_cache
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, tab_maker = self.tab_maker)
+            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker)
         return self.optimize_lines_cache
 
     def optimize(self):
@@ -168,26 +173,31 @@ class Toolpath(object):
         tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab, was_previously_cut=self.was_previously_cut and start == 0, is_cleanup=self.is_cleanup, tab_maker=self.tab_maker)
         return tp
 
-    def untrochoidify(self):
-        return self.without_circles() if self.is_tab else self
+    def for_tab_below(self):
+        return self.without_circles() if self.is_tab else self.with_helical_from_top(False)
 
     def without_circles(self):
         assert self.is_tab
-        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, tab_maker=self.tab_maker)
+        return Toolpath(self.path.without_circles(), self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=False, tab_maker=self.tab_maker)
 
-    def with_helical_from_top(self):
-        assert not self.is_tab
-        return Toolpath(self.path, self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=True, tab_maker=self.tab_maker)
+    def with_helical_from_top(self, value=True):
+        assert not value or not self.is_tab
+        if self.helical_from_top == value:
+            return self
+        return Toolpath(self.path, self.tool, helical_entry=self.helical_entry, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=value, tab_maker=self.tab_maker)
 
-    def roll_by_tabs(self, tabs, helical_entry_func):
+    def roll_breakpoint(self, tabs):
         if not tabs.tabs:
             return
-        breakpoint = tabs.tabs[0].end
-        if not breakpoint: # nothing to do
+        return tabs.tabs[0].end
+
+    def roll_by_tabs(self, breakpoint, helical_entry_func):
+        if not breakpoint:
             return
         self.path = self.path.subpath(breakpoint, self.tlength).joined(self.path.subpath(0, breakpoint))
-        tabs.roll(breakpoint, self.tlength)
         self.helical_entry = helical_entry_func(self.path) if helical_entry_func else None
+        # No need for entry from the top for the untabbed part of the path
+        self.helical_from_top = False
 
     def cut_by_tabs(self, tabs, helical_entry_func):
         tabs = sorted(tabs.tabs, key=lambda tab: tab.start)
@@ -360,8 +370,8 @@ class Toolpaths(object):
         return Toolpaths([tp.optimize() for tp in self.toolpaths])
     def is_empty(self):
         return all([tp.is_empty() for tp in self.toolpaths])
-    def untrochoidify(self):
-        return Toolpaths([i.untrochoidify() for i in self.toolpaths])
+    def for_tab_below(self):
+        return Toolpaths([i.for_tab_below() for i in self.toolpaths])
 
 def findPathNesting(tps):
     nestings = []
