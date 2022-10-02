@@ -1028,7 +1028,7 @@ class Contour(TabbedOperation):
             for tp in contour_paths:
                 toolpaths.append(toolpath.Toolpath(tp, tool))
                 tp = tp.interpolated()
-                res = cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, self.props.margin + margin, tool.climb)
+                res = cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, 0, tool.climb)
                 if res:
                     paths_for_helical_entry += res
             contours = toolpath.Toolpaths(toolpaths).flattened() if contour_paths else []
