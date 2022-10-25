@@ -1318,9 +1318,17 @@ class WorkerThread(threading.Thread):
                 self.parent_operation.addWarning("No cuts produced")
             self.progress = (self.progress[1], self.progress[1])
         except Exception as e:
-            self.exception = e
-            self.exception_text = str(e)
             import traceback
+            errorText = str(e)
+            if not errorText:
+                if isinstance(e, AssertionError):
+                    errorText = traceback.format_exc(limit=1)
+                else:
+                    errorText = type(e).__name__
+            self.exception = e
+            self.exception_text = errorText
+            if self.parent_operation and not self.parent_operation.error:
+                self.parent_operation.error = errorText
             traceback.print_exc()
 
 class WorkerThreadPack(object):

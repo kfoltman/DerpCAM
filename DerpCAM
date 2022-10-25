@@ -63,6 +63,10 @@ if args.export_gcode:
             retcode = 0
             doLoad(args)
             document.validateForOutput()
+            document.waitForUpdateCAM()
+            errors = document.checkCAMErrors()
+            if any(errors):
+                raise Exception("\n".join([error for error in errors if error is not None]))
             document.exportGcode(args.export_gcode[0])
             errors = document.checkCAMErrors()
             errors = [i for i in errors if i is not None]
