@@ -294,7 +294,8 @@ class Path(object):
             tlen = tlen_after
         # Eliminate duplicates
         res = [p for i, p in enumerate(res) if i == 0 or p.is_arc() or res[i - 1].is_arc() or p != res[i - 1]]
-        if not res:
+        # Zero/single-point paths are considered empty, return None
+        if len(res) < 2:
             sp = None
         else:
             if res[0].seg_start() == res[-1].seg_end():
