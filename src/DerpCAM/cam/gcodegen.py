@@ -590,6 +590,18 @@ class CutPath2D(BaseCutPath):
             preview.append((self.props.depth, i))
         return preview
 
+# A wrapper/adapter to allow using CutLayerTree for preview paths
+# Takes depth and Toolpath/Toolpaths and pretends to be a CutLayer.
+class PreviewSubpath(object):
+    def __init__(self, max_depth, path):
+        self.max_depth = max_depth
+        self.path = path
+        self.bounds = path.bounds
+        self.children = []
+        self.linked = []
+    def overlaps(self, another):
+        return bounds_overlap(self.bounds, another.bounds)
+
 class CalculatedSubpaths(object):
     def __init__(self, subpaths, max_depth):
         self.subpaths = subpaths
@@ -670,17 +682,40 @@ class CutPathWallProfile(BaseCutPath):
                     assert False
         return res
     def to_preview(self):
+        # Sort cuts by areas
+        layer_tree = CutLayerTree()
+        last_depth = None
+        layers_by_depth = list(sorted(list(self.requested_layers), key=lambda layer: -layer.max_depth))
+        for cs in layers_by_depth:
+            if cs.max_depth != last_depth:
+                if last_depth is not None:
+                    layer_tree.finish_level()
+                last_depth = cs.max_depth
+            for i in cs.subpaths:
+                layer_tree.add(PreviewSubpath(cs.max_depth, i))
+        layer_tree.finish_level()
+        flattened = layer_tree.flatten()
         preview = []
-        for cs in self.requested_layers:
-            for sp in cs.subpaths:
-                if isinstance(sp, toolpath.Toolpath):
-                    preview.append((self.props.actual_tab_depth() if sp.is_tab else cs.max_depth, sp))
-                elif isinstance(sp, toolpath.Toolpaths):
-                    for i in sp.toolpaths:
-                        preview.append((self.props.actual_tab_depth() if i.is_tab else cs.max_depth, i))
-                else:
-                    assert False
+        for cs in flattened:
+            sp = cs.path
+            if isinstance(sp, toolpath.Toolpath):
+                preview.append((self.props.actual_tab_depth() if sp.is_tab else cs.max_depth, sp))
+            elif isinstance(sp, toolpath.Toolpaths):
+                for i in sp.toolpaths:
+                    preview.append((self.props.actual_tab_depth() if i.is_tab else cs.max_depth, i))
+            else:
+                assert False
+        #self.dump_preview(preview)
         return preview
+    def dump_preview(self, preview):
+        print ("Dump preview start")
+        for depth, path in preview:
+            if path is None:
+                print ("---")
+            else:
+                b = path.bounds
+                print (depth, f"({b[0]:0.3f}, {b[1]:0.3f}) - ({b[2]:0.3f}, {b[3]:0.3f})", path.helical_entry)
+        print ("Dump preview end")
 
 class PathOutput(object):
     def __init__(self, paths, paths_for_helical_entry):
