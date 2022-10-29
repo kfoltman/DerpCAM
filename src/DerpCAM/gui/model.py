@@ -1318,9 +1318,17 @@ class WorkerThread(threading.Thread):
                 self.parent_operation.addWarning("No cuts produced")
             self.progress = (self.progress[1], self.progress[1])
         except Exception as e:
-            self.exception = e
-            self.exception_text = str(e)
             import traceback
+            errorText = str(e)
+            if not errorText:
+                if isinstance(e, AssertionError):
+                    errorText = traceback.format_exc(limit=1)
+                else:
+                    errorText = type(e).__name__
+            self.exception = e
+            self.exception_text = errorText
+            if self.parent_operation and not self.parent_operation.error:
+                self.parent_operation.error = errorText
             traceback.print_exc()
 
 class WorkerThreadPack(object):
@@ -1825,7 +1833,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = None
             if isinstance(self.shape, list) and len(self.shape) == 1:
                 self.shape = self.shape[0]
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
+            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
