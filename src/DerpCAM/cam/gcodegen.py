@@ -970,8 +970,7 @@ class TabbedOperation(Operation):
             return []
         cutpaths = []
         helical_entry_func = lambda path: self.helical_entry(path, path_output.paths_for_helical_entry)
-        for tp in path_output.paths:
-            cutpaths.append(CutPathWallProfile(self.machine_params, self.props, self.tool, helical_entry_func, self.subpaths_for_margin, False))
+        cutpaths.append(CutPathWallProfile(self.machine_params, self.props, self.tool, helical_entry_func, self.subpaths_for_margin, False))
         return cutpaths
     def subpaths_for_margin(self, margin, is_sublayer):
         return self.build_paths(margin)
