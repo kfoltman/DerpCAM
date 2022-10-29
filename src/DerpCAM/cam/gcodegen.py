@@ -758,13 +758,20 @@ class BaseCut2D(BaseCut):
         subpaths = layer.subpaths
         # Not a continuous path, need to jump to a new place
         firstpt = subpaths[0].path.seg_start()
-        if subpaths[0].helical_entry:
-            firstpt = subpaths[0].helical_entry.start
         # Assuming <1% of tool diameter of a gap is harmless enough. The tolerance
         # needs to be low enough to avoid exceeding cutter engagement specified,
         # but high enough not to be tripped by rasterization errors from
         # pyclipper etc.
-        if self.lastpt is None or dist(self.lastpt, firstpt) >= self.tool.diameter / 100.0:
+        tolerance = self.tool.diameter * 0.01
+        if subpaths[0].helical_entry:
+            firstpt = subpaths[0].helical_entry.start
+            # Allow up to stepover of discrepancy between the helical entry
+            # and the starting point. This is to accommodate corners - the circle
+            # cut by helical entry doesn't reach into corners, but it is allowed
+            # to make a full cut of up to stepover value in order to get into the
+            # corner from the initial circle.
+            tolerance = self.tool.diameter * self.tool.stepover
+        if self.lastpt is None or dist(self.lastpt, firstpt) >= tolerance:
             if layer.force_join:
                 gcode.linear(x=firstpt.x, y=firstpt.y)
             else:
