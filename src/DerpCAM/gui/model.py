@@ -858,6 +858,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True)
     
     props_percent = set(['stepover', 'extra_width', 'trc_rate', 'eh_diameter'])
 
@@ -893,7 +894,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter, klass.prop_entry_mode]
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
@@ -962,7 +963,7 @@ class ToolPresetTreeItem(CAMTreeItem):
                     self.inventory_preset.vfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
-        if name in ['roughing_offset', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
+        if name in ['roughing_offset', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode']:
             # There are other things that might require a recalculation, but do not result in visible changes
             self.document.startUpdateCAM(subset=self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
         self.emitPropertyChanged(name)
@@ -1197,6 +1198,7 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
         PresetDerivedAttributeItem('axis_angle', def_value=0),
         PresetDerivedAttributeItem('eh_diameter', preset_scale=100, def_value=50),
+        PresetDerivedAttributeItem('entry_mode', def_value=inventory.EntryMode.PREFER_HELIX),
     ]
     attrs_all = attrs_common + attrs_endmill
     attrs = {
@@ -1383,6 +1385,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True, none_value="(use preset value)")
 
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
@@ -1520,7 +1523,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
-            self.prop_stepover, self.prop_eh_diameter,
+            self.prop_stepover, self.prop_eh_diameter, self.prop_entry_mode,
             self.prop_trc_rate, self.prop_rpm]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
@@ -1774,7 +1777,7 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, pda.entry_mode != inventory.EntryMode.PREFER_RAMP)
             else:
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
@@ -2372,7 +2375,7 @@ class DocumentModel(QObject):
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None, 0, 0.5, 0)
+                tool.get('direction', 0), 0, 0, None, 0, 0.5, inventory.EntryMode.PREFER_RAMP, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset
