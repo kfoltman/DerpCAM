@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common import geom
 from DerpCAM.common.guiutils import Format, Spinner, is_gui_application
 from DerpCAM import cam
-from DerpCAM.cam import dogbone, gcodegen, shapes, milling_tool
+from DerpCAM.cam import dogbone, gcodegen, gcodeops, shapes, milling_tool
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, \
@@ -1774,10 +1774,10 @@ class OperationTreeItem(CAMTreeItem):
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset)
             else:
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
             self.gcode_props.rpm = pda.rpm
             if self.dogbones and self.operation == OperationType.OUTSIDE_PEEL and not isinstance(self.shape, list):
                 self.addDogbonesToIslands(self.shape, tool)
@@ -1833,7 +1833,7 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = None
             if isinstance(self.shape, list) and len(self.shape) == 1:
                 self.shape = self.shape[0]
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
+            self.cam = gcodeops.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
@@ -2473,7 +2473,7 @@ class DocumentModel(QObject):
         self.load(data)
         self.projectLoaded.emit()
     def makeMachineParams(self):
-        self.gcode_machine_params = gcodegen.MachineParams(safe_z=self.material.clearance, semi_safe_z=self.material.safe_entry_z,
+        self.gcode_machine_params = gcodeops.MachineParams(safe_z=self.material.clearance, semi_safe_z=self.material.safe_entry_z,
             min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm)
     def newDocument(self):
         self.reinitDocument()
@@ -2854,7 +2854,7 @@ class OpExporter(object):
     def __init__(self, document):
         document.waitForUpdateCAM()
         self.machine_params = document.gcode_machine_params
-        self.operations = gcodegen.Operations(document.gcode_machine_params)
+        self.operations = gcodeops.Operations(document.gcode_machine_params)
         self.all_cutters = set([])
         self.cutter = None
         document.forEachOperation(self.add_cutter)
@@ -2865,7 +2865,7 @@ class OpExporter(object):
     def process_operation(self, item):
         if item.cam:
             if item.cutter != self.cutter and len(self.all_cutters) > 1:
-                self.operations.add(gcodegen.ToolChangeOperation(item.cutter, self.machine_params))
+                self.operations.add(gcodeops.ToolChangeOperation(item.cutter, self.machine_params))
                 self.cutter = item.cutter
             self.operations.add_all(item.cam.operations)
     def write(self, fn):

@@ -6,6 +6,7 @@ from DerpCAM.common.geom import *
 from DerpCAM.common.view import *
 from DerpCAM.cam.shapes import *
 from DerpCAM.cam.gcodegen import *
+from DerpCAM.cam.gcodeops import *
 from DerpCAM.cam.ptext import *
 from DerpCAM.cam.wall_profile import *
 from DerpCAM.cam.toolpath import Tool
