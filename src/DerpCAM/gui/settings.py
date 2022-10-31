@@ -56,6 +56,7 @@ class ConfigSettings(object):
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
         FloatConfigSetting('spindle_min_rpm', 'gcode/spindle_min_rpm', 8000, 1),
         FloatConfigSetting('spindle_max_rpm', 'gcode/spindle_max_rpm', 24000, 1),
+        ConfigSetting('run_after_export', 'gcode/run_after_export', ''),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
         FloatConfigSetting('grid_resolution_minor', 'display/grid_resolution_minor', 10, 2),
@@ -122,6 +123,7 @@ class ConfigSettings(object):
         GeometrySettings.spindle_warmup = self.spindle_warmup
         GeometrySettings.spindle_min_rpm = self.spindle_min_rpm
         GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
+        GeometrySettings.run_after_export = self.run_after_export
         GuiSettings.inch_mode = self.display_inches
 
 class DirectorySelector(QWidget):
@@ -209,6 +211,9 @@ class PreferencesDialog(QDialog):
         self.formCAM.addRow("&Minimum RPM:", self.minRPMSpin)
         self.maxRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_max_rpm, "Maximum spindle speed in revolutions per minute.")
         self.formCAM.addRow("&Minimum RPM:", self.maxRPMSpin)
+        self.runAfterExportEdit = QLineEdit()
+        self.runAfterExportEdit.setText(self.config.run_after_export)
+        self.formCAM.addRow("&Run after G-Code export:", self.runAfterExportEdit)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
@@ -283,6 +288,7 @@ class PreferencesDialog(QDialog):
         self.config.spindle_warmup = self.warmupSpin.value()
         self.config.spindle_min_rpm = self.minRPMSpin.value()
         self.config.spindle_max_rpm = self.maxRPMSpin.value()
+        self.config.run_after_export = self.runAfterExportEdit.text()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
         self.config.grid_resolution = self.gridMajorSpin.value()
         self.config.grid_resolution_minor = self.gridMinorSpin.value()

@@ -446,6 +446,7 @@ class CAMMainWindow(QMainWindow):
             self.document.exportGcode(fn)
             self.configSettings.last_gcode_directory = os.path.split(fn)[0]
             self.configSettings.save()
+            os.system(self.configSettings.run_after_export + " '" + os.path.abspath(fn) + "'")
     def fileExit(self):
         self.close()
     def handleUnsaved(self):
