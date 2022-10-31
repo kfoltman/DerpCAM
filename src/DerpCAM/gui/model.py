@@ -178,6 +178,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         self.r = r
         self.calcBounds()
         self.untransformed = untransformed if untransformed is not None else self
+    @classmethod
     def properties(self):
         return [self.prop_x, self.prop_y, self.prop_dia, self.prop_radius]
     def getPropertyValue(self, name):

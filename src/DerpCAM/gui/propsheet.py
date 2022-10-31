@@ -261,6 +261,8 @@ class FloatDistEditableProperty(FloatEditableProperty):
             return self.none_value
         return self.format(value)
     def toEditString(self, value):
+        if value is None:
+            return ""
         return self.toDisplayString(value)
     def validateString(self, value):
         if value == "":

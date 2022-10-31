@@ -1,4 +1,3 @@
-import argparse
 import json
 import os.path
 import sys
@@ -8,7 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import guiutils
-from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about
+from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about, draw
 
 OperationType = model.OperationType
 
@@ -87,6 +86,10 @@ class CAMMainWindow(QMainWindow):
             ("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
+        ])
+        self.drawMenu = self.addMenu("&Draw", [
+            ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
+            ("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
@@ -256,6 +259,16 @@ class CAMMainWindow(QMainWindow):
             self.viewer.repaint()
             #self.viewer.majorUpdate()
             self.configSettings.save()
+    def drawCircle(self):
+        dlg = draw.DrawCircleDialog(self, self.document)
+        if dlg.exec():
+            self.document.opAddDrawingItems([dlg.result])
+            self.scheduleMajorRedraw(True)
+    def drawRectangle(self):
+        dlg = draw.DrawRectangleDialog(self, self.document)
+        if dlg.exec():
+            self.document.opAddDrawingItems([dlg.result])
+            self.scheduleMajorRedraw(True)
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False
