@@ -433,11 +433,12 @@ class DrawingViewer(view.PathViewer):
         nearest = 0
         nearest_dist = None
         for i, line in enumerate(PathSegmentIterator(Path(polyline.points, polyline.closed))):
-            pdist = dist_line_to_point(line[0], line[1], pt)
-            if nearest_dist is None or pdist < nearest_dist:
-                nearest = 1 + i
-                nearest_dist = pdist
-        if nearest_dist < 5 / self.scalingFactor():
+            if line[1].is_point():
+                pdist = dist_line_to_point(line[0], line[1], pt)
+                if nearest_dist is None or pdist < nearest_dist:
+                    nearest = 1 + i
+                    nearest_dist = pdist
+        if nearest_dist is not None and nearest_dist < 5 / self.scalingFactor():
             return nearest
         return None
     def polylineSnapValue(self):
