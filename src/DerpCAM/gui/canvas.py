@@ -402,7 +402,7 @@ class DrawingViewer(view.PathViewer):
                     self.repaint()
                 return
             else:
-                if nearest == 0 or polyline.points[nearest - 1].is_arc():
+                if nearest == 0 or not polyline.points[nearest - 1].is_arc():
                     self.dragging = True
                     self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
                     return
@@ -410,8 +410,7 @@ class DrawingViewer(view.PathViewer):
             item = self.nearestPolylineLine(polyline, pt)
             if item is not None:
                 pt = self.polylineSnap(pt)
-                polyline.points.insert(item, pt)
-                polyline.calcBounds()
+                self.document.opModifyPolyline(polyline, polyline.points[:item] + [pt] + polyline.points[item:], polyline.closed)
                 self.dragging = True
                 self.drag_start_data = (e.localPos(), item, pt)
                 self.renderDrawing()
@@ -469,7 +468,7 @@ class DrawingViewer(view.PathViewer):
                 if nearest is not None:
                     self.setCursor(Qt.ForbiddenCursor)
                 else:
-                    self.mode_item.points[dragging] = self.polylineSnap(pt)
+                    self.document.opModifyPolylinePoint(self.mode_item, dragging, self.polylineSnap(pt), True)
                     self.setCursor(Qt.SizeAllCursor)
                 self.renderDrawing()
                 self.repaint()
@@ -516,9 +515,9 @@ class DrawingViewer(view.PathViewer):
                 pt = PathPoint(pos.x(), pos.y())
                 nearest = self.nearestPolylineItem(self.mode_item, pt, dragged)
                 if nearest is not None:
-                    del self.mode_item.points[dragged]
+                    self.document.opModifyPolyline(self.mode_item, self.mode_item.points[:dragged] + self.mode_item.points[dragged + 1:], self.mode_item.closed)
                 else:
-                    self.mode_item.points[dragged] = self.polylineSnap(pt)
+                    self.document.opModifyPolylinePoint(self.mode_item, dragged, self.polylineSnap(pt), False)
                 self.mode_item.calcBounds()
                 self.renderDrawing()
                 self.repaint()

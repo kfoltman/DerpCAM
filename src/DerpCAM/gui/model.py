@@ -2198,6 +2198,53 @@ class AddDrawingItemsUndoCommand(QUndoCommand):
         self.document.drawing.insertRows(self.pos, self.items)
         self.document.shapesUpdated.emit()
 
+class ModifyPolylineUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, new_points, new_closed):
+        QUndoCommand.__init__(self, "Modify polyline")
+        self.document = document
+        self.polyline = polyline
+        self.new_points = new_points
+        self.new_closed = new_closed
+        self.orig_points = polyline.points
+        self.orig_closed = polyline.closed
+    def undo(self):
+        self.polyline.points = self.orig_points
+        self.polyline.closed = self.orig_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points = self.new_points
+        self.polyline.closed = self.new_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+
+class ModifyPolylinePointUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, position, location, mergeable):
+        QUndoCommand.__init__(self, "Move polyline point")
+        self.document = document
+        self.polyline = polyline
+        self.position = position
+        self.new_location = location
+        self.orig_location = self.polyline.points[self.position]
+        self.mergeable = mergeable
+    def undo(self):
+        self.polyline.points[self.position] = self.orig_location
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points[self.position] = self.new_location
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def id(self):
+        return 1000
+    def mergeWith(self, other):
+        if not isinstance(other, ModifyPolylinePointUndoCommand):
+            return False
+        if not self.mergeable:
+            return False
+        self.new_location = other.new_location
+        return True
+
 class JoinItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
         QUndoCommand.__init__(self, "Join items")
@@ -2831,6 +2878,10 @@ class DocumentModel(QObject):
         self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
     def opJoin(self, items):
         self.undoStack.push(JoinItemsUndoCommand(self, items))
+    def opModifyPolyline(self, polyline, new_points, new_closed):
+        self.undoStack.push(ModifyPolylineUndoCommand(self, polyline, new_points, new_closed))
+    def opModifyPolylinePoint(self, polyline, position, location, mergeable):
+        self.undoStack.push(ModifyPolylinePointUndoCommand(self, polyline, position, location, mergeable))
     def opAddDrawingItems(self, items):
         self.undoStack.push(AddDrawingItemsUndoCommand(self, items))
     def opDeleteDrawingItems(self, items):
