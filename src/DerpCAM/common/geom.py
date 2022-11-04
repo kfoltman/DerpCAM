@@ -375,7 +375,7 @@ class Path(object):
                         mindist = abs(my)
                         closest = lengths[i] + (lengths[i + 1] - lengths[i]) * mx / d
             i += 1
-        assert closest <= lengths[-1]
+        assert closest is None or closest <= lengths[-1]
         return closest, mindist
     # Calculate a point on a path, then offset it by 'dist' (positive = outwards from the shape)
     # Only works for closed paths!

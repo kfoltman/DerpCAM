@@ -90,6 +90,7 @@ class CAMMainWindow(QMainWindow):
         self.drawMenu = self.addMenu("&Draw", [
             ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
             ("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
+            ("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
@@ -270,6 +271,10 @@ class CAMMainWindow(QMainWindow):
         if dlg.exec():
             self.document.opAddDrawingItems([dlg.result])
             self.scheduleMajorRedraw(True)
+    def drawPolyline(self):
+        polyline = model.DrawingPolylineTreeItem(self.document, [], False)
+        self.document.opAddDrawingItems([polyline])
+        self.viewer.changeMode(canvas.DrawingUIMode.MODE_ADD_POLYLINE, polyline)
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False

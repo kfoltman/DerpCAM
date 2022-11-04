@@ -262,6 +262,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
     def renderTo(self, path, modeData):
+        if not self.points:
+            return
         path.addLines(self.penForPath(path, modeData), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def calcBounds(self):
         if self.points:
@@ -286,6 +288,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 arc = self.points[1]
                 c = arc.c
                 return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx, brief=True), Format.coord(c.cy, brief=True), Format.coord(c.r, brief=True), arc.sstart * 180 / math.pi, arc.sspan * 180 / math.pi)
+        if self.bounds is None:
+            return self.label() + " (empty)"
         return self.label() + f"{Format.point_tuple(self.bounds[:2], brief=True)}-{Format.point_tuple(self.bounds[2:], brief=True)}"
     def toShape(self):
         return shapes.Shape(geom.CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
@@ -654,7 +658,7 @@ class DrawingTreeItem(CAMListTreeItem):
         found = []
         mindist = margin
         for item in self.items():
-            if geom.point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
+            if item.bounds is not None and geom.point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
                 distance = item.distanceTo(xy)
                 if distance is not None and distance < margin:
                     mindist = min(mindist, distance)
