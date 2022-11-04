@@ -425,6 +425,8 @@ class PathViewer(QWidget):
         if self.click_data:
             self.processMove(e)
         p = self.unproject(e.localPos())
+        self.emitCoordsUpdated(p)
+    def emitCoordsUpdated(self, p):
         self.coordsUpdated.emit(p.x(), p.y())
 
     def enterEvent(self, e):

@@ -245,13 +245,17 @@ class DrawingViewer(view.PathViewer):
         polyline = self.mode_item
         gpath = Path(polyline.points, polyline.closed)
         transform = self.drawingTransform()
+        Format = guiutils.Format
         hbox = QPointF(3, 3)
-        #qp.setTransform(transform)
+        hbox2a = QPointF(50, 20)
+        hbox2b = QPointF(50, 0)
+        normPen = QColor(0, 0, 0)
+        qp.setPen(normPen)
         for i, j in PathSegmentIterator(gpath):
             if isinstance(i, PathPoint):
                 pt = self.project(QPointF(i.x, i.y))
                 qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
-        #qp.setTransform(QTransform())
+                qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, Format.coord(i.x, brief=True) + ", " + Format.coord(i.y, brief=True))
     def paintOverlays(self, e, qp):
         if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
             self.paintIslandsEditor(e, qp)
@@ -277,7 +281,7 @@ class DrawingViewer(view.PathViewer):
                 else:
                     modeText = "Click on desired end of the cut, clockwise from starting point"
             if self.mode == DrawingUIMode.MODE_POLYLINE:
-                modeText = "Drag to add or move a node, double-click to remove"
+                modeText = f"Drag to add or move a node, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
@@ -403,7 +407,9 @@ class DrawingViewer(view.PathViewer):
         if not is_double:
             item = self.nearestPolylineLine(polyline, pt)
             if item is not None:
+                pt = self.polylineSnap(pt)
                 polyline.points.insert(item, pt)
+                polyline.calcBounds()
                 self.dragging = True
                 self.drag_start_data = (e.localPos(), item, pt)
                 self.renderDrawing()
@@ -434,6 +440,22 @@ class DrawingViewer(view.PathViewer):
         if nearest_dist < 5 / self.scalingFactor():
             return nearest
         return None
+    def polylineSnapValue(self):
+        if self.scalingFactor() >= 330:
+            return 2
+        elif self.scalingFactor() >= 33:
+            return 1
+        else:
+            return 0
+    def polylineSnap(self, pt):
+        snap = self.polylineSnapValue()
+        return PathPoint(round(pt.x, snap), round(pt.y, snap))
+    def emitCoordsUpdated(self, p):
+        if self.mode == DrawingUIMode.MODE_POLYLINE:
+            pt = self.polylineSnap(PathPoint(p.x(), p.y()))
+            self.coordsUpdated.emit(pt.x, pt.y)
+        else:
+            self.coordsUpdated.emit(p.x(), p.y())
     def mouseMoveEvent(self, e):
         if self.dragging:
             if self.mode == DrawingUIMode.MODE_POLYLINE:
@@ -444,7 +466,7 @@ class DrawingViewer(view.PathViewer):
                 if nearest is not None:
                     self.setCursor(Qt.ForbiddenCursor)
                 else:
-                    self.mode_item.points[dragging] = PathPoint(pos.x(), pos.y())
+                    self.mode_item.points[dragging] = self.polylineSnap(pt)
                     self.setCursor(Qt.SizeAllCursor)
                 self.renderDrawing()
                 self.repaint()
@@ -493,7 +515,8 @@ class DrawingViewer(view.PathViewer):
                 if nearest is not None:
                     del self.mode_item.points[dragged]
                 else:
-                    self.mode_item.points[dragged] = pt
+                    self.mode_item.points[dragged] = self.polylineSnap(pt)
+                self.mode_item.calcBounds()
                 self.renderDrawing()
                 self.repaint()
                 self.dragging = False
