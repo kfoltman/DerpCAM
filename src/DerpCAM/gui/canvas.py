@@ -400,10 +400,12 @@ class DrawingViewer(view.PathViewer):
                     del polyline.points[nearest]
                     self.renderDrawing()
                     self.repaint()
+                return
             else:
-                self.dragging = True
-                self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
-            return
+                if nearest == 0 or polyline.points[nearest - 1].is_arc():
+                    self.dragging = True
+                    self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
+                    return
         if not is_double:
             item = self.nearestPolylineLine(polyline, pt)
             if item is not None:
