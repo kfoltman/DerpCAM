@@ -311,6 +311,9 @@ class DrawingViewer(view.PathViewer):
         if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
             self.exitEditMode(False)
         return view.PathViewer.keyPressEvent(self, e)
+    def abortEditMode(self, reset_zoom=True):
+        if self.mode != DrawingUIMode.MODE_NORMAL:
+            self.exitEditMode(reset_zoom)
     def exitEditMode(self, reset_zoom=True):
         item = self.mode_item
         item.emitPropertyChanged()

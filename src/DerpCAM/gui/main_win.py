@@ -121,6 +121,14 @@ class CAMMainWindow(QMainWindow):
         self.refreshNeeded = False
         self.resetCAMNeeded()
         self.idleTimer = self.startTimer(500)
+    def updateMenusFromEditMode(self, mode):
+        normalFunctionsEnabled = mode == canvas.DrawingUIMode.MODE_NORMAL
+        for i in self.editMenu.actions()[2:]:
+            i.setEnabled(normalFunctionsEnabled)
+        for i in self.drawMenu.actions():
+            i.setEnabled(normalFunctionsEnabled)
+        for i in self.operationsMenu.actions():
+            i.setEnabled(normalFunctionsEnabled)
     def updateFileMenu(self):
         def fileAction(id, filename):
             action = QAction(f"&{id + 1} {filename}", self.fileMenu)
@@ -225,6 +233,7 @@ class CAMMainWindow(QMainWindow):
             self.propsDW.propsheet.setFocus()
         elif mode != canvas.DrawingUIMode.MODE_NORMAL:
             self.viewer.setFocus()
+        self.updateMenusFromEditMode(mode)
     def updateShapeSelection(self):
         # Update preview regardless
         items = self.projectDW.shapeSelection()
@@ -360,6 +369,7 @@ class CAMMainWindow(QMainWindow):
         self.mruList.insert(0, fn)
         self.configSettings.saveMru(self.mruList)
     def loadProject(self, fn):
+        self.viewer.abortEditMode()
         self.document.loadProject(fn)
         self.addToMru(fn)
         self.updateFileMenu()
@@ -373,8 +383,10 @@ class CAMMainWindow(QMainWindow):
     def fileNew(self):
         if not self.handleUnsaved():
             return
+        self.viewer.abortEditMode()
         self.document.newDocument()
     def fileImport(self):
+        self.viewer.abortEditMode()
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
         if input_dir:
@@ -390,6 +402,7 @@ class CAMMainWindow(QMainWindow):
             self.configSettings.last_input_directory = os.path.split(fn)[0]
             self.configSettings.save()
     def fileOpen(self):
+        self.viewer.abortEditMode()
         dlg = QFileDialog(self, "Open a project", filter="DerpCAM project (*.dcp);;All files (*)")
         input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
         if input_dir:
