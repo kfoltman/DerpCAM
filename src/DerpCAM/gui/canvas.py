@@ -12,6 +12,7 @@ class DrawingUIMode(object):
     MODE_TABS = 2
     MODE_ENTRY = 3
     MODE_EXIT = 4
+    MODE_POLYLINE = 5
 
 class DocumentRenderer(object):
     def __init__(self, document):
@@ -240,11 +241,24 @@ class DrawingViewer(view.PathViewer):
         qp.setTransform(transform)
         qp.fillPath(path, brush)
         qp.setTransform(QTransform())
+    def paintPolylineEditor(self, e, qp):
+        polyline = self.mode_item
+        gpath = Path(polyline.points, polyline.closed)
+        transform = self.drawingTransform()
+        hbox = QPointF(3, 3)
+        #qp.setTransform(transform)
+        for i, j in PathSegmentIterator(gpath):
+            if isinstance(i, PathPoint):
+                pt = self.project(QPointF(i.x, i.y))
+                qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
+        #qp.setTransform(QTransform())
     def paintOverlays(self, e, qp):
         if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
             self.paintIslandsEditor(e, qp)
         if self.mode in (DrawingUIMode.MODE_ENTRY, DrawingUIMode.MODE_EXIT) and self.mode_item:
             self.paintEntryExitEditor(e, qp)
+        if self.mode == DrawingUIMode.MODE_POLYLINE and self.mode_item:
+            self.paintPolylineEditor(e, qp)
         if self.mode != DrawingUIMode.MODE_NORMAL:
             if self.mode == DrawingUIMode.MODE_TABS:
                 modeText = "Click on outlines to add/remove preferred locations for holding tabs"
@@ -262,6 +276,8 @@ class DrawingViewer(view.PathViewer):
                     modeText = "Click on desired end of the cut, counter-clockwise from starting point"
                 else:
                     modeText = "Click on desired end of the cut, clockwise from starting point"
+            if self.mode == DrawingUIMode.MODE_POLYLINE:
+                modeText = "Drag to add or move a node, double-click to remove"
             pen = qp.pen()
             qp.setPen(QPen(QColor(128, 0, 0), 0))
             qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
@@ -298,6 +314,12 @@ class DrawingViewer(view.PathViewer):
         self.majorUpdate()
     def applyClicked(self):
         self.exitEditMode()
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            pos = self.unproject(e.localPos())
+            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
+            if self.mode == DrawingUIMode.MODE_POLYLINE:
+                self.clickOnPolyline(self.mode_item, pos, e, True)
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
@@ -346,6 +368,8 @@ class DrawingViewer(view.PathViewer):
                     pt = PathPoint(pos.x(), pos.y())
                     self.document.opChangeProperty(self.mode_item.prop_entry_exit, [(self.mode_item, [(sp, pt)])])
                     self.exitEditMode()
+                elif self.mode == DrawingUIMode.MODE_POLYLINE:
+                    self.clickOnPolyline(self.mode_item, pos, e, False)
                 return
             if objs:
                 if e.modifiers() & Qt.ControlModifier:
@@ -363,13 +387,73 @@ class DrawingViewer(view.PathViewer):
                     self.repaint()
         else:
             view.PathViewer.mousePressEvent(self, e)
+    def clickOnPolyline(self, polyline, pos, e, is_double):
+        pt = PathPoint(pos.x(), pos.y())
+        nearest = self.nearestPolylineItem(polyline, pt)
+        if nearest is not None:
+            if is_double:
+                if len(polyline.points) > 2:
+                    del polyline.points[nearest]
+                    self.renderDrawing()
+                    self.repaint()
+            else:
+                self.dragging = True
+                self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
+            return
+        if not is_double:
+            item = self.nearestPolylineLine(polyline, pt)
+            if item is not None:
+                polyline.points.insert(item, pt)
+                self.dragging = True
+                self.drag_start_data = (e.localPos(), item, pt)
+                self.renderDrawing()
+                self.repaint()
+    def nearestPolylineItem(self, polyline, pt, exclude=None):
+        nearest = None
+        nearest_dist = None
+        for i, pp in enumerate(polyline.points):
+            if exclude is not None and i == exclude:
+                continue
+            pdist = pt.dist(pp)
+            if nearest is None or pdist < nearest_dist:
+                nearest = i
+                nearest_dist = pdist
+        if nearest_dist is not None and nearest_dist < 5 / self.scalingFactor():
+            return nearest
+        return None
+    def nearestPolylineLine(self, polyline, pt):
+        if not polyline.points:
+            return None
+        nearest = 0
+        nearest_dist = None
+        for i, line in enumerate(PathSegmentIterator(Path(polyline.points, polyline.closed))):
+            pdist = dist_line_to_point(line[0], line[1], pt)
+            if nearest_dist is None or pdist < nearest_dist:
+                nearest = 1 + i
+                nearest_dist = pdist
+        if nearest_dist < 5 / self.scalingFactor():
+            return nearest
+        return None
     def mouseMoveEvent(self, e):
         if self.dragging:
-            sp = self.start_point
-            ep = e.localPos()
-            self.rubberband_rect = QRectF(QPointF(min(sp.x(), ep.x()), min(sp.y(), ep.y())), QPointF(max(sp.x(), ep.x()), max(sp.y(), ep.y())))
-            self.startDeferredRepaint()
-            self.repaint()
+            if self.mode == DrawingUIMode.MODE_POLYLINE:
+                sp, dragging, start_pos = self.drag_start_data
+                pos = self.unproject(e.localPos())
+                pt = PathPoint(pos.x(), pos.y())
+                nearest = self.nearestPolylineItem(self.mode_item, pt, dragging)
+                if nearest is not None:
+                    self.setCursor(Qt.ForbiddenCursor)
+                else:
+                    self.mode_item.points[dragging] = PathPoint(pos.x(), pos.y())
+                    self.setCursor(Qt.SizeAllCursor)
+                self.renderDrawing()
+                self.repaint()
+            else:
+                sp = self.start_point
+                ep = e.localPos()
+                self.rubberband_rect = QRectF(QPointF(min(sp.x(), ep.x()), min(sp.y(), ep.y())), QPointF(max(sp.x(), ep.x()), max(sp.y(), ep.y())))
+                self.startDeferredRepaint()
+                self.repaint()
         else:
             if self.mode in (DrawingUIMode.MODE_ENTRY, DrawingUIMode.MODE_EXIT):
                 self.mouse_point = self.unproject(e.localPos())
@@ -382,6 +466,18 @@ class DrawingViewer(view.PathViewer):
                     self.setCursor(Qt.PointingHandCursor)
                 else:
                     self.updateCursor()
+            elif self.mode == DrawingUIMode.MODE_POLYLINE:
+                pos = self.unproject(e.localPos())
+                pt = PathPoint(pos.x(), pos.y())
+                nearest = self.nearestPolylineItem(self.mode_item, pt)
+                if nearest is not None:
+                    self.setCursor(Qt.PointingHandCursor)
+                else:
+                    nearest = self.nearestPolylineLine(self.mode_item, pt)
+                    if nearest is not None:
+                        self.setCursor(Qt.CrossCursor)
+                    else:
+                        self.setCursor(Qt.ArrowCursor)
             elif self.start_point:
                 dist = e.localPos() - self.start_point
                 if dist.manhattanLength() > QApplication.startDragDistance():
@@ -389,6 +485,19 @@ class DrawingViewer(view.PathViewer):
         view.PathViewer.mouseMoveEvent(self, e)
     def mouseReleaseEvent(self, e):
         if self.dragging:
+            if self.mode == DrawingUIMode.MODE_POLYLINE:
+                sp, dragged, start_pos = self.drag_start_data
+                pos = self.unproject(e.localPos())
+                pt = PathPoint(pos.x(), pos.y())
+                nearest = self.nearestPolylineItem(self.mode_item, pt, dragged)
+                if nearest is not None:
+                    del self.mode_item.points[dragged]
+                else:
+                    self.mode_item.points[dragged] = pt
+                self.renderDrawing()
+                self.repaint()
+                self.dragging = False
+                return
             pt1 = self.unproject(self.rubberband_rect.bottomLeft())
             pt2 = self.unproject(self.rubberband_rect.topRight())
             objs = self.document.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())

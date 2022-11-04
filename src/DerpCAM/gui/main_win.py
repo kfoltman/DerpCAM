@@ -212,13 +212,14 @@ class CAMMainWindow(QMainWindow):
         self.scheduleMajorRedraw()
     def operationEditMode(self, mode):
         oldEnabled = self.propsDW.isEnabled()
-        selectedOp = self.projectDW.operSelection()[0]
+        selectionType, selectedItems = self.projectDW.activeSelection()
+        selectedItem = selectedItems[0] if selectedItems else None
         if mode == canvas.DrawingUIMode.MODE_ISLANDS and not selectedOp.areIslandsEditable():
             QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
             return
         self.projectDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
         self.propsDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.viewer.changeMode(mode, selectedOp)
+        self.viewer.changeMode(mode, selectedItem)
         if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
             self.propsDW.propsheet.setFocus()
         elif mode != canvas.DrawingUIMode.MODE_NORMAL:

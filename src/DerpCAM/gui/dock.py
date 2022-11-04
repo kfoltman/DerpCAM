@@ -171,6 +171,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 menu.addSeparator()
                 action = menu.addAction("Delete from project")
                 action.triggered.connect(lambda: self.toolDelete(item))
+            elif isinstance(item, model.DrawingPolylineTreeItem):
+                action = menu.addAction("Edit")
+                action.triggered.connect(lambda: self.polylineEdit(item))
         if menu.isEmpty():
             return
         menu.exec_(point)
@@ -292,6 +295,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 QMessageBox.critical(self, None, "No items selected")
                 return
             self.document.opJoin(items)
+    def polylineEdit(self, item):
+        self.modeChanged.emit(canvas.DrawingUIMode.MODE_POLYLINE)
     def operationMove(self, selection, direction):
         mode, items = selection
         indexes = self.document.opMoveItems(items, direction)
