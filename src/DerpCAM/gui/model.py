@@ -2287,11 +2287,12 @@ class JoinItemsUndoCommand(QUndoCommand):
             originals[i] = points
             start = blockmap.pt_to_index(points[0].seg_start())
             end = blockmap.pt_to_index(points[-1].seg_end())
-            if (end, start) in edges or (start, end) in edges:
-                # Duplicates
-                toRemove.add(i)
-                continue
-            edges.add((start, end))
+            # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
+            if len(points) == 2:
+                if ((end, start) in edges or (start, end) in edges):
+                    toRemove.add(i)
+                    continue
+                edges.add((start, end))
             blockmap.start_point(points).starts.add(i)
             blockmap.end_point(points).ends.add(i)
         for bme in blockmap.values():
