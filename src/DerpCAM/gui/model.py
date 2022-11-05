@@ -123,22 +123,11 @@ class DrawingItemTreeItem(CAMTreeItem):
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
     def selectedItemPen2Func(self, item, scale):
         return QPen(self.selectedItemDrawingPen2.color(), self.selectedItemDrawingPen2.widthF() / scale), False
-    def penForPath(self, path, modeData):
-        if modeData[0] == canvas.DrawingUIMode.MODE_ISLANDS:
-            if modeData[1].shape_id == self.shape_id:
-                return self.defaultDrawingPen
-            if self.shape_id in modeData[1].islands:
-                return self.selectedItemPen2Func
-            if geom.bounds_overlap(self.bounds, modeData[1].orig_shape.bounds):
-                return self.defaultDrawingPen
-            return self.defaultGrayPen
-        if modeData[0] == canvas.DrawingUIMode.MODE_TABS:
-            if modeData[1].shape_id == self.shape_id:
-                return self.defaultDrawingPen
-            return self.defaultGrayPen
-        if modeData[0] == canvas.DrawingUIMode.MODE_POLYLINE:
-            if modeData[1].shape_id != self.shape_id:
-                return self.defaultGrayPen
+    def penForPath(self, path, editor):
+        if editor is not None:
+            pen = editor.penForPath(self, path)
+            if pen is not None:
+                return pen
         return lambda item, scale: self.selectedItemPenFunc(item, scale) if self.untransformed in path.selection else (self.defaultDrawingPen, False)
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id }
@@ -212,8 +201,8 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             self.centre.x + self.r, self.centre.y + self.r)
     def distanceTo(self, pt):
         return abs(geom.dist(self.centre, pt) - self.r)
-    def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), geom.circle(self.centre.x, self.centre.y, self.r), True)
+    def renderTo(self, path, editor):
+        path.addLines(self.penForPath(path, editor), geom.circle(self.centre.x, self.centre.y, self.r), True)
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
@@ -261,10 +250,10 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         return pti
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
-    def renderTo(self, path, modeData):
+    def renderTo(self, path, editor):
         if not self.points:
             return
-        path.addLines(self.penForPath(path, modeData), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+        path.addLines(self.penForPath(path, editor), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
     def calcBounds(self):
         if self.points:
             self.bounds = geom.Path(self.points, self.closed).bounds()
@@ -463,9 +452,9 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
                 else:
                     res.append(shapes.Shape(path.nodes, path.closed))
         return res
-    def renderTo(self, path, modeData):
+    def renderTo(self, path, editor):
         for i in self.paths:
-            path.addLines(self.penForPath(path, modeData), i.nodes, i.closed)
+            path.addLines(self.penForPath(path, editor), i.nodes, i.closed)
     def distanceTo(self, pt):
         mindist = None
         for path in self.paths:

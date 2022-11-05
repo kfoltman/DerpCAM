@@ -1,4 +1,3 @@
-import argparse
 import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -7,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr
+from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr, editors
 
 OperationType = model.OperationType
 
@@ -33,7 +32,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
     operationTouched = pyqtSignal([QStandardItem])
     noOperationTouched = pyqtSignal([])
     selectionChanged = pyqtSignal([])
-    modeChanged = pyqtSignal([int])
+    editorChangeRequest = pyqtSignal([object])
     INPUTS_TAB = 0
     OPERATIONS_TAB = 1
     def __init__(self, document):
@@ -298,7 +297,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 return
             self.document.opJoin(items)
     def polylineEdit(self, item):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_POLYLINE)
+        self.editorChangeRequest.emit(editors.CanvasPolylineEditor(item))
     def operationMove(self, selection, direction):
         mode, items = selection
         indexes = self.document.opMoveItems(items, direction)
@@ -326,11 +325,20 @@ class CAMObjectTreeDockWidget(QDockWidget):
         changes = [(i, oldState != Qt.CheckState.Checked) for i in items]
         self.document.opChangeActive(changes)
     def operationHoldingTabs(self):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
+        ops = self.operSelection()
+        if len(ops) == 1:
+            self.editorChangeRequest.emit(editors.CanvasTabsEditor(ops[0]))
     def operationEntryExitPoints(self):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_ENTRY)
+        ops = self.operSelection()
+        if len(ops) == 1:
+            self.editorChangeRequest.emit(editors.CanvasEntryPointEditor(ops[0]))
     def operationIslands(self):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_ISLANDS)
+        ops = self.operSelection()
+        if len(ops) == 1:
+            if not ops[0].areIslandsEditable():
+                QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
+                return
+            self.editorChangeRequest.emit(editors.CanvasIslandsEditor(ops[0]))
     def cycleSetAsCurrent(self, item):
         self.document.selectCutterCycle(item)
 
@@ -376,47 +384,10 @@ class CAMEditorDockWidget(QDockWidget):
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setMinimumSize(defaultDockWidgetWidth(self), 100)
-        self.setEditorLayout(canvas.DrawingUIMode.MODE_NORMAL, None)
-    def setEditorLayout(self, mode, mode_item):
-        self.setWidget(QWidget())
-        layout = QFormLayout()
-        DrawingUIMode = canvas.DrawingUIMode
-        if mode != DrawingUIMode.MODE_NORMAL:
-            if mode == DrawingUIMode.MODE_TABS:
-                self.setWindowTitle("Place holding tabs")
-                modeText = "Click on outlines to add/remove preferred locations for holding tabs."
-            if mode == DrawingUIMode.MODE_ISLANDS:
-                self.setWindowTitle("Select areas to exclude")
-                modeText = "Click on outlines to toggle exclusion of areas from the pocket."
-            if mode == DrawingUIMode.MODE_ENTRY:
-                self.setWindowTitle("Select entry point")
-                orientation = mode_item.contourOrientation()
-                if orientation:
-                    modeText = "Click on desired entry point for the contour running in counter-clockwise direction."
-                else:
-                    modeText = "Click on desired entry point for the contour running in clockwise direction."
-            if mode == DrawingUIMode.MODE_EXIT:
-                self.setWindowTitle("Select exit point")
-                orientation = mode_item.contourOrientation()
-                if orientation:
-                    modeText = "Click on desired end of the cut, counter-clockwise from starting point."
-                else:
-                    modeText = "Click on desired end of the cut, clockwise from starting point."
-            if mode == DrawingUIMode.MODE_POLYLINE:
-                self.setWindowTitle("Modify a polyline")
-                #modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm"
-                modeText = "Drag to add or move a node, double-click to remove."
-            if mode == DrawingUIMode.MODE_ADD_POLYLINE:
-                self.setWindowTitle("Create a polyline")
-                modeText = "Click to add a node. Clicking the first point closes the polyline.\nDrag a line to add a node.\nDrag a node to move it.\nDouble-click a middle point to remove it.\nDouble-click the last point to complete a polyline."
-            descriptionLabel = QLabel(modeText)
-            descriptionLabel.setFrameShape(QFrame.Panel)
-            descriptionLabel.setMargin(5)
-            descriptionLabel.setWordWrap(True)
-            layout.addWidget(descriptionLabel)
-            applyButton = QPushButton(self.style().standardIcon(QStyle.SP_DialogApplyButton), "&Apply")
-            applyButton.clicked.connect(lambda: self.applyClicked.emit())
-            layout.addWidget(applyButton)
-        if self.widget().layout():
-            self.widget().setLayout(None)
-        self.widget().setLayout(layout)
+    def setEditor(self, editor, canvas):
+        if editor is not None:
+            editor.populateUI(self, canvas)
+            self.setVisible(True)
+        else:
+            self.setWidget(QWidget())
+            self.setVisible(False)

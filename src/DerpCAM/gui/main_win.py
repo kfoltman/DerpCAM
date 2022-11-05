@@ -7,7 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import guiutils
-from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about, draw
+from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about, draw, editors
 
 OperationType = model.OperationType
 
@@ -42,12 +42,12 @@ class CAMMainWindow(QMainWindow):
         self.mruList = self.configSettings.loadMru()
         self.viewer = canvas.DrawingViewer(self.document, self.configSettings)
         self.viewer.initUI()
-        self.viewer.modeChanged.connect(self.operationEditMode)
+        self.viewer.editorChangeRequest.connect(self.switchToEditor)
         self.setCentralWidget(self.viewer)
 
         self.projectDW = dock.CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
-        self.projectDW.modeChanged.connect(self.operationEditMode)
+        self.projectDW.editorChangeRequest.connect(self.switchToEditor)
         self.projectDW.operationTouched.connect(self.operationTouched)
         self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
@@ -130,8 +130,8 @@ class CAMMainWindow(QMainWindow):
         self.refreshNeeded = False
         self.resetCAMNeeded()
         self.idleTimer = self.startTimer(500)
-    def updateMenusFromEditMode(self, mode):
-        normalFunctionsEnabled = mode == canvas.DrawingUIMode.MODE_NORMAL
+    def updateMenusFromEditor(self, editor):
+        normalFunctionsEnabled = editor is None
         for i in self.editMenu.actions()[2:]:
             i.setEnabled(normalFunctionsEnabled)
         for i in self.drawMenu.actions():
@@ -230,23 +230,17 @@ class CAMMainWindow(QMainWindow):
         self.scheduleMajorRedraw()
     def operRemoved(self):
         self.scheduleMajorRedraw()
-    def operationEditMode(self, mode):
+    def switchToEditor(self, editor):
         oldEnabled = self.propsDW.isEnabled()
-        selectionType, selectedItems = self.projectDW.activeSelection()
-        selectedItem = selectedItems[0] if selectedItems else None
-        if mode == canvas.DrawingUIMode.MODE_ISLANDS and not selectedOp.areIslandsEditable():
-            QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
-            return
-        self.projectDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.propsDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.editorDW.setEditorLayout(mode, selectedItem)
-        self.editorDW.setVisible(mode != canvas.DrawingUIMode.MODE_NORMAL)
-        self.viewer.changeMode(mode, selectedItem)
-        if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
+        self.projectDW.setVisible(editor is None)
+        self.propsDW.setVisible(editor is None)
+        self.editorDW.setEditor(editor, self.viewer)
+        self.viewer.setEditor(editor)
+        if editor is None and not oldEnabled:
             self.propsDW.propsheet.setFocus()
-        elif mode != canvas.DrawingUIMode.MODE_NORMAL:
+        elif editor is not None:
             self.viewer.setFocus()
-        self.updateMenusFromEditMode(mode)
+        self.updateMenusFromEditor(editor)
     def updateShapeSelection(self):
         # Update preview regardless
         items = self.projectDW.shapeSelection()
@@ -296,8 +290,7 @@ class CAMMainWindow(QMainWindow):
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
         self.document.opAddDrawingItems([polyline])
-        self.projectDW.updateShapeSelection([polyline])
-        self.projectDW.modeChanged.emit(canvas.DrawingUIMode.MODE_ADD_POLYLINE)
+        self.switchToEditor(editors.CanvasNewPolylineEditor(polyline))
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False
