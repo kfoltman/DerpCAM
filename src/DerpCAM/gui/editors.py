@@ -11,16 +11,21 @@ from DerpCAM.common import geom, guiutils, view
 class CanvasEditor(object):
     def __init__(self, item):
         self.item = item
-    def populateUI(self, parent, canvas):
+    def initUI(self, parent, canvas):
         self.parent = parent
         self.canvas = canvas
         self.parent.setWidget(QWidget())
         self.layout = QFormLayout()
         self.setTitle()
+        self.createControls()
+        self.connectSignals()
+    def createControls(self):
         self.createLabel()
         self.createButtons()
         self.updateLabel()
         self.parent.widget().setLayout(self.layout)
+    def connectSignals(self):
+        pass
     def createLabel(self):
         self.descriptionLabel = QLabel()
         self.descriptionLabel.setFrameShape(QFrame.Panel)
@@ -257,11 +262,12 @@ class CanvasExitPointEditor(CanvasEntryPointEditor):
 class CanvasPolylineEditor(CanvasEditor):
     def __init__(self, item):
         CanvasEditor.__init__(self, item)
+    def connectSignals(self):
+        self.canvas.zoomChanged.connect(self.updateLabel)
     def setTitle(self):
         self.parent.setWindowTitle("Modify a polyline")
     def updateLabel(self):
-        modeText = "Drag to add or move a node, double-click to remove."
-        #modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.canvas.polylineSnapValue():0.2f} mm"
+        modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
         self.descriptionLabel.setText(modeText)
     def paint(self, e, qp):
         polyline = self.item
@@ -426,10 +432,11 @@ class CanvasPolylineEditor(CanvasEditor):
 
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
     def __init__(self, item):
-        CanvasEditor.__init__(self, item)
+        CanvasPolylineEditor.__init__(self, item)
     def setTitle(self):
         self.parent.setWindowTitle("Create a polyline")
     def updateLabel(self):
         modeText = "Click to add a node. Clicking the first point closes the polyline.\nDrag a line to add a node.\nDrag a node to move it.\nDouble-click a middle point to remove it.\nDouble-click the last point to complete a polyline."
+        modeText += f"\nsnap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
         self.descriptionLabel.setText(modeText)
 

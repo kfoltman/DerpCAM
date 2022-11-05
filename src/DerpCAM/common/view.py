@@ -240,6 +240,7 @@ class ScaledFillDrawingOp(object):
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
     coordsInvalid = pyqtSignal([])
+    zoomChanged = pyqtSignal([])
 
     def __init__(self, renderer):
         QWidget.__init__(self)
@@ -276,6 +277,7 @@ class PathViewer(QWidget):
         scale = self.scalingFactor()
         vpt2 = self.unproject(pt)
         self.zero += vpt - vpt2
+        self.zoomChanged.emit()
         self.repaint()
     def addFilledPath(self, brush, polylines, darken=True):
         path = QPainterPath()

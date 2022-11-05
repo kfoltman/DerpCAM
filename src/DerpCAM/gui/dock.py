@@ -386,7 +386,7 @@ class CAMEditorDockWidget(QDockWidget):
         self.setMinimumSize(defaultDockWidgetWidth(self), 100)
     def setEditor(self, editor, canvas):
         if editor is not None:
-            editor.populateUI(self, canvas)
+            editor.initUI(self, canvas)
             self.setVisible(True)
         else:
             self.setWidget(QWidget())
