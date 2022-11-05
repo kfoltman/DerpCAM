@@ -44,11 +44,14 @@ class CAMMainWindow(QMainWindow):
         self.viewer.initUI()
         self.viewer.modeChanged.connect(self.operationEditMode)
         self.setCentralWidget(self.viewer)
+
         self.projectDW = dock.CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
         self.projectDW.modeChanged.connect(self.operationEditMode)
+        self.projectDW.operationTouched.connect(self.operationTouched)
+        self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
-        self.propsDW = dock.CAMPropertiesDockWidget(self.document)
+
         self.document.undoStack.cleanChanged.connect(self.cleanFlagChanged)
         self.document.propertyChanged.connect(self.itemPropertyChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
@@ -63,7 +66,15 @@ class CAMMainWindow(QMainWindow):
         self.document.projectCleared.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.drawingImported.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.projectLoaded.connect(self.onDrawingImportedOrProjectLoaded)
+
+        self.propsDW = dock.CAMPropertiesDockWidget(self.document)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
+
+        self.editorDW = dock.CAMEditorDockWidget(self.document)
+        self.editorDW.hide()
+        self.editorDW.applyClicked.connect(self.onEditorApplyClicked)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.editorDW)
+
         self.fileMenu = self.addMenu("&File", [
             ("&New project", self.fileNew, QKeySequence.New, "Remove everything and start a new project"),
             ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file into the current project"),
@@ -113,8 +124,6 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsUpdated.connect(self.canvasMouseMove)
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
-        self.projectDW.operationTouched.connect(self.operationTouched)
-        self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.updateOperations()
         self.updateWindowTitle()
         self.updateFileMenu()
@@ -189,6 +198,8 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
+    def onEditorApplyClicked(self):
+        self.viewer.applyClicked()
     def onShapesUpdated(self):
         self.scheduleMajorRedraw()
         self.doRefreshNow()
@@ -226,8 +237,10 @@ class CAMMainWindow(QMainWindow):
         if mode == canvas.DrawingUIMode.MODE_ISLANDS and not selectedOp.areIslandsEditable():
             QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
             return
-        self.projectDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.propsDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
+        self.projectDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
+        self.propsDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
+        self.editorDW.setEditorLayout(mode)
+        self.editorDW.setVisible(mode != canvas.DrawingUIMode.MODE_NORMAL)
         self.viewer.changeMode(mode, selectedItem)
         if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
             self.propsDW.propsheet.setFocus()
@@ -283,7 +296,8 @@ class CAMMainWindow(QMainWindow):
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
         self.document.opAddDrawingItems([polyline])
-        self.viewer.changeMode(canvas.DrawingUIMode.MODE_ADD_POLYLINE, polyline)
+        self.projectDW.updateShapeSelection([polyline])
+        self.projectDW.modeChanged.emit(canvas.DrawingUIMode.MODE_ADD_POLYLINE)
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False

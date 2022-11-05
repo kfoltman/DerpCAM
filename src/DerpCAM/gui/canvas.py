@@ -120,13 +120,6 @@ class DrawingViewer(view.PathViewer):
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
-        self.applyIcon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
-        self.applyButton = QPushButton(self.applyIcon, "", self)
-        self.applyButton.setVisible(False)
-        self.applyButton.setFixedSize(30, 30)
-        self.applyButton.setCursor(QCursor(Qt.ArrowCursor))
-        self.applyButton.move(5, 5)
-        self.applyButton.clicked.connect(self.applyClicked)
     def flashHighlight(self, item):
         if self.flash_highlight is item:
             return
@@ -139,7 +132,7 @@ class DrawingViewer(view.PathViewer):
             self.document.setUpdateSuspended(item)
         else:
             self.document.setUpdateSuspended(None)
-        self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
+        #self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
     def paintGridPart(self, e, qp, grid):
@@ -263,35 +256,12 @@ class DrawingViewer(view.PathViewer):
             self.paintEntryExitEditor(e, qp)
         if self.mode in (DrawingUIMode.MODE_POLYLINE, DrawingUIMode.MODE_ADD_POLYLINE) and self.mode_item:
             self.paintPolylineEditor(e, qp)
-        if self.mode != DrawingUIMode.MODE_NORMAL:
-            if self.mode == DrawingUIMode.MODE_TABS:
-                modeText = "Click on outlines to add/remove preferred locations for holding tabs"
-            if self.mode == DrawingUIMode.MODE_ISLANDS:
-                modeText = "Click on outlines to toggle exclusion of areas from the pocket"
-            if self.mode == DrawingUIMode.MODE_ENTRY:
-                orientation = self.mode_item.contourOrientation()
-                if orientation:
-                    modeText = "Click on desired entry point for the contour running in counter-clockwise direction"
-                else:
-                    modeText = "Click on desired entry point for the contour running in clockwise direction"
-            if self.mode == DrawingUIMode.MODE_EXIT:
-                orientation = self.mode_item.contourOrientation()
-                if orientation:
-                    modeText = "Click on desired end of the cut, counter-clockwise from starting point"
-                else:
-                    modeText = "Click on desired end of the cut, clockwise from starting point"
-            if self.mode == DrawingUIMode.MODE_POLYLINE:
-                modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm"
-            if self.mode == DrawingUIMode.MODE_ADD_POLYLINE:
-                modeText = f"Click to add a node or close the shape, drag to split a line or move a node, double-click to remove or finish, snap={10 ** -self.polylineSnapValue():0.2f} mm"
+        if self.mode == DrawingUIMode.MODE_TABS:
             pen = qp.pen()
-            qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
-            if self.mode == DrawingUIMode.MODE_TABS:
-                qp.setPen(QPen(QColor(255, 0, 0), 0))
-                for tab in self.mode_item.user_tabs:
-                    pos = self.project(QPointF(tab.x, tab.y))
-                    qp.drawEllipse(pos, 10, 10)
+            qp.setPen(QPen(QColor(255, 0, 0), 0))
+            for tab in self.mode_item.user_tabs:
+                pos = self.project(QPointF(tab.x, tab.y))
+                qp.drawEllipse(pos, 10, 10)
             qp.setPen(pen)
         if self.rubberband_rect:
             qp.setPen(QPen(QColor(0, 0, 0), 0))

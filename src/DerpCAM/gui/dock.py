@@ -22,6 +22,13 @@ class TreeViewWithAltArrows(QTreeView):
         else:
             return QTreeView.keyPressEvent(self, event)
 
+def defaultDockWidgetWidth(widget):
+    # screen() is Qt 5.14 and up
+    if hasattr(widget, 'screen'):
+        return max(300, widget.screen().size().width() // 4)
+    else:
+        return 300
+
 class CAMObjectTreeDockWidget(QDockWidget):
     operationTouched = pyqtSignal([QStandardItem])
     noOperationTouched = pyqtSignal([])
@@ -34,12 +41,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.document = document
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        # screen() is Qt 5.14 and up
-        if hasattr(self, 'screen'):
-            screen_width = self.screen().size().width()
-            self.setMinimumSize(max(300, screen_width // 4), 100)
-        else:
-            self.setMinimumSize(300, 100)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
         self.tabs = QTabWidget()
         
         tree = TreeViewWithAltArrows()
@@ -337,7 +339,7 @@ class CAMPropertiesDockWidget(QDockWidget):
         QDockWidget.__init__(self, "Properties")
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setMinimumSize(400, 100)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
         self.propsheet = propsheet.PropertySheetWidget([], document)
         self.setWidget(self.propsheet)
         self.updateModel()
@@ -367,3 +369,54 @@ class CAMPropertiesDockWidget(QDockWidget):
             properties = [p for p in properties if p in all_have]
         self.propsheet.setObjects(selection, properties)
 
+class CAMEditorDockWidget(QDockWidget):
+    applyClicked = pyqtSignal([])
+    def __init__(self, document):
+        QDockWidget.__init__(self, "Editor")
+        self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
+        self.setEditorLayout(canvas.DrawingUIMode.MODE_NORMAL)
+    def setEditorLayout(self, mode):
+        self.setWidget(QWidget())
+        layout = QFormLayout()
+        DrawingUIMode = canvas.DrawingUIMode
+        if mode != DrawingUIMode.MODE_NORMAL:
+            if mode == DrawingUIMode.MODE_TABS:
+                self.setWindowTitle("Place holding tabs")
+                modeText = "Click on outlines to add/remove preferred locations for holding tabs."
+            if mode == DrawingUIMode.MODE_ISLANDS:
+                self.setWindowTitle("Select areas to exclude")
+                modeText = "Click on outlines to toggle exclusion of areas from the pocket."
+            if mode == DrawingUIMode.MODE_ENTRY:
+                self.setWindowTitle("Select entry point")
+                orientation = self.mode_item.contourOrientation()
+                if orientation:
+                    modeText = "Click on desired entry point for the contour running in counter-clockwise direction."
+                else:
+                    modeText = "Click on desired entry point for the contour running in clockwise direction."
+            if mode == DrawingUIMode.MODE_EXIT:
+                self.setWindowTitle("Select exit point")
+                orientation = self.mode_item.contourOrientation()
+                if orientation:
+                    modeText = "Click on desired end of the cut, counter-clockwise from starting point."
+                else:
+                    modeText = "Click on desired end of the cut, clockwise from starting point."
+            if mode == DrawingUIMode.MODE_POLYLINE:
+                self.setWindowTitle("Modify a polyline")
+                #modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm"
+                modeText = "Drag to add or move a node, double-click to remove."
+            if mode == DrawingUIMode.MODE_ADD_POLYLINE:
+                self.setWindowTitle("Create a polyline")
+                modeText = "Click to add a node. Clicking the first point closes the polyline.\nDrag a line to add a node.\nDrag a node to move it.\nDouble-click a middle point to remove it.\nDouble-click the last point to complete a polyline."
+            descriptionLabel = QLabel(modeText)
+            descriptionLabel.setFrameShape(QFrame.Panel)
+            descriptionLabel.setMargin(5)
+            descriptionLabel.setWordWrap(True)
+            layout.addWidget(descriptionLabel)
+            applyButton = QPushButton(self.style().standardIcon(QStyle.SP_DialogApplyButton), "&Apply")
+            applyButton.clicked.connect(lambda: self.applyClicked.emit())
+            layout.addWidget(applyButton)
+        if self.widget().layout():
+            self.widget().setLayout(None)
+        self.widget().setLayout(layout)
