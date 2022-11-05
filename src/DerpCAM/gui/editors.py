@@ -365,7 +365,11 @@ class CanvasPolylineEditor(CanvasEditor):
             return 0
     def snapCoords(self, pt):
         snap = self.polylineSnapValue()
-        return geom.PathPoint(round(pt.x, snap), round(pt.y, snap))
+        def cround(val):
+            val = round(val, snap)
+            # Replace -0 by 0
+            return val if val else 0
+        return geom.PathPoint(cround(pt.x), cround(pt.y))
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
             pos = self.canvas.unproject(e.localPos())
