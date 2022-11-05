@@ -376,8 +376,8 @@ class CAMEditorDockWidget(QDockWidget):
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.setMinimumSize(defaultDockWidgetWidth(self), 100)
-        self.setEditorLayout(canvas.DrawingUIMode.MODE_NORMAL)
-    def setEditorLayout(self, mode):
+        self.setEditorLayout(canvas.DrawingUIMode.MODE_NORMAL, None)
+    def setEditorLayout(self, mode, mode_item):
         self.setWidget(QWidget())
         layout = QFormLayout()
         DrawingUIMode = canvas.DrawingUIMode
@@ -390,14 +390,14 @@ class CAMEditorDockWidget(QDockWidget):
                 modeText = "Click on outlines to toggle exclusion of areas from the pocket."
             if mode == DrawingUIMode.MODE_ENTRY:
                 self.setWindowTitle("Select entry point")
-                orientation = self.mode_item.contourOrientation()
+                orientation = mode_item.contourOrientation()
                 if orientation:
                     modeText = "Click on desired entry point for the contour running in counter-clockwise direction."
                 else:
                     modeText = "Click on desired entry point for the contour running in clockwise direction."
             if mode == DrawingUIMode.MODE_EXIT:
                 self.setWindowTitle("Select exit point")
-                orientation = self.mode_item.contourOrientation()
+                orientation = mode_item.contourOrientation()
                 if orientation:
                     modeText = "Click on desired end of the cut, counter-clockwise from starting point."
                 else:

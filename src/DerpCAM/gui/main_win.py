@@ -239,7 +239,7 @@ class CAMMainWindow(QMainWindow):
             return
         self.projectDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
         self.propsDW.setVisible(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.editorDW.setEditorLayout(mode)
+        self.editorDW.setEditorLayout(mode, selectedItem)
         self.editorDW.setVisible(mode != canvas.DrawingUIMode.MODE_NORMAL)
         self.viewer.changeMode(mode, selectedItem)
         if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
