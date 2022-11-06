@@ -226,6 +226,8 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         return (p, p)
 
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
+    prop_points = SetEditableProperty("Points", "points", format_func=lambda value: f"{len(value)} points - double-click to edit", edit_func=lambda item: item.editPoints())
+
     def __init__(self, document, points, closed, untransformed=None, src_name=None):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
@@ -238,6 +240,11 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         res['points'] = [ i.as_tuple() for i in self.points ]
         res['closed'] = self.closed
         return res
+    @classmethod
+    def properties(self):
+        return [self.prop_points]
+    def editPoints(self):
+        self.document.polylineEditRequested.emit(self)
     def distanceTo(self, pt):
         if not self.points:
             return None
@@ -2342,6 +2349,7 @@ class DocumentModel(QObject):
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
     entryExitEditRequested = pyqtSignal([OperationTreeItem])
+    polylineEditRequested = pyqtSignal([DrawingPolylineTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
     shapesDeleted = pyqtSignal([list])
