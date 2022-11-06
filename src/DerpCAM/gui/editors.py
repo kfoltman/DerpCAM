@@ -259,9 +259,14 @@ class CanvasExitPointEditor(CanvasEntryPointEditor):
             self.canvas.exitEditMode(False)
             return True
 
+FEEDBACK_ADD = 1
+FEEDBACK_REMOVE = 2
+
 class CanvasPolylineEditor(CanvasEditor):
     def __init__(self, item):
         CanvasEditor.__init__(self, item)
+        self.last_pos = None
+        self.visual_feedback = None
     def connectSignals(self):
         self.canvas.zoomChanged.connect(self.updateLabel)
     def setTitle(self):
@@ -274,7 +279,7 @@ Moving a node into a non-neighbour node breaks up a closed polyline.
 Moving the first node into the last one closes an open polyline.
 Dragging a line inserts a node at that point.
 Clicking near the start/end of an open polyline adds a node there.
-Double-clicking an node removes it.
+Double-clicking a node removes it.
 snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         self.descriptionLabel.setText(modeText)
     def paintPoint(self, qp, loc):
@@ -285,18 +290,34 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
         qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")")
     def paint(self, e, qp):
+        is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
         normPen = QColor(0, 0, 0)
         qp.setPen(normPen)
         for i in polyline.points:
             if i.is_point():
                 self.paintPoint(qp, i)
+        if is_add and self.last_pos is not None:
+            qp.setPen(QColor(0, 0, 0, 128))
+            self.paintPoint(qp, self.last_pos)
+        if self.visual_feedback:
+            qp.setPen(QColor(0, 0, 0, 128))
+            if self.visual_feedback[0] == FEEDBACK_ADD:
+                other = self.visual_feedback[1]
+                qp.drawLine(self.canvas.project(QPointF(other.x, other.y)), self.canvas.project(QPointF(self.last_pos.x, self.last_pos.y)))
+            elif self.visual_feedback[0] == FEEDBACK_REMOVE:
+                other1 = self.visual_feedback[1]
+                other2 = self.visual_feedback[2]
+                qp.drawLine(self.canvas.project(QPointF(other1.x, other1.y)), self.canvas.project(QPointF(other2.x, other2.y)))
     def clickOnPolyline(self, pos, e, is_double):
+        self.visual_feedback = None
         npts = len(self.item.points)
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
         pt = geom.PathPoint(pos.x(), pos.y())
         nearest = self.nearestPolylineItem(pt)
+        if nearest is None and is_double:
+            nearest = self.nearestPolylineItem(self.snapCoords(pt))
         if nearest is not None:
             if is_double:
                 if npts > 2:
@@ -406,6 +427,12 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
             return True
         return False
     def mouseMoveEvent(self, e):
+        repaint = False
+        if self.visual_feedback:
+            self.visual_feedback = None
+            repaint = True
+        pos = self.canvas.unproject(e.localPos())
+        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
         npts = len(self.item.points)
         if self.canvas.dragging:
             sp, dragged, start_pos = self.drag_start_data
@@ -414,10 +441,19 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
             nearest = self.nearestPolylineItem(self.snapCoords(pt), dragged)
             if nearest is not None:
                 if not self.item.closed and npts > 3 and ((nearest == 0 and dragged == npts - 1) or (nearest == npts - 1 and dragged == 0)):
+                    if nearest == 0:
+                        self.visual_feedback = (FEEDBACK_ADD, self.item.points[dragged - 1])
+                    else:
+                        self.visual_feedback = (FEEDBACK_ADD, self.item.points[1])
                     self.canvas.setCursor(guiutils.customCursor('polyline_join'))
                 elif self.item.closed and not self.adjacent(nearest, dragged):
                     self.canvas.setCursor(guiutils.customCursor('scissors'))
                 elif (not self.item.closed or npts > 3) and self.adjacent(nearest, dragged):
+                    if dragged == (nearest + 1) % npts:
+                        other = (nearest + 2) % npts
+                    else:
+                        other = (nearest - 2) % npts
+                    self.visual_feedback = (FEEDBACK_REMOVE, self.item.points[nearest], self.item.points[other])
                     self.canvas.setCursor(guiutils.customCursor('arrow_minus'))
                 else:
                     self.canvas.setCursor(Qt.ForbiddenCursor)
@@ -431,10 +467,17 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         pt = geom.PathPoint(pos.x(), pos.y())
         nearest = self.nearestPolylineItem(pt)
         if nearest is not None:
-            self.canvas.setCursor(Qt.PointingHandCursor)
+            is_add = isinstance(self, CanvasNewPolylineEditor)
+            if is_add and (nearest == 0 or nearest == npts - 1):
+                self.canvas.setCursor(guiutils.customCursor('polyline_join'))
+            else:
+                self.canvas.setCursor(Qt.PointingHandCursor)
         else:
             nearest = self.nearestPolylineItem(pt, margin=15) if not self.item.closed else None
             if nearest == 0 or nearest == npts - 1:
+                # Extend the start or the end
+                self.visual_feedback = (FEEDBACK_ADD, self.item.points[nearest])
+                repaint = True
                 self.canvas.setCursor(guiutils.customCursor('arrow_plus'))
             else:
                 nearest = self.nearestPolylineLine(pt)
@@ -442,6 +485,8 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
                     self.canvas.setCursor(guiutils.customCursor('arrow_plus'))
                 else:
                     self.canvas.setCursor(Qt.ArrowCursor)
+        if repaint:
+            self.canvas.repaint()
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton:
             is_add = isinstance(self, CanvasNewPolylineEditor)
@@ -465,7 +510,7 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
                         # Break a closed polyline line
                         self.item.document.opModifyPolyline(self.item, self.item.points[dragged + 1:] + self.item.points[:dragged], False)
                     elif (not self.item.closed or npts > 3) and self.adjacent(dragged, nearest):
-                        # Just remove a point
+                        # Just remove the point
                         self.item.document.opModifyPolyline(self.item, self.item.points[:dragged] + self.item.points[dragged + 1:], self.item.closed)
                 else:
                     self.item.document.opModifyPolylinePoint(self.item, dragged, self.snapCoords(pt), False)
@@ -482,7 +527,6 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
     def __init__(self, item):
         CanvasPolylineEditor.__init__(self, item)
-        self.last_pos = None
     def setTitle(self):
         self.parent.setWindowTitle("Create a polyline")
     def updateLabel(self):
@@ -496,14 +540,11 @@ Double-click the last point to complete a polyline."""
         self.descriptionLabel.setText(modeText)
     def paint(self, e, qp):
         CanvasPolylineEditor.paint(self, e, qp)
-        if self.last_pos is not None:
-            qp.setPen(QColor(0, 0, 0, 128))
-            self.paintPoint(qp, self.last_pos)
     def mouseMoveEvent(self, e):
-        pos = self.canvas.unproject(e.localPos())
-        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
         res = CanvasPolylineEditor.mouseMoveEvent(self, e)
         if not self.canvas.dragging:
+            if self.item.points:
+                self.visual_feedback = (FEEDBACK_ADD, self.item.points[-1])
             self.canvas.repaint()
         return res
     def mouseReleaseEvent(self, e):
