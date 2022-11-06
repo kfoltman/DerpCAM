@@ -114,8 +114,16 @@ class Engrave(UntabbedOperation):
 
 class FaceMill(UntabbedOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None, {})
+        if not self.shape.closed:
+            raise ValueError("Face milling cuts are not supported for open shapes")
+        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2).flattened(), None, {})
 
+class AxisParallelFaceMill(FaceMill):
+    def build_paths(self, margin):
+        if not self.shape.closed:
+            raise ValueError("Face milling cuts are not supported for open shapes")
+        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2).flattened(), None, {})
+    
 class Pocket(UntabbedOperation):
     def build_cutpaths(self):
         return [CutPathWallProfile(self.machine_params, self.props, self.tool, None, self.subpaths_for_margin, True)]
@@ -134,6 +142,12 @@ class Pocket(UntabbedOperation):
         else:
             # Full pocket (roughing pass)
             return self.build_paths(margin)
+
+class AxisParallelPocket(Pocket):
+    def build_paths(self, margin):
+        if not self.shape.closed:
+            raise ValueError("Pocket cuts are not supported for open shapes")
+        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None, {})
 
 class HSMOperation(UntabbedOperation):
     def __init__(self, shape, tool, machine_params, props, shape_to_refine):
@@ -548,14 +562,18 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, self.machine_params, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, self.machine_params, props or self.props))
+    def pocket_axis_parallel(self, shape, props=None):
+        self.add(AxisParallelPocket(shape, self.tool, self.machine_params, props or self.props))
+    def face_mill(self, shape, props=None):
+        self.add(FaceMill(shape, self.tool, self.machine_params, props or self.props))
+    def face_mill_axis_parallel(self, shape, props=None):
+        self.add(AxisParallelFaceMill(shape, self.tool, self.machine_params, props or self.props))
     def pocket_hsm(self, shape, props=None, shape_to_refine=None):
         self.add(HSMPocket(shape, self.tool, self.machine_params, props or self.props, shape_to_refine))
     def outside_peel(self, shape, props=None):
         self.add(OutsidePeel(shape, self.tool, self.machine_params, props or self.props))
     def outside_peel_hsm(self, shape, props=None, shape_to_refine=None):
         self.add(OutsidePeelHSM(shape, self.tool, self.machine_params, props or self.props, shape_to_refine))
-    def face_mill(self, shape, props=None):
-        self.add(FaceMill(shape, self.tool, self.machine_params, props or self.props))
     def peck_drill(self, x, y, props=None):
         self.add(PeckDrill(x, y, self.tool, self.machine_params, props or self.props))
     def helical_drill(self, x, y, d, props=None):

@@ -111,9 +111,10 @@ class CAMMainWindow(QMainWindow):
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape as a slotting cut on the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape as a slotting cut the inside (cutout)"),
             ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
+            ("&Face mill", self.millFace, QKeySequence("Shift+Ctrl+F"), "Face-mill a top surface only without refining side edges"),
+            ("&Side mill", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling from the outer edges of the part"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
-            ("Out&side peel", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling on the outside of the part"),
             ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
             ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
@@ -341,6 +342,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.INSIDE_CONTOUR)
     def millPocket(self):
         self.millSelectedShapes(OperationType.POCKET)
+    def millFace(self):
+        self.millSelectedShapes(OperationType.FACE)
     def millOutsidePeel(self):
         self.millSelectedShapes(OperationType.OUTSIDE_PEEL)
     def millEngrave(self):
