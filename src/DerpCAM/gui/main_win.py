@@ -1,4 +1,3 @@
-import argparse
 import json
 import os.path
 import sys
@@ -8,7 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import guiutils
-from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about
+from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about, draw, editors
 
 OperationType = model.OperationType
 
@@ -18,6 +17,7 @@ class CAMMainWindow(QMainWindow):
         self.document = document
         self.configSettings = config
         self.resetZoomNeeded = False
+        self.lastProgress = None
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:
@@ -39,29 +39,47 @@ class CAMMainWindow(QMainWindow):
         def addShortcut(action, shortcut):
             action.setShortcuts(shortcut)
             return action
+        self.mruList = self.configSettings.loadMru()
         self.viewer = canvas.DrawingViewer(self.document, self.configSettings)
         self.viewer.initUI()
-        self.viewer.modeChanged.connect(self.operationEditMode)
+        self.viewer.editorChangeRequest.connect(self.switchToEditor)
         self.setCentralWidget(self.viewer)
+
         self.projectDW = dock.CAMObjectTreeDockWidget(self.document)
         self.projectDW.selectionChanged.connect(self.shapeTreeSelectionChanged)
-        self.projectDW.modeChanged.connect(self.operationEditMode)
+        self.projectDW.editorChangeRequest.connect(self.switchToEditor)
+        self.projectDW.operationTouched.connect(self.operationTouched)
+        self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
-        self.propsDW = dock.CAMPropertiesDockWidget(self.document)
+
         self.document.undoStack.cleanChanged.connect(self.cleanFlagChanged)
         self.document.propertyChanged.connect(self.itemPropertyChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
+        self.document.shapesUpdated.connect(self.onShapesUpdated)
+        self.document.shapesDeleted.connect(self.onShapesDeleted)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
+        self.document.entryExitEditRequested.connect(self.projectDW.operationEntryExitPoints)
         self.document.islandsEditRequested.connect(self.projectDW.operationIslands)
+        self.document.polylineEditRequested.connect(self.projectDW.shapeEdit)
         self.document.toolListRefreshed.connect(self.projectDW.onToolListRefreshed)
         self.document.cutterSelected.connect(self.projectDW.onCutterSelected)
+        self.document.projectCleared.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.drawingImported.connect(self.onDrawingImportedOrProjectLoaded)
         self.document.projectLoaded.connect(self.onDrawingImportedOrProjectLoaded)
+
+        self.propsDW = dock.CAMPropertiesDockWidget(self.document)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
+
+        self.editorDW = dock.CAMEditorDockWidget(self.document)
+        self.editorDW.hide()
+        self.editorDW.applyClicked.connect(self.onEditorApplyClicked)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.editorDW)
+
         self.fileMenu = self.addMenu("&File", [
-            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file"),
+            ("&New project", self.fileNew, QKeySequence.New, "Remove everything and start a new project"),
+            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file into the current project"),
             None,
             ("&Open project...", self.fileOpen, QKeySequence.Open, "Open a project file"),
             ("&Save project", self.fileSave, QKeySequence.Save, "Save a project file"),
@@ -71,13 +89,21 @@ class CAMMainWindow(QMainWindow):
             None,
             ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
         ])
+        self.mruActions = []
+        self.exitAction = self.fileMenu.actions()[-1]
         self.editMenu = self.addMenu("&Edit", [
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
-            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete an item"),
+            ("&Join lines", self.editJoin, None, "Join line segments into a polyline"),
+            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
             ("&Preferences...", self.editPreferences, None, "Set application preferences"),
+        ])
+        self.drawMenu = self.addMenu("&Draw", [
+            ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
+            ("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
+            ("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
@@ -100,36 +126,62 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsUpdated.connect(self.canvasMouseMove)
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
-        self.projectDW.operationTouched.connect(self.operationTouched)
-        self.projectDW.noOperationTouched.connect(self.noOperationTouched)
         self.updateOperations()
-        filename = self.document.filename or self.document.drawing_filename
-        if filename:
-            self.setWindowFilePath(filename)
-        else:
-            self.setWindowFilePath("unnamed project")
+        self.updateWindowTitle()
+        self.updateFileMenu()
         self.refreshNeeded = False
-        self.newCAMNeeded = set()
+        self.resetCAMNeeded()
         self.idleTimer = self.startTimer(500)
+    def updateMenusFromEditor(self, editor):
+        normalFunctionsEnabled = editor is None
+        for i in self.editMenu.actions()[2:]:
+            i.setEnabled(normalFunctionsEnabled)
+        for i in self.drawMenu.actions():
+            i.setEnabled(normalFunctionsEnabled)
+        for i in self.operationsMenu.actions():
+            i.setEnabled(normalFunctionsEnabled)
+    def updateFileMenu(self):
+        def fileAction(id, filename):
+            action = QAction(f"&{id + 1} {filename}", self.fileMenu)
+            action.triggered.connect(lambda checked: self.loadProjectIf(filename))
+            return action
+        sep = QAction(self.fileMenu)
+        sep.setSeparator(True)
+        if self.mruList:
+            actions = [fileAction(i, filename) for i, filename in enumerate(self.mruList)] + [sep]
+        else:
+            actions = []
+        while self.mruActions:
+            self.fileMenu.removeAction(self.mruActions.pop())
+        self.fileMenu.insertActions(self.exitAction, actions)
+        self.mruActions = actions
     def cleanFlagChanged(self, clean):
         self.setWindowModified(not clean)
     def timerEvent(self, event):
         if event.timerId() == self.idleTimer:
-            progress = self.document.pollForUpdateCAM()
-            if progress is not None and progress > 0:
-                self.viewer.repaint()
-            if self.refreshNeeded:
-                self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
-                self.resetZoomNeeded = False
-                self.refreshNeeded = False
-            if self.newCAMNeeded:
-                subset = list(self.newCAMNeeded)
-                self.newCAMNeeded = set()
-                self.document.startUpdateCAM(subset)
+            self.doRefreshNow()
             return
         QMainWindow.timerEvent(self, event)
+    def doRefreshNow(self):
+        progress = self.document.pollForUpdateCAM()
+        if (progress is not None and progress > 0) or (progress is None and self.lastProgress is not None):
+            self.viewer.repaint()
+        self.lastProgress = progress
+        if self.refreshNeeded:
+            self.viewer.majorUpdate(reset_zoom=self.resetZoomNeeded)
+            self.resetZoomNeeded = False
+            self.refreshNeeded = False
+        if self.newCAMNeeded:
+            subset = list(self.newCAMNeeded)
+            self.resetCAMNeeded()
+            self.document.startUpdateCAM(subset)
+    def resetCAMNeeded(self):
+        self.newCAMNeeded = set()
     def scheduleCAMUpdate(self, item):
         self.newCAMNeeded |= item
+        for i in item:
+            if isinstance(i, model.OperationTreeItem):
+                i.resetRenderedState()
     def noOperationTouched(self):
         self.viewer.flashHighlight(None)
     def operationTouched(self, item):
@@ -148,6 +200,15 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().reset()
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
+    def onEditorApplyClicked(self):
+        self.viewer.applyClicked()
+    def onShapesDeleted(self, shapes):
+        if self.viewer.editor is not None:
+            self.viewer.editor.onShapesDeleted(shapes)
+    def onShapesUpdated(self):
+        self.scheduleMajorRedraw()
+        self.doRefreshNow()
+        self.updateSelection()
     def onOperationsUpdated(self):
         self.refreshNeeded = True
     def updateOperations(self):
@@ -174,19 +235,17 @@ class CAMMainWindow(QMainWindow):
         self.scheduleMajorRedraw()
     def operRemoved(self):
         self.scheduleMajorRedraw()
-    def operationEditMode(self, mode):
+    def switchToEditor(self, editor):
         oldEnabled = self.propsDW.isEnabled()
-        selectedOp = self.projectDW.operSelection()[0]
-        if mode == canvas.DrawingUIMode.MODE_ISLANDS and not selectedOp.areIslandsEditable():
-            QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
-            return
-        self.projectDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.propsDW.setEnabled(mode == canvas.DrawingUIMode.MODE_NORMAL)
-        self.viewer.changeMode(mode, selectedOp)
-        if mode == canvas.DrawingUIMode.MODE_NORMAL and not oldEnabled:
+        self.projectDW.setVisible(editor is None)
+        self.propsDW.setVisible(editor is None)
+        self.editorDW.setEditor(editor, self.viewer)
+        self.viewer.setEditor(editor)
+        if editor is None and not oldEnabled:
             self.propsDW.propsheet.setFocus()
-        elif mode != canvas.DrawingUIMode.MODE_NORMAL:
+        elif editor is not None:
             self.viewer.setFocus()
+        self.updateMenusFromEditor(editor)
     def updateShapeSelection(self):
         # Update preview regardless
         items = self.projectDW.shapeSelection()
@@ -202,7 +261,16 @@ class CAMMainWindow(QMainWindow):
         else:
             self.propsDW.setSelection(items)
     def editDelete(self):
-        self.projectDW.operationDelete()
+        try:
+            selType, items = self.projectDW.activeSelection()
+            if selType == 's':
+                self.document.opDeleteDrawingItems(items)
+            else:
+                self.projectDW.operationDelete()
+        except Exception as e:
+            QMessageBox.critical(self, None, str(e))
+    def editJoin(self):
+        self.projectDW.shapeJoin()
     def editPreferences(self):
         dlg = settings.PreferencesDialog(self, self.configSettings)
         self.prefDlg = dlg
@@ -214,6 +282,20 @@ class CAMMainWindow(QMainWindow):
             self.viewer.repaint()
             #self.viewer.majorUpdate()
             self.configSettings.save()
+    def drawCircle(self):
+        dlg = draw.DrawCircleDialog(self, self.document)
+        if dlg.exec():
+            self.document.opAddDrawingItems([dlg.result])
+            self.scheduleMajorRedraw(True)
+    def drawRectangle(self):
+        dlg = draw.DrawRectangleDialog(self, self.document)
+        if dlg.exec():
+            self.document.opAddDrawingItems([dlg.result])
+            self.scheduleMajorRedraw(True)
+    def drawPolyline(self):
+        polyline = model.DrawingPolylineTreeItem(self.document, [], False)
+        self.document.opAddDrawingItems([polyline])
+        self.switchToEditor(editors.CanvasNewPolylineEditor(polyline))
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False
@@ -228,6 +310,7 @@ class CAMMainWindow(QMainWindow):
             return
         if not self.needCutterType(model.cutterTypesForOperationType(operType)):
             return
+        shapeIds = canvas.sortSelections(selectionsUsed, shapeIds)
         for i in selectionsUsed:
             self.projectDW.shapeTree.selectionModel().select(i.index(), QItemSelectionModel.Deselect)
         rowCount, cycle, operations = self.document.opCreateOperation(shapeIds, operType)
@@ -277,20 +360,45 @@ class CAMMainWindow(QMainWindow):
         self.coordLabel.setText(f"X={Format.coord(x, brief=True)}{Format.coord_unit()} Y={Format.coord(y, brief=True)}{Format.coord_unit()}")
     def canvasMouseLeave(self):
         self.coordLabel.setText("")
-    def onDrawingImportedOrProjectLoaded(self, fn):
-        self.setWindowFilePath(fn)
+    def updateWindowTitle(self):
+        filename = self.document.filename or self.document.drawing_filename
+        if filename is not None:
+            self.setWindowFilePath(filename)
+        else:
+            self.setWindowFilePath("unnamed project")
+    def onDrawingImportedOrProjectLoaded(self):
+        self.updateWindowTitle()
         self.viewer.majorUpdate()
         self.updateSelection()
         self.projectDW.shapeTree.expandAll()
         self.projectDW.operTree.expandAll()
+    def loadProjectIf(self, fn):
+        if not self.handleUnsaved():
+            return
+        self.loadProject(fn)
+    def addToMru(self, fn):
+        self.mruList = [i for i in self.mruList if i != fn]
+        self.mruList.insert(0, fn)
+        self.configSettings.saveMru(self.mruList)
     def loadProject(self, fn):
+        self.viewer.abortEditMode()
         self.document.loadProject(fn)
+        self.addToMru(fn)
+        self.updateFileMenu()
+        self.resetCAMNeeded()
     def saveProject(self, fn):
         data = self.document.store()
         f = open(fn, "w")
         json.dump(data, f, indent=2)
         f.close()
+        self.addToMru(fn)
+    def fileNew(self):
+        if not self.handleUnsaved():
+            return
+        self.viewer.abortEditMode()
+        self.document.newDocument()
     def fileImport(self):
+        self.viewer.abortEditMode()
         dlg = QFileDialog(self, "Import a drawing", filter="Drawings (*.dxf);;All files (*)")
         input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
         if input_dir:
@@ -298,10 +406,15 @@ class CAMMainWindow(QMainWindow):
         dlg.setFileMode(QFileDialog.ExistingFile)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
-            self.document.importDrawing(fn)
+            try:
+                self.document.importDrawing(fn)
+            except Exception as e:
+                QMessageBox.critical(self, None, "Cannot import a drawing: " + str(e))
+            self.document.undoStack.resetClean()
             self.configSettings.last_input_directory = os.path.split(fn)[0]
             self.configSettings.save()
     def fileOpen(self):
+        self.viewer.abortEditMode()
         dlg = QFileDialog(self, "Open a project", filter="DerpCAM project (*.dcp);;All files (*)")
         input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
         if input_dir:
@@ -364,18 +477,20 @@ class CAMMainWindow(QMainWindow):
             self.document.exportGcode(fn)
             self.configSettings.last_gcode_directory = os.path.split(fn)[0]
             self.configSettings.save()
+            os.system(self.configSettings.run_after_export + " '" + os.path.abspath(fn) + "'")
     def fileExit(self):
         self.close()
-    def closeEvent(self, e):
+    def handleUnsaved(self):
         if not self.document.undoStack.isClean():
             answer = QMessageBox.question(self, "Unsaved changes", "Project has unsaved changes. Save?", QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
             if answer == QMessageBox.Cancel:
-                e.ignore()
-                return
-            if answer == QMessageBox.Discard:
-                return
+                return False
             if answer == QMessageBox.Save:
-                self.fileSave()
-                return
+                return self.fileSave()
+        return True
+    def closeEvent(self, e):
+        if not self.handleUnsaved():
+            e.ignore()
+            return
         QWidget.closeEvent(self, e)
 

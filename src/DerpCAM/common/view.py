@@ -35,8 +35,8 @@ class OperationsRenderer(object):
         b = None
         for op in self.operations.operations:
             opb = op.shape.bounds
-            if op.paths:
-                opb = max_bounds(opb, op.paths.bounds)
+            for depth, paths in op.to_preview():
+                opb = max_bounds(opb, paths.bounds)
             if b is None:
                 b = opb
             else:
@@ -58,16 +58,24 @@ class OperationsRenderer(object):
         return pen
     def toolPenFunc(self, toolpath, alpha, op):
         return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
+    def depth2intensity(self, z, thickness):
+        if z >= -0.001:
+            return 0.1
+        return 0.25 + 0.75 * -z / thickness
     def renderToolpaths(self, owner, alpha_scale=1.0):
         # Toolpaths
         for op in self.operations.operations:
-            if op.paths:
+            preview = op.to_preview()
+            if preview:
                 for stage in (1, 2):
                     # Null passes (we should probably warn about these)
                     if op.props.start_depth <= op.props.depth:
                         continue
-                    for depth, toolpath in op.to_preview():
-                        alpha = int(255 * alpha_scale * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
+                    for depth, toolpath in preview:
+                        if self.operations.thickness:
+                            alpha = int(255 * alpha_scale * self.depth2intensity(depth, self.operations.thickness))
+                        else:
+                            alpha = int(255 * alpha_scale * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
                             pen = self.toolPenFunc(toolpath, alpha, op)
                         if stage == 2:
@@ -77,10 +85,13 @@ class OperationsRenderer(object):
         return False
     def renderRapids(self, owner, lastpt = PathPoint(0, 0)):
         # Red rapid moves
-        pen = QPen(QColor(255, 0, 0), 0)
+        pen = QPen(QColor(192, 0, 0), 0)
         for op in self.operations.operations:
-            if op.paths:
-                lastpt = self.addRapids(owner, pen, op.paths, lastpt)
+            for i in op.cutpaths:
+                last_depth = self.operations.machine_params.safe_z
+                for depth, subpath in i.to_preview():
+                    lastpt = self.addRapids(owner, pen, subpath, lastpt, op, depth < last_depth)
+                    last_depth = depth
         return lastpt
     def renderShapes(self, owner):
         penOutside = QPen(QColor(0, 0, 255), 0)
@@ -94,16 +105,36 @@ class OperationsRenderer(object):
         self.renderToolpaths(owner)
         self.renderRapids(owner)
         self.renderShapes(owner)
-    def addRapids(self, owner, pen, path, lastpt):
-        if isinstance(path, toolpath.Toolpaths):
-            for tp in path.toolpaths:
-                lastpt = self.addRapids(owner, pen, tp, lastpt)
-            return lastpt
-        if path.helical_entry:
-            he = path.helical_entry
-            owner.addLines(pen, circle(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
-        owner.addRapidLine(pen, lastpt, path.path.seg_start())
+    def addRapids(self, owner, pen, path, lastpt, op, is_descend):
+        assert not isinstance(path, toolpath.Toolpaths)
+        if is_descend:
+            if path.helical_entry:
+                he = path.helical_entry
+                if isinstance(he, toolpath.HelicalEntry):
+                    pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
+                    owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle2(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=True)
+                    owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
+                elif isinstance(he, toolpath.PlungeEntry):
+                    sp = he.start
+                    d = path.tool.diameter / (2 * sqrt(2))
+                    owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
+            else:
+                pt = path.path.seg_start()
+                brush = QBrush(pen.color())
+                if pt.dist(lastpt) < 1.0 / GeometrySettings.RESOLUTION:
+                    # Highlight the puzzling reentry moves in pink
+                    brush = QBrush(QColor(255, 0, 255))
+                r = 8
+                owner.addScaledPolygon(brush, [pt, pt.translated(r, r), pt.translated(-r, r), pt], QPointF(pt.x, pt.y), r)
+        if lastpt != path.path.seg_start():
+            owner.addRapidLine(pen, lastpt, path.path.seg_start())
         return path.path.seg_end()
+    def pen2brush(self, owner, path, pen):
+        if not isinstance(pen, QPen):
+            pen2, slow = pen(path, owner.scalingFactor())
+        else:
+            pen2 = pen
+        return QBrush(pen2.color())
     def addToolpaths(self, owner, pen, path, stage, operation):
         if isinstance(path, toolpath.Toolpaths):
             for tp in path.toolpaths:
@@ -119,18 +150,12 @@ class OperationsRenderer(object):
         if stage == 1:
             t = time.time()
             # print ("Before buffer")
-            def pen2brush():
-                if not isinstance(pen, QPen):
-                    pen2, slow = pen(path, owner.scalingFactor())
-                else:
-                    pen2 = pen
-                return QBrush(pen2.color())
             #print ("->", len(outlines))
             outlines = getattr(path, 'rendered_outlines', None)
             if outlines is None:
                 path.rendered_outlines = outlines = path.render_as_outlines()
             for o in outlines:
-                owner.addPolygons(pen2brush, outlines, GeometrySettings.simplify_arcs)
+                owner.addPolygons(lambda: self.pen2brush(owner, path, pen), outlines, GeometrySettings.simplify_arcs)
             # print ("After buffer", time.time() - t)
             return
         if GeometrySettings.simplify_arcs:
@@ -180,8 +205,6 @@ class FillDrawingOp(object):
         self.bounds = bounds
         self.darken = darken
     def paint(self, qp, transform, drawingArea, is_draft, scale):
-        #if is_draft:
-        #    return
         if self.darken:
             qp.setCompositionMode(QPainter.CompositionMode_Darken)
         else:
@@ -193,9 +216,31 @@ class FillDrawingOp(object):
             else:
                 qp.fillPath(self.path, self.brush())
 
+class ScaledFillDrawingOp(object):
+    def __init__(self, brush, path, bounds, origin, limit):
+        self.brush = brush
+        self.path = path
+        self.bounds = bounds
+        self.origin = origin
+        self.limit = limit
+    def paint(self, qp, transform, drawingArea, is_draft, scale):
+        if scale < self.limit:
+            return
+        qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        transform2 = QTransform(transform).translate(self.origin.x(), self.origin.y()).scale(1.0 / scale, 1.0 / scale).translate(-self.origin.x(), -self.origin.y())
+        qp.setTransform(transform2)
+        bounds = transform2.mapRect(self.bounds)
+        if bounds.intersects(drawingArea):
+            if isinstance(self.brush, QBrush):
+                qp.fillPath(self.path, self.brush)
+            else:
+                qp.fillPath(self.path, self.brush())
+        qp.setTransform(transform)
+
 class PathViewer(QWidget):
     coordsUpdated = pyqtSignal([float, float])
     coordsInvalid = pyqtSignal([])
+    zoomChanged = pyqtSignal([])
 
     def __init__(self, renderer):
         QWidget.__init__(self)
@@ -232,6 +277,7 @@ class PathViewer(QWidget):
         scale = self.scalingFactor()
         vpt2 = self.unproject(pt)
         self.zero += vpt - vpt2
+        self.zoomChanged.emit()
         self.repaint()
     def addFilledPath(self, brush, polylines, darken=True):
         path = QPainterPath()
@@ -246,6 +292,18 @@ class PathViewer(QWidget):
                     path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
             path.closeSubpath()
         self.drawingOps.append(FillDrawingOp(brush, path, path.boundingRect(), darken))
+    def addScaledPolygon(self, brush, polyline, origin, limit):
+        path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
+        path.moveTo(polyline[0].x, polyline[0].y)
+        for point in polyline[1:]:
+            if point.is_point():
+                path.lineTo(point.x, point.y)
+            else:
+                arc = point
+                path.arcTo(QRectF(arc.c.cx - arc.c.r, arc.c.cy - arc.c.r, 2 * arc.c.r, 2 * arc.c.r), -arc.sstart * 180 / pi, -arc.sspan * 180 / pi)
+        path.closeSubpath()
+        self.drawingOps.append(ScaledFillDrawingOp(brush, path, path.boundingRect(), origin, limit))
     def addPath(self, pen, *polylines, darken=True):
         for polyline in polylines:
             path = QPainterPath()
@@ -326,20 +384,23 @@ class PathViewer(QWidget):
             self.addPath(pen, points, darken=darken)
 
     def addRapidLine(self, pen, sp, ep):
-        if draw_arrows_for_rapids and dist(sp, ep) > 6:
-            midp = weighted(sp, ep, 0.4)
+        if draw_arrows_for_rapids:
+            dlen = sp.dist(ep)
+            if not dlen:
+                return
+            r = 10
+            midp = weighted(sp, ep, 0.48)
             angle = atan2(ep.y - sp.y, ep.x - sp.x)
-            dangle = 7 * pi / 8
-            r = 3
-            m1 = PathPoint(midp.x + r * cos(angle - dangle), midp.y  + r * sin(angle - dangle))
-            m2 = PathPoint(midp.x + r * cos(angle + dangle), midp.y  + r * sin(angle + dangle))
-            self.addLines(pen, [sp, midp, m1, midp, m2, midp, ep], False, darken=False)
-        else:
-            self.addLines(pen, [sp, ep], False, darken=False)
+            dangle = 28 * pi / 32
+            tip = PathPoint(midp.x + r * cos(angle), midp.y + r * sin(angle))
+            m1 = PathPoint(midp.x + r * cos(angle - dangle), midp.y + r * sin(angle - dangle))
+            m2 = PathPoint(midp.x + r * cos(angle + dangle), midp.y + r * sin(angle + dangle))
+            self.addScaledPolygon(QBrush(pen.color()), [tip, m1, m2, tip], QPointF(midp.x, midp.y), 4 * r / dlen)
+        self.addLines(pen, [sp, ep], False, darken=False)
 
     def addPolygons(self, brush, polygons, has_arcs=False, darken=True):
-        #if has_arcs:
-        #    points = CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor())
+        if has_arcs:
+            polygons = [CircleFitter.interpolate_arcs(points, gcodegen.debug_simplify_arcs, self.scalingFactor()) for points in polygons]
         self.addFilledPath(brush, polygons, darken=darken)
 
     def processMove(self, e):
@@ -366,6 +427,8 @@ class PathViewer(QWidget):
         if self.click_data:
             self.processMove(e)
         p = self.unproject(e.localPos())
+        self.emitCoordsUpdated(p)
+    def emitCoordsUpdated(self, p):
         self.coordsUpdated.emit(p.x(), p.y())
 
     def enterEvent(self, e):

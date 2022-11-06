@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common import geom
 from DerpCAM.common.guiutils import Format, Spinner, is_gui_application
 from DerpCAM import cam
-from DerpCAM.cam import dogbone, gcodegen, shapes, milling_tool
+from DerpCAM.cam import dogbone, gcodegen, gcodeops, shapes, milling_tool
 
 from . import canvas, inventory
 from .propsheet import EnumClass, IntEditableProperty, \
@@ -123,19 +123,11 @@ class DrawingItemTreeItem(CAMTreeItem):
         return QPen(self.selectedItemDrawingPen.color(), self.selectedItemDrawingPen.widthF() / scale), False
     def selectedItemPen2Func(self, item, scale):
         return QPen(self.selectedItemDrawingPen2.color(), self.selectedItemDrawingPen2.widthF() / scale), False
-    def penForPath(self, path, modeData):
-        if modeData[0] == canvas.DrawingUIMode.MODE_ISLANDS:
-            if modeData[1].shape_id == self.shape_id:
-                return self.defaultDrawingPen
-            if self.shape_id in modeData[1].islands:
-                return self.selectedItemPen2Func
-            if geom.bounds_overlap(self.bounds, modeData[1].orig_shape.bounds):
-                return self.defaultDrawingPen
-            return self.defaultGrayPen
-        if modeData[0] == canvas.DrawingUIMode.MODE_TABS:
-            if modeData[1].shape_id == self.shape_id:
-                return self.defaultDrawingPen
-            return self.defaultGrayPen
+    def penForPath(self, path, editor):
+        if editor is not None:
+            pen = editor.penForPath(self, path)
+            if pen is not None:
+                return pen
         return lambda item, scale: self.selectedItemPenFunc(item, scale) if self.untransformed in path.selection else (self.defaultDrawingPen, False)
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id }
@@ -148,8 +140,8 @@ class DrawingItemTreeItem(CAMTreeItem):
         elif rtype == 'DrawingCircle' or rtype == 'DrawingCircleTreeItem':
             item = DrawingCircleTreeItem(document, geom.PathPoint(dump['cx'], dump['cy']), dump['r'])
         elif rtype == 'DrawingTextTreeItem':
-            item = DrawingTextTreeItem(document, geom.PathPoint(dump['x'], dump['y']),
-                DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font']), dump['text'])
+            item = DrawingTextTreeItem(document, geom.PathPoint(dump['x'], dump['y']), dump.get('target_width', None),
+                DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font'], dump.get('spacing', 0)), dump['text'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
         item.shape_id = dump['shape_id']
@@ -163,7 +155,7 @@ class DrawingItemTreeItem(CAMTreeItem):
         return CAMTreeItem.data(self, role)
     def invalidatedObjects(self, aspect):
         if aspect == InvalidateAspect.CAM:
-            return set([self] + self.document.allOperations(lambda item: item.shape_id == self.shape_id))
+            return set([self] + self.document.allOperations(lambda item: item.usesShape(self.shape_id)))
         # Settings of operations are not affected and don't need to be refreshed
         return set([self])
 
@@ -178,6 +170,7 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         self.r = r
         self.calcBounds()
         self.untransformed = untransformed if untransformed is not None else self
+    @classmethod
     def properties(self):
         return [self.prop_x, self.prop_y, self.prop_dia, self.prop_radius]
     def getPropertyValue(self, name):
@@ -208,8 +201,8 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
             self.centre.x + self.r, self.centre.y + self.r)
     def distanceTo(self, pt):
         return abs(geom.dist(self.centre, pt) - self.r)
-    def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), geom.circle(self.centre.x, self.centre.y, self.r), True)
+    def renderTo(self, path, editor):
+        path.addLines(self.penForPath(path, editor), geom.circle(self.centre.x, self.centre.y, self.r), True)
     def label(self):
         return "Circle%d" % self.shape_id
     def textDescription(self):
@@ -228,22 +221,30 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         res['cy'] = self.centre.y
         res['r'] = self.r
         return res
+    def startEndPos(self):
+        p = geom.PathPoint(self.centre.x + self.r, self.centre.y)
+        return (p, p)
 
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
-    def __init__(self, document, points, closed, untransformed = None):
+    prop_points = SetEditableProperty("Points", "points", format_func=lambda value: f"{len(value)} points - double-click to edit", edit_func=lambda item: item.editPoints())
+
+    def __init__(self, document, points, closed, untransformed=None, src_name=None):
         DrawingItemTreeItem.__init__(self, document)
         self.points = points
-        if points:
-            self.bounds = geom.Path(self.points, closed).bounds()
-        else:
-            self.bounds = None
         self.closed = closed
         self.untransformed = untransformed if untransformed is not None else self
+        self.src_name = src_name
+        self.calcBounds()
     def store(self):
         res = DrawingItemTreeItem.store(self)
         res['points'] = [ i.as_tuple() for i in self.points ]
         res['closed'] = self.closed
         return res
+    @classmethod
+    def properties(self):
+        return [self.prop_points]
+    def editPoints(self):
+        self.document.polylineEditRequested.emit(self)
     def distanceTo(self, pt):
         if not self.points:
             return None
@@ -256,14 +257,23 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         return pti
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
-    def renderTo(self, path, modeData):
-        path.addLines(self.penForPath(path, modeData), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+    def renderTo(self, path, editor):
+        if not self.points:
+            return
+        path.addLines(self.penForPath(path, editor), geom.CircleFitter.interpolate_arcs(self.points, False, path.scalingFactor()), self.closed)
+    def calcBounds(self):
+        if self.points:
+            self.bounds = geom.Path(self.points, self.closed).bounds()
+        else:
+            self.bounds = None
     def label(self):
         if len(self.points) == 2:
             if self.points[1].is_point():
                 return "Line%d" % self.shape_id
             else:
                 return "Arc%d" % self.shape_id
+        if self.src_name is not None:
+            return self.src_name + str(self.shape_id)
         return "Polyline%d" % self.shape_id
     def textDescription(self):
         if len(self.points) == 2:
@@ -274,49 +284,122 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
                 arc = self.points[1]
                 c = arc.c
                 return self.label() + "(X=%s, Y=%s, R=%s, start=%0.2f\u00b0, span=%0.2f\u00b0" % (Format.coord(c.cx, brief=True), Format.coord(c.cy, brief=True), Format.coord(c.r, brief=True), arc.sstart * 180 / math.pi, arc.sspan * 180 / math.pi)
+        if self.bounds is None:
+            return self.label() + " (empty)"
         return self.label() + f"{Format.point_tuple(self.bounds[:2], brief=True)}-{Format.point_tuple(self.bounds[2:], brief=True)}"
     def toShape(self):
         return shapes.Shape(geom.CircleFitter.interpolate_arcs(self.points, False, 1.0), self.closed)
+    @staticmethod
+    def ellipse(document, centre, major, ratio, start_param, end_param):
+        zero = geom.PathPoint(0, 0)
+        if end_param < start_param:
+            end_param += 2 * math.pi
+        major_r = zero.dist(major)
+        major_angle = major.angle_to(zero)
+        n = int((end_param - start_param) * major_r * geom.GeometrySettings.RESOLUTION)
+        points = []
+        limit = n + 1
+        closed = False
+        if end_param - start_param >= 2 * math.pi - 0.001:
+            limit = n
+            closed = True
+        for i in range(n + 1):
+            angle = start_param + (end_param - start_param) * i / n
+            x1 = major_r * math.cos(angle)
+            y1 = major_r * ratio * math.sin(angle)
+            x2 = centre.x + x1 * math.cos(major_angle) - y1 * math.sin(major_angle)
+            y2 = centre.y + y1 * math.cos(major_angle) + x1 * math.sin(major_angle)
+            points.append(geom.PathPoint(x2, y2))
+        return DrawingPolylineTreeItem(document, points, closed, src_name="Ellipse")
+    def startEndPos(self):
+        if self.closed:
+            return (self.points[0], self.points[0])
+        else:
+            return (self.points[0].seg_start(), self.points[-1].seg_end())
         
+class DrawingTextStyleHAlign(EnumClass):
+    LEFT = 0
+    CENTRE = 1
+    RIGHT = 2
+    ALIGNED = 3
+    MIDDLE = 4
+    FIT = 5
+    descriptions = [
+        (LEFT, "Left"),
+        (CENTRE, "Centre"),
+        (RIGHT, "Right"),
+        (ALIGNED, "Aligned"),
+        (MIDDLE, "Middle"),
+        (FIT, "Fit"),
+    ]
+
+class DrawingTextStyleVAlign(EnumClass):
+    BASELINE = 0
+    BOTTOM = 1
+    MIDDLE = 2
+    TOP = 3
+    descriptions = [
+        (BASELINE, "Baseline"),
+        (BOTTOM, "Bottom"),
+        (MIDDLE, "Middle"),
+        (TOP, "Top"),
+    ]
+
 class DrawingTextStyle(object):
-    def __init__(self, height, width, halign, valign, angle, font_name):
+    def __init__(self, height, width, halign, valign, angle, font_name, spacing):
         self.height = height
         self.width = width
         self.halign = halign
         self.valign = valign
         self.angle = angle
         self.font_name = font_name
+        self.spacing = spacing
 
 class DrawingTextTreeItem(DrawingItemTreeItem):
-    prop_x = FloatDistEditableProperty("Anchor X", "x", Format.coord, unit="mm", allow_none=False)
-    prop_y = FloatDistEditableProperty("Anchor Y", "y", Format.coord, unit="mm", allow_none=False)
+    prop_x = FloatDistEditableProperty("Insert X", "x", Format.coord, unit="mm", allow_none=False)
+    prop_y = FloatDistEditableProperty("Insert Y", "y", Format.coord, unit="mm", allow_none=False)
     prop_text = StringEditableProperty("Text", "text", False)
     prop_font = FontEditableProperty("Font face", "font")
     prop_height = FloatDistEditableProperty("Font size", "height", Format.coord, min=1, unit="mm", allow_none=False)
     prop_width = FloatDistEditableProperty("Stretch", "width", Format.percent, min=10, unit="%", allow_none=False)
+    prop_spacing = FloatDistEditableProperty("Letter spacing", "spacing", Format.coord, min=0, allow_none=False)
     prop_angle = FloatDistEditableProperty("Angle", "angle", Format.angle, min=-360, max=360, unit='\u00b0', allow_none=False)
-    def __init__(self, document, origin, style, text, untransformed = None):
+    prop_halign = EnumEditableProperty("Horizontal align", "halign", DrawingTextStyleHAlign, allow_none=False)
+    prop_valign = EnumEditableProperty("Vertical align", "valign", DrawingTextStyleVAlign, allow_none=False)
+    prop_target_width = FloatDistEditableProperty("Target width", "target_width", Format.coord, unit="mm", allow_none=True, min=0)
+    def __init__(self, document, origin, target_width, style, text, untransformed = None):
         DrawingItemTreeItem.__init__(self, document)
         self.untransformed = untransformed if untransformed is not None else self
         self.origin = origin
+        self.target_width = target_width
         self.style = style
         self.text = text
         self.closed = True
         self.createPaths()
     def properties(self):
-        return [ self.prop_x, self.prop_y, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle ]
+        return [ self.prop_x, self.prop_y, self.prop_text, self.prop_font, self.prop_height, self.prop_width, self.prop_angle, self.prop_spacing, self.prop_halign, self.prop_target_width, self.prop_valign ]
+    def isPropertyValid(self, name):
+        ha = DrawingTextStyleHAlign
+        if name == 'valign':
+            return self.style.halign in (ha.LEFT, ha.CENTRE, ha.RIGHT)
+        if name == 'target_width':
+            return self.style.halign in (ha.ALIGNED, ha.FIT)
+        return True
     def store(self):
         return { '_type' : type(self).__name__, 'shape_id' : self.shape_id,
             'text' : self.text, 'x' : self.origin.x, 'y' : self.origin.y,
+            'target_width' : self.target_width,
             'height' : self.style.height, 'width' : self.style.width,
             'halign' : self.style.halign, 'valign' : self.style.valign,
             'angle' : self.style.angle,
-            'font' : self.style.font_name, }
+            'font' : self.style.font_name, 'spacing' : self.style.spacing}
     def getPropertyValue(self, name):
         if name == 'x':
             return self.origin.x
         elif name == 'y':
             return self.origin.y
+        elif name == 'target_width':
+            return self.target_width
         elif name == 'text':
             return self.text
         elif name == 'font':
@@ -327,6 +410,12 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             return self.style.width * 100
         elif name == 'angle':
             return self.style.angle
+        elif name == 'spacing':
+            return self.style.spacing
+        elif name == 'halign':
+            return self.style.halign
+        elif name == 'valign':
+            return self.style.valign
         else:
             assert False, "Unknown property: " + name
     def setPropertyValue(self, name, value):
@@ -334,6 +423,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             self.origin = geom.PathPoint(value, self.origin.y)
         elif name == 'y':
             self.origin = geom.PathPoint(self.origin.x, value)
+        elif name == 'target_width':
+            self.target_width = value
         elif name == 'text':
             self.text = value
         elif name == 'font':
@@ -344,25 +435,33 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             self.style.width = value / 100
         elif name == 'angle':
             self.style.angle = value
+        elif name == 'spacing':
+            self.style.spacing = value
+        elif name == 'halign':
+            self.style.halign = value
+        elif name == 'valign':
+            self.style.valign = value
         else:
             assert False, "Unknown property: " + name
         self.createPaths()
         self.emitPropertyChanged(name)
     def translated(self, dx, dy):
-        tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.style, self.text, self.untransformed)
+        tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.target_width, self.style, self.text, self.untransformed)
         tti.shape_id = self.shape_id
         return tti
     def toShape(self):
         res = []
-        for i, path in enumerate(self.paths):
-            if path.orientation():
-                res[-1].add_island(path.nodes)
-            else:
-                res.append(shapes.Shape(path.nodes, path.closed))
+        if self.paths:
+            first_orientation = self.paths[0].orientation()
+            for i, path in enumerate(self.paths):
+                if path.orientation() != first_orientation:
+                    res[-1].add_island(path.nodes)
+                else:
+                    res.append(shapes.Shape(path.nodes, path.closed))
         return res
-    def renderTo(self, path, modeData):
+    def renderTo(self, path, editor):
         for i in self.paths:
-            path.addLines(self.penForPath(path, modeData), i.nodes, i.closed)
+            path.addLines(self.penForPath(path, editor), i.nodes, i.closed)
     def distanceTo(self, pt):
         mindist = None
         for path in self.paths:
@@ -387,29 +486,48 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
             scale = 1000 / self.style.height
         if not isinstance(QCoreApplication.instance(), QGuiApplication):
             raise Exception("Use --allow-text for converting files using text objects")
-        font = QFont(self.style.font_name, int(self.style.height * scale), 400, False)
+        font = QFont(self.style.font_name, 1, 400, False)
+        font.setPointSizeF(self.style.height * scale)
+        font.setLetterSpacing(QFont.AbsoluteSpacing, self.style.spacing * scale)
         metrics = QFontMetrics(font)
-        twidth = metrics.horizontalAdvance(self.text) / scale
+        width = self.style.width
+        angle = -self.style.angle
+        twidth = metrics.horizontalAdvance(self.text) / scale * self.style.width
         x, y = self.origin.x, self.origin.y
-        if self.style.halign == 2: # right
+        if self.style.halign == DrawingTextStyleHAlign.RIGHT:
             x -= twidth
-        if self.style.halign == 1: # center
+        elif self.style.halign == DrawingTextStyleHAlign.CENTRE:
             x -= twidth / 2
-        if self.style.valign == 1:
-            y += metrics.descent() / scale
-        if self.style.valign == 2:
+        elif self.style.halign == DrawingTextStyleHAlign.ALIGNED:
+            if twidth and self.target_width:
+                font.setPointSizeF(self.style.height * (self.target_width / (width * twidth) * scale))
+                metrics = QFontMetrics(font)
+        elif self.style.halign == DrawingTextStyleHAlign.FIT:
+            if twidth and self.target_width:
+                width *= self.target_width / twidth
+        elif self.style.halign == DrawingTextStyleHAlign.MIDDLE:
+            x -= twidth / 2
+            # This is likely wrong, but I don't have a better idea
             y -= metrics.capHeight() / 2 / scale
-        if self.style.valign == 3:
-            y -= metrics.capHeight() / scale
+        # For non-special H alignment values, use V alignment
+        if self.style.halign < DrawingTextStyleHAlign.ALIGNED:
+            if self.style.valign == DrawingTextStyleVAlign.BOTTOM:
+                y += metrics.descent() / scale
+            elif self.style.valign == DrawingTextStyleVAlign.MIDDLE:
+                y -= metrics.capHeight() / 2 / scale
+            elif self.style.valign == DrawingTextStyleVAlign.TOP:
+                y -= metrics.capHeight() / scale
         ppath = QPainterPath()
         ppath.addText(0, 0, font, self.text)
-        transform = QTransform().rotate(-self.style.angle)
+        transform = QTransform().rotate(angle).scale(width, 1)
         polygons = ppath.toSubpathPolygons(transform)
         self.paths = []
         for i in polygons:
-            #polyline = DrawingPolylineTreeItem(self.document, )
-            self.paths.append(geom.Path([geom.PathPoint(p.x() * self.style.width / scale + x, -p.y() / scale + y) for p in i], True))
+            self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y) for p in i], True))
         self.calcBounds()
+    def startEndPos(self):
+        if self.paths:
+            return (self.paths[0].seg_start(), self.paths[-1].seg_end())
 
 class CAMListTreeItem(CAMTreeItem):
     def __init__(self, document, name):
@@ -421,8 +539,8 @@ class CAMListTreeItem(CAMTreeItem):
         pass
     
 class DrawingTreeItem(CAMListTreeItem):
-    prop_x_offset = FloatDistEditableProperty("X offset", "x_offset", Format.coord, unit="mm")
-    prop_y_offset = FloatDistEditableProperty("Y offset", "y_offset", Format.coord, unit="mm")
+    prop_x_offset = FloatDistEditableProperty("X origin", "x_offset", Format.coord, unit="mm")
+    prop_y_offset = FloatDistEditableProperty("Y origin", "y_offset", Format.coord, unit="mm")
     def __init__(self, document):
         CAMListTreeItem.__init__(self, document, "Drawing")
     def resetProperties(self):
@@ -443,11 +561,24 @@ class DrawingTreeItem(CAMListTreeItem):
         return (b[0] - self.x_offset - margin, b[1] - self.y_offset - margin, b[2] - self.x_offset + margin, b[3] - self.y_offset + margin)
     def importDrawing(self, name):
         doc = ezdxf.readfile(name)
-        self.reset()
         msp = doc.modelspace()
+        existing = {}
+        for item in self.items():
+            itemRepr = item.store()
+            del itemRepr['shape_id']
+            itemStr = json.dumps(itemRepr)
+            existing[itemStr] = item
+        itemsToAdd = []
         for entity in msp:
-            self.importDrawingEntity(entity)
-        self.document.drawingImported.emit(name)
+            item = self.importDrawingEntity(entity)
+            if item is not None:
+                itemRepr = item.store()
+                del itemRepr['shape_id']
+                itemStr = json.dumps(itemRepr)
+                if itemStr not in existing:
+                    itemsToAdd.append(item)
+        self.document.opAddDrawingItems(itemsToAdd)
+        self.document.drawingImported.emit()
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()
         inch_mode = geom.GeometrySettings.dxf_inches
@@ -456,14 +587,25 @@ class DrawingTreeItem(CAMListTreeItem):
             return geom.PathPoint(x * scaling, y * scaling)
         if dxftype == 'LWPOLYLINE':
             points, closed = geom.dxf_polyline_to_points(entity, scaling)
-            self.addItem(DrawingPolylineTreeItem(self.document, points, closed))
+            return DrawingPolylineTreeItem(self.document, points, closed)
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
-            self.addItem(DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False))
+            return DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False)
+        elif dxftype == 'ELLIPSE':
+            centre = pt(entity.dxf.center[0], entity.dxf.center[1])
+            return DrawingPolylineTreeItem.ellipse(self.document, centre, pt(entity.dxf.major_axis[0], entity.dxf.major_axis[1]), entity.dxf.ratio, entity.dxf.start_param, entity.dxf.end_param)
+        elif dxftype == 'SPLINE':
+            iter = entity.flattening(1.0 / geom.GeometrySettings.RESOLUTION)
+            points = [geom.PathPoint(i[0], i[1]) for i in iter]
+            return DrawingPolylineTreeItem(self.document, points, entity.closed, src_name="Spline")
+        elif dxftype == 'LINE':
+            start = tuple(entity.dxf.start)[0:2]
+            end = tuple(entity.dxf.end)[0:2]
+            return DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False)
         elif dxftype == 'CIRCLE':
             centre = pt(entity.dxf.center[0], entity.dxf.center[1])
-            self.addItem(DrawingCircleTreeItem(self.document, centre, entity.dxf.radius * scaling))
+            return DrawingCircleTreeItem(self.document, centre, entity.dxf.radius * scaling)
         elif dxftype == 'ARC':
             start = pt(entity.start_point[0], entity.start_point[1])
             end = pt(entity.end_point[0], entity.end_point[1])
@@ -476,13 +618,23 @@ class DrawingTreeItem(CAMListTreeItem):
             else:
                 sspan = eangle - sangle
             points = [start, geom.PathArc(start, end, c, 50, sangle, sspan)]
-            self.addItem(DrawingPolylineTreeItem(self.document, points, False))
+            return DrawingPolylineTreeItem(self.document, points, False)
         elif dxftype == 'TEXT':
             font = "OpenSans"
-            style = DrawingTextStyle(entity.dxf.height * scaling, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font)
-            self.addItem(DrawingTextTreeItem(self.document, pt(entity.dxf.insert[0], entity.dxf.insert[1]), style, entity.dxf.text))
+            style = DrawingTextStyle(entity.dxf.height * scaling, entity.dxf.width, entity.dxf.halign, entity.dxf.valign, entity.dxf.rotation, font, 0)
+            target_width = None
+            ap = entity.dxf.align_point
+            ip = pt(entity.dxf.insert[0], entity.dxf.insert[1])
+            if entity.dxf.align_point is None:
+                ap = ip
+            else:
+                ap = pt(entity.dxf.align_point[0], entity.dxf.align_point[1])
+                target_width = ap.dist(ip)
+            rp = ip if entity.dxf.halign in (0, 3, 5) else ap
+            return DrawingTextTreeItem(self.document, rp, target_width, style, entity.dxf.text)
         else:
             print ("Ignoring DXF entity: %s" % dxftype)
+        return None
     def renderTo(self, path, modeData):
         # XXXKF convert
         for i in self.items():
@@ -502,7 +654,7 @@ class DrawingTreeItem(CAMListTreeItem):
         found = []
         mindist = margin
         for item in self.items():
-            if geom.point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
+            if item.bounds is not None and geom.point_inside_bounds(geom.expand_bounds(item.bounds, margin), xy):
                 distance = item.distanceTo(xy)
                 if distance is not None and distance < margin:
                     mindist = min(mindist, distance)
@@ -635,11 +787,20 @@ class ToolListTreeItem(CAMListTreeItemWithChildren):
     def createChildItem(self, data):
         return ToolTreeItem(self.document, data, True)
 
+class MaterialEnumEditableProperty(EnumEditableProperty):
+    def descriptions(self):
+        res = []
+        mat = inventory.inventory.cutter_materials
+        for k, v in mat.items():
+            res.append((v, v.name))
+        return res
+
 class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatDistEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
     prop_length = FloatDistEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
+    prop_material = MaterialEnumEditableProperty("Material", "material", inventory.CutterMaterial, allow_none=False)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -662,9 +823,9 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length]
+            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material]
         elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_length]
+            return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material]
         return []
     def resetProperties(self):
         self.emitPropertyChanged()
@@ -693,6 +854,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, default_value=0)
+    prop_roughing_offset = FloatDistEditableProperty("Roughing Offset", "roughing_offset", Format.coord, unit="mm", min=0, max=20, default_value=0)
     prop_stepover = FloatDistEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=False)
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
@@ -700,6 +862,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True)
     
     props_percent = set(['stepover', 'extra_width', 'trc_rate', 'eh_diameter'])
 
@@ -735,10 +898,10 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter, klass.prop_entry_mode]
     @classmethod
     def properties_drillbit(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed]
+        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
@@ -755,9 +918,12 @@ class ToolPresetTreeItem(CAMTreeItem):
             if present:
                 return value
         elif name == 'surf_speed':
-            return self.inventory_preset.toolbit.diameter * math.pi * self.inventory_preset.rpm / 1000 if self.inventory_preset.rpm else None
+            return self.inventory_preset.toolbit.diameter * math.pi * self.inventory_preset.rpm if self.inventory_preset.rpm else None
         elif name == 'chipload':
-            return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
+            if isinstance(self.inventory_preset.toolbit, inventory.EndMillCutter):
+                return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
+            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+                return self.inventory_preset.vfeed / self.inventory_preset.rpm if self.inventory_preset.vfeed and self.inventory_preset.rpm else None
         else:
             return getattr(self.inventory_preset, name)
     def setPropertyValue(self, name, value):
@@ -779,21 +945,29 @@ class ToolPresetTreeItem(CAMTreeItem):
             setattr(self.inventory_preset, name, value)
         elif name == 'surf_speed':
             if value:
-                rpm = value * 1000 / (self.inventory_preset.toolbit.diameter * math.pi)
+                rpm = value / (self.inventory_preset.toolbit.diameter * math.pi)
                 if rpm >= self.prop_rpm.min and rpm <= self.prop_rpm.max:
                     self.inventory_preset.rpm = rpm
             else:
                 self.inventory_preset.rpm = None
         elif name == 'chipload':
-            if value and self.inventory_preset.rpm:
-                hfeed = self.inventory_preset.rpm * value * (self.inventory_preset.toolbit.flutes or 2)
-                if hfeed >= self.prop_hfeed.min and hfeed <= self.prop_hfeed.max:
-                    self.inventory_preset.hfeed = hfeed
-            else:
-                self.inventory_preset.hfeed = None
+            if isinstance(self.inventory_preset.toolbit, inventory.EndMillCutter):
+                if value and self.inventory_preset.rpm:
+                    hfeed = self.inventory_preset.rpm * value * (self.inventory_preset.toolbit.flutes or 2)
+                    if hfeed >= self.prop_hfeed.min and hfeed <= self.prop_hfeed.max:
+                        self.inventory_preset.hfeed = hfeed
+                else:
+                    self.inventory_preset.hfeed = None
+            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+                if value and self.inventory_preset.rpm:
+                    vfeed = self.inventory_preset.rpm * value
+                    if vfeed >= self.prop_vfeed.min and vfeed <= self.prop_vfeed.max:
+                        self.inventory_preset.vfeed = vfeed
+                else:
+                    self.inventory_preset.vfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
-        if name in ['offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter']:
+        if name in ['roughing_offset', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode']:
             # There are other things that might require a recalculation, but do not result in visible changes
             self.document.startUpdateCAM(subset=self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
         self.emitPropertyChanged(name)
@@ -807,12 +981,26 @@ class MaterialType(EnumClass):
     WOOD = 0
     PLASTICS = 1
     ALU = 2
-    STEEL = 3
+    MILD_STEEL = 3
+    ALLOY_STEEL = 4
+    TOOL_STEEL = 5
+    STAINLESS_STEEL = 6
+    CAST_IRON = 7
+    MALLEABLE_IRON = 8
+    BRASS = 9
+    FOAM = 10
     descriptions = [
+        (FOAM, "Foam", milling_tool.material_foam),
         (WOOD, "Wood/MDF", milling_tool.material_wood),
         (PLASTICS, "Plastics", milling_tool.material_plastics),
         (ALU, "Aluminium", milling_tool.material_aluminium),
-        (STEEL, "Mild steel", milling_tool.material_mildsteel),
+        (BRASS, "Brass", milling_tool.material_brass),
+        (MILD_STEEL, "Mild steel", milling_tool.material_mildsteel),
+        (ALLOY_STEEL, "Alloy or MC steel", milling_tool.material_alloysteel),
+        (TOOL_STEEL, "Tool steel", milling_tool.material_toolsteel),
+        (STAINLESS_STEEL, "Stainless steel", milling_tool.material_stainlesssteel),
+        (CAST_IRON, "Cast iron - gray", milling_tool.material_castiron),
+        (MALLEABLE_IRON, "Cast iron - malleable", milling_tool.material_malleableiron),
     ]
 
 class WorkpieceTreeItem(CAMTreeItem):
@@ -824,8 +1012,8 @@ class WorkpieceTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
     def resetProperties(self):
-        self.material = MaterialType.WOOD
-        self.thickness = 3
+        self.material = None
+        self.thickness = None
         self.clearance = self.document.config_settings.clearance_z
         self.safe_entry_z = self.document.config_settings.safe_entry_z
         self.emitPropertyChanged()
@@ -833,10 +1021,13 @@ class WorkpieceTreeItem(CAMTreeItem):
         return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
     def data(self, role):
         if role == Qt.DisplayRole:
+            mname = MaterialType.toString(self.material) if self.material is not None else "unknown material"
             if self.thickness is not None:
-                return QVariant("Workpiece: %s %s" % (Format.depth_of_cut(self.thickness), MaterialType.toString(self.material)))
+                return QVariant(f"Workpiece: {Format.depth_of_cut(self.thickness)} {mname}")
+            elif self.material is not None:
+                return QVariant(f"Workpiece: {mname}, unknown thickness")
             else:
-                return QVariant("Workpiece: ? %s" % (MaterialType.toString(self.material)))
+                return QVariant(f"Workpiece: unknown material or thickness")
         return CAMTreeItem.data(self, role)
     def onPropertyValueSet(self, name):
         #if name == 'material':
@@ -910,6 +1101,7 @@ class CycleTreeItem(CAMTreeItem):
         self.setCheckable(True)
         self.setAutoTristate(True)
         self.cutter = cutter
+        self.setCheckState(Qt.CheckState.Checked)
     def toString(self):
         return "Tool cycle"
     @staticmethod
@@ -928,7 +1120,8 @@ class CycleTreeItem(CAMTreeItem):
     def operCheckState(self):
         return CycleTreeItem.listCheckState(self.items())
     def updateCheckState(self):
-        self.setCheckState(self.operCheckState())
+        if self.items():
+            self.setCheckState(self.operCheckState())
     def data(self, role):
         if role == Qt.DisplayRole:
             return QVariant(f"Use tool: {self.cutter.name}")
@@ -1001,6 +1194,7 @@ class PresetDerivedAttributes(object):
     attrs_endmill = [
         PresetDerivedAttributeItem('hfeed'),
         PresetDerivedAttributeItem('offset', def_value=0),
+        PresetDerivedAttributeItem('roughing_offset', def_value=0),
         PresetDerivedAttributeItem('stepover', preset_scale=100),
         PresetDerivedAttributeItem('extra_width', preset_scale=100, def_value=0),
         PresetDerivedAttributeItem('trc_rate', preset_scale=100, def_value=0),
@@ -1008,13 +1202,14 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
         PresetDerivedAttributeItem('axis_angle', def_value=0),
         PresetDerivedAttributeItem('eh_diameter', preset_scale=100, def_value=50),
+        PresetDerivedAttributeItem('entry_mode', def_value=inventory.EntryMode.PREFER_HELIX),
     ]
     attrs_all = attrs_common + attrs_endmill
     attrs = {
         inventory.EndMillCutter : {i.name : i for i in attrs_all},
         inventory.DrillBitCutter : {i.name : i for i in attrs_common},
     }
-    def __init__(self, operation, preset=None):
+    def __init__(self, operation, preset=None, addError=None):
         if preset is None:
             preset = operation.tool_preset
         self.operation = operation
@@ -1024,6 +1219,40 @@ class PresetDerivedAttributes(object):
             dirty, value = attr.resolve(operation, preset)
             setattr(self, attr.name, value)
             self.dirty = self.dirty or dirty
+        # Material defaults
+        if operation.document.material.material is not None and operation.cutter is not None:
+            m = MaterialType.toTuple(operation.document.material.material)[2]
+            t = operation.cutter
+            try:
+                if isinstance(operation.cutter, inventory.EndMillCutter):
+                    if not all([self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover]):
+                        # Slotting penalty
+                        f = 1
+                        if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
+                            f = 0.6
+                        st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params)
+                        if self.rpm is None:
+                            self.rpm = st.rpm
+                        if self.hfeed is None:
+                            self.hfeed = st.hfeed * f
+                        if self.vfeed is None:
+                            self.vfeed = st.vfeed * f
+                        if self.doc is None:
+                            self.doc = st.maxdoc * f
+                        if self.stepover is None:
+                            self.stepover = st.stepover * 100
+                elif isinstance(operation.cutter, inventory.DrillBitCutter):
+                    if not all([self.rpm, self.vfeed, self.doc]):
+                        st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
+                        if self.rpm is None:
+                            self.rpm = st.rpm
+                        if self.vfeed is None:
+                            self.vfeed = st.vfeed
+                        if self.doc is None:
+                            self.doc = st.maxdoc
+            except ValueError as e:
+                if addError:
+                    addError(str(e))
     def validate(self, errors):
         if self.vfeed is None:
             errors.append("Plunge rate is not set")
@@ -1080,22 +1309,67 @@ class WorkerThread(threading.Thread):
         self.worker_func = workerFunc
         self.parent_operation = parentOp
         self.exception = None
+        self.exception_text = None
+        self.progress = (0, 10000000)
+        self.cancelled = False
         threading.Thread.__init__(self, target=self.threadMain)
+    def getProgress(self):
+        return self.progress
+    def cancel(self):
+        self.cancelled = True
     def threadMain(self):
         try:
-            if isinstance(self.worker_func, list):
-                # XXXKF this gives pretty bad progress reporting
-                for fn in self.worker_func:
-                    if self.parent_operation.cam and fn is not None:
-                        fn()
-            else:
-                self.worker_func()
+            self.worker_func()
             if self.parent_operation.cam and self.parent_operation.cam.is_nothing():
                 self.parent_operation.addWarning("No cuts produced")
+            self.progress = (self.progress[1], self.progress[1])
         except Exception as e:
-            self.exception = e
             import traceback
+            errorText = str(e)
+            if not errorText:
+                if isinstance(e, AssertionError):
+                    errorText = traceback.format_exc(limit=1)
+                else:
+                    errorText = type(e).__name__
+            self.exception = e
+            self.exception_text = errorText
+            if self.parent_operation and not self.parent_operation.error:
+                self.parent_operation.error = errorText
             traceback.print_exc()
+
+class WorkerThreadPack(object):
+    def __init__(self, parentOp, workerFuncList):
+        self.threads = [WorkerThread(parentOp, workerFunc) for workerFunc in workerFuncList]
+        self.exception = None
+        self.exception_text = None
+    def getProgress(self):
+        num = denom = 0
+        for thread in self.threads:
+            progress = thread.getProgress()
+            num += progress[0]
+            denom += progress[1]
+        return (num, denom)
+    def start(self):
+        for thread in self.threads:
+            thread.start()
+    def cancel(self):
+        for thread in self.threads:
+            thread.cancel()
+    def join(self):
+        for thread in self.threads:
+            thread.join()
+        exceptions = ""
+        for thread in self.threads:
+            if thread.exception is not None:
+                self.exception = thread.exception
+                break
+        for thread in self.threads:
+            if thread.exception is not None:
+                exceptions += thread.exception_text
+        if exceptions:
+            self.exception_text = exceptions
+    def is_alive(self):
+        return any([thread.is_alive() for thread in self.threads])
 
 def cutterTypesForOperationType(operationType):
     return (inventory.DrillBitCutter, inventory.EndMillCutter) if operationType == OperationType.DRILLED_HOLE else inventory.EndMillCutter
@@ -1109,16 +1383,19 @@ class OperationTreeItem(CAMTreeItem):
     prop_tab_height = FloatDistEditableProperty("Tab Height", "tab_height", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True, none_value="full height")
     prop_tab_count = IntEditableProperty("# Auto Tabs", "tab_count", "%d", min=0, max=100, allow_none=True, none_value="default")
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join([f"({Format.coord(i.x)}, {Format.coord(i.y)})" for i in value]), edit_func=lambda item: item.editTabLocations())
+    prop_entry_exit = SetEditableProperty("Entry/Exit points", "entry_exit", format_func=lambda value: ("Applied" if value else "Not applied") + " - double-click to edit", edit_func=lambda item: item.editEntryExit())
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True, none_value="(use preset value)")
 
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
     prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, allow_none=True)
+    prop_roughing_offset = FloatDistEditableProperty("Roughing offset", "roughing_offset", Format.coord, unit="mm", min=0, max=20, allow_none=True)
     prop_stepover = FloatDistEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatDistEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
@@ -1131,13 +1408,17 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = None
         self.orig_shape = None
         self.shape = None
+        self.shape_to_refine = None
         self.resetProperties()
         self.isSelected = False
         self.error = None
         self.warning = None
         self.worker = None
         self.prev_diameter = None
-        self.startUpdateCAM()
+        self.cam = None
+        self.renderer = None
+        self.error = None
+        self.warning = None
     def resetProperties(self):
         self.active = True
         self.updateCheckState()
@@ -1149,9 +1430,11 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_height = None
         self.tab_count = None
         self.offset = 0
+        self.roughing_offset = 0
         self.islands = set()
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
+        self.entry_exit = []
         PresetDerivedAttributes.resetPresetDerivedValues(self)
     def updateCheckState(self):
         if not self.active and self.cam is not None:
@@ -1162,17 +1445,26 @@ class OperationTreeItem(CAMTreeItem):
         self.document.tabEditRequested.emit(self)
     def editIslands(self):
         self.document.islandsEditRequested.emit(self)
+    def editEntryExit(self):
+        self.document.entryExitEditRequested.emit(self)
     def areIslandsEditable(self):
         if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
+    def usesShape(self, shape_id):
+        if self.shape_id == shape_id:
+            return True
+        for i in self.islands:
+            if i == shape_id:
+                return True
+        return False
     def toString(self):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
         has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE)
         has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
-        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs']:
+        if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'entry_exit']:
             return False
         if not has_islands and name == 'pocket_strategy':
             return False
@@ -1214,6 +1506,7 @@ class OperationTreeItem(CAMTreeItem):
         dump['shape_id'] = self.shape_id
         dump['islands'] = list(sorted(self.islands))
         dump['user_tabs'] = list(sorted([(pt.x, pt.y) for pt in self.user_tabs]))
+        dump['entry_exit'] = [[(pts[0].x, pts[0].y), (pts[1].x, pts[1].y)] for pts in self.entry_exit]
         dump['cutter'] = self.cutter.id
         dump['tool_preset'] = self.tool_preset.id if self.tool_preset else None
         return dump
@@ -1221,19 +1514,20 @@ class OperationTreeItem(CAMTreeItem):
         self.shape_id = dump.get('shape_id', None)
         self.islands = set(dump.get('islands', []))
         self.user_tabs = set(geom.PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
+        self.entry_exit = [(geom.PathPoint(i[0][0], i[0][1]), geom.PathPoint(i[1][0], i[1][1])) for i in dump.get('entry_exit', [])]
         self.active = dump.get('active', True)
         self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
-            self.prop_dogbones,
+            self.prop_entry_exit, self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands, self.prop_pocket_strategy, self.prop_axis_angle,
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
-            self.prop_offset,
-            self.prop_stepover, self.prop_eh_diameter,
+            self.prop_offset, self.prop_roughing_offset,
+            self.prop_stepover, self.prop_eh_diameter, self.prop_entry_mode,
             self.prop_trc_rate, self.prop_rpm]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
@@ -1241,13 +1535,7 @@ class OperationTreeItem(CAMTreeItem):
                 from . import cutter_mgr
                 pda = PresetDerivedAttributes(self)
                 preset = pda.toPreset("")
-                if isinstance(self.cutter, inventory.EndMillCutter):
-                    dlgclass = cutter_mgr.CreateEditEndMillPresetDialog
-                elif isinstance(self.cutter, inventory.DrillBitCutter):
-                    dlgclass = cutter_mgr.CreateEditDrillBitPresetDialog
-                else:
-                    return
-                dlg = dlgclass(title="Create a preset from operation attributes", preset=preset)
+                dlg = cutter_mgr.CreateEditPresetDialog(parent=None, title="Create a preset from operation attributes", preset=preset, cutter_type=type(self.cutter), cutter_for_add=self.cutter)
                 if dlg.exec_():
                     self.tool_preset = dlg.result
                     self.tool_preset.toolbit = self.cutter
@@ -1267,7 +1555,14 @@ class OperationTreeItem(CAMTreeItem):
                     self.startUpdateCAM()
                     self.document.refreshToolList()
                 return
+        if name == 'direction' and self.entry_exit:
+            pda = PresetDerivedAttributes(self)
+            old_orientation = pda.direction
         setattr(self, name, value)
+        if name == 'direction' and self.entry_exit:
+            pda = PresetDerivedAttributes(self)
+            if pda.direction != old_orientation:
+                self.entry_exit = [(e, s) for s, e in self.entry_exit]
         self.onPropertyValueSet(name)
     def onPropertyValueSet(self, name):
         if name == 'cutter' and self.parent().cutter != self.cutter:
@@ -1322,38 +1617,47 @@ class OperationTreeItem(CAMTreeItem):
         self.emitDataChanged()
     def updateOrigShape(self):
         self.orig_shape = self.document.drawing.itemById(self.shape_id) if self.shape_id is not None else None
+    def resetRenderedState(self):
+        self.renderer = None
+        self.document.operationsUpdated.emit()
     def startUpdateCAM(self):
         with Spinner():
-            self.updateOrigShape()
+            self.last_progress = (1, 100000)
             self.error = None
             self.warning = None
             self.cam = None
             self.renderer = None
+            self.updateOrigShape()
             self.cancelWorker()
             if not self.cutter:
                 self.error = "Cutter not set"
+                self.last_progress = (1, 1)
                 return
             if not self.active:
+                self.last_progress = (1, 1)
                 # Operation not enabled
                 return
             self.updateCAMWork()
     def pollForUpdateCAM(self):
+        if not self.worker:
+            return self.last_progress
+        self.last_progress = self.worker.getProgress()
         if self.worker and not self.worker.is_alive():
             self.worker.join()
             if self.error is None and self.worker.exception is not None:
-                self.error = str(self.worker.exception)
+                self.error = self.worker.exception_text
             self.worker = None
             self.document.operationsUpdated.emit()
             self.emitDataChanged()
-        if self.worker is not None:
-            return self.worker.progress
+        return self.last_progress
     def cancelWorker(self):
         if self.worker:
-            self.worker.cancelled = True
+            self.worker.cancel()
             self.worker.join()
             self.worker = None
+            self.last_progress = None
     def operationFunc(self, shape, pda):
-        translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
+        translation = self.document.drawing.translation()
         if len(self.user_tabs):
             tabs = self.user_tabs
         else:
@@ -1363,14 +1667,26 @@ class OperationTreeItem(CAMTreeItem):
             return
         if self.operation == OperationType.OUTSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
         elif self.operation == OperationType.INSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs)
+                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0)
+                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
+        elif self.operation == self.operation == OperationType.REFINE and self.shape_to_refine is not None:
+            assert pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG
+            if self.is_external:
+                if isinstance(self.shape_to_refine, dict):
+                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                else:
+                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine)
+            else:
+                if isinstance(self.shape_to_refine, dict):
+                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                else:
+                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine)
         elif self.operation == OperationType.POCKET or self.operation == OperationType.REFINE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: self.cam.pocket(shape)
@@ -1392,22 +1708,49 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         raise ValueError("Unsupported operation")
+    def shapeToRefine(self, shape, previous, is_external):
+        if is_external:
+            return cam.pocket.shape_to_refine_external(shape, previous)
+        else:
+            return cam.pocket.shape_to_refine_internal(shape, previous)
     def refineShape(self, shape, previous, current, min_entry_dia, is_external):
         if is_external:
             return cam.pocket.refine_shape_external(shape, previous, current, min_entry_dia)
         else:
             return cam.pocket.refine_shape_internal(shape, previous, current, min_entry_dia)
+    def createShapeObject(self):
+        translation = self.document.drawing.translation()
+        self.shape = self.orig_shape.translated(*translation).toShape()
+        if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
+            extra_shapes = []
+            for island in self.islands:
+                item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                if isinstance(item, list):
+                    for i in item:
+                        self.shape.add_island(i.boundary)
+                        if i.islands:
+                            extra_shapes += [shapes.Shape(j, True) for j in i.islands]
+                elif item.closed:
+                    self.shape.add_island(item.boundary)
+                    if item.islands:
+                        extra_shapes += [shapes.Shape(j, True) for j in item.islands]
+            if extra_shapes:
+                self.shape = [self.shape] + extra_shapes
+    def addDogbonesToIslands(self, shape, tool):
+        new_islands = []
+        for i in shape.islands:
+            new_shapes = cam.dogbone.add_dogbones(shapes.Shape(i, True), tool, True, self.dogbones, False)
+            if isinstance(new_shapes, list):
+                new_islands += [j.boundary for j in new_shapes]
+            else:
+                new_islands.append(new_shapes.boundary)
+        shape.islands = new_islands
     def updateCAMWork(self):
         try:
+            translation = self.document.drawing.translation()
             errors = []
             if self.orig_shape:
-                translation = (-self.document.drawing.x_offset, -self.document.drawing.y_offset)
-                self.shape = self.orig_shape.translated(*translation).toShape()
-                if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL):
-                    for island in self.islands:
-                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                        if item.closed:
-                            self.shape.add_island(item.boundary)
+                self.createShapeObject()
             else:
                 self.shape = None
             thickness = self.document.material.thickness
@@ -1424,26 +1767,43 @@ class OperationTreeItem(CAMTreeItem):
                 self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
             tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
 
-            pda = PresetDerivedAttributes(self)
+            pda = PresetDerivedAttributes(self, addError=lambda error: errors.append(error))
             pda.validate(errors)
             if errors:
                 raise ValueError("\n".join(errors))
+            if pda.rpm is not None:
+                mp = self.document.gcode_machine_params
+                if mp.min_rpm is not None and pda.rpm < mp.min_rpm:
+                    self.addWarning(f"Spindle speed {pda.rpm:1f} lower than the minimum of {mp.min_rpm:1f}")
+                if mp.max_rpm is not None and pda.rpm > mp.max_rpm:
+                    self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
+
             if isinstance(self.cutter, inventory.EndMillCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, pda.entry_mode != inventory.EntryMode.PREFER_RAMP)
             else:
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
-                self.gcode_props = gcodegen.OperationProps(-depth, -start_depth, -tab_depth, 0)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
             self.gcode_props.rpm = pda.rpm
-            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE):
+            if self.dogbones and self.operation == OperationType.OUTSIDE_PEEL and not isinstance(self.shape, list):
+                self.addDogbonesToIslands(self.shape, tool)
+            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.OUTSIDE_PEEL):
+                is_outside = self.operation == OperationType.OUTSIDE_CONTOUR
+                is_refine = self.operation == OperationType.REFINE
+                is_pocket = self.operation == OperationType.POCKET
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
-                        res.append(cam.dogbone.add_dogbones(i, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones))
+                        res.append(cam.dogbone.add_dogbones(i, tool, is_outside, self.dogbones, is_refine))
+                    if is_pocket:
+                        for i in res:
+                            self.addDogbonesToIslands(self.shape, tool)
                     self.shape = res
                 else:
-                    self.shape = cam.dogbone.add_dogbones(self.shape, tool, self.operation == OperationType.OUTSIDE_CONTOUR, self.dogbones)
+                    self.shape = cam.dogbone.add_dogbones(self.shape, tool, is_outside, self.dogbones, is_refine)
+                    if is_pocket:
+                        self.addDogbonesToIslands(self.shape, tool)
             if self.operation == OperationType.REFINE:
                 diameter_plus = self.cutter.diameter + 2 * pda.offset
                 prev_diameter, prev_operation, islands = self.document.largerDiameterForShape(self.orig_shape, diameter_plus)
@@ -1453,33 +1813,47 @@ class OperationTreeItem(CAMTreeItem):
                         raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)} and offset {Format.coord(pda.offset)}")
                     else:
                         raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)}")
+                is_hsm = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG)
+                if prev_operation.operation == OperationType.OUTSIDE_PEEL:
+                    # Make up a list of shapes from shape's islands?
+                    raise ValueError("Refining outside peel operations is not supported yet")
                 self.is_external = (prev_operation.operation == OperationType.OUTSIDE_CONTOUR)
-                if isinstance(self.shape, list):
+                self.shape_to_refine = None
+                if islands and not isinstance(self.shape, list):
+                    for island in islands:
+                        item = self.document.drawing.itemById(island).translated(*translation).toShape()
+                        if item.closed:
+                            self.shape.add_island(item.boundary)
+                if is_hsm:
+                    if isinstance(self.shape, list):
+                        self.shape_to_refine = { i : self.shapeToRefine(i, prev_diameter, self.is_external) for i in self.shape }
+                    else:
+                        self.shape_to_refine = self.shapeToRefine(self.shape, prev_diameter, self.is_external)
+                elif isinstance(self.shape, list):
                     res = []
                     for i in self.shape:
                         res += self.refineShape(i, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
                     self.shape = res
                 else:
-                    if islands:
-                        for island in islands:
-                            item = self.document.drawing.itemById(island).translated(*translation).toShape()
-                            if item.closed:
-                                self.shape.add_island(item.boundary)
                     self.shape = self.refineShape(self.shape, prev_diameter, diameter_plus, tool.min_helix_diameter, self.is_external)
             else:
                 self.prev_diameter = None
-            self.cam = gcodegen.Operations(self.document.gcode_machine_params, tool, self.gcode_props)
+            if isinstance(self.shape, list) and len(self.shape) == 1:
+                self.shape = self.shape[0]
+            self.cam = gcodeops.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
-                    threadFunc = [ self.operationFunc(shape, pda) for shape in self.shape ]
+                    threadFuncs = [ self.operationFunc(shape, pda) for shape in self.shape ]
+                    threadFuncs = [ fn for fn in threadFuncs if fn is not None]
+                    if threadFuncs:
+                        self.worker = WorkerThreadPack(self, threadFuncs)
+                        self.worker.start()
                 else:
                     threadFunc = self.operationFunc(self.shape, pda)
-                if threadFunc:
-                    self.worker = WorkerThread(self, threadFunc)
-                    self.worker.progress = (0, 1000000)
-                    self.worker.cancelled = False
-                    self.worker.start()
+                    if threadFunc:
+                        self.worker = WorkerThread(self, threadFunc)
+                        self.worker.start()
             self.error = None
         except Exception as e:
             self.cam = None
@@ -1514,6 +1888,12 @@ class OperationTreeItem(CAMTreeItem):
         if aspect == InvalidateAspect.CAM:
             return set([self] + self.document.refineOpsForShapes(set([self.shape_id])))
         return set([self])
+    def contourOrientation(self):
+        pda = PresetDerivedAttributes(self)
+        if self.operation == OperationType.OUTSIDE_CONTOUR:
+            return pda.direction == inventory.MillDirection.CONVENTIONAL
+        else:
+            return pda.direction == inventory.MillDirection.CLIMB
 
 class OperationsModel(QStandardItemModel):
     def __init__(self, document):
@@ -1568,7 +1948,7 @@ class DeletePresetUndoCommand(QUndoCommand):
         self.preset = preset
         self.was_default = False
     def undo(self):
-        self.preset.toolbit.presets.append(self.preset)
+        self.preset.toolbit.undeletePreset(self.preset)
         if self.was_default:
             self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
         self.document.refreshToolList()
@@ -1769,15 +2149,214 @@ class RevertToolUndoCommand(BaseRevertUndoCommand):
         self.old = tool.newInstance()
         self.updateTo(tool.base_object)
 
+class BlockmapEntry(object):
+    def __init__(self):
+        self.starts = set()
+        self.ends = set()
+
+class Blockmap(dict):
+    def pt_to_index(self, pt):
+        res = geom.GeometrySettings.RESOLUTION
+        return (int(pt.x * res), int(pt.y * res))
+    def point(self, pt):
+        i = self.pt_to_index(pt)
+        res = self.get(i, None)
+        if res is None:
+            res = self[i] = BlockmapEntry()
+        return res
+    def start_point(self, points):
+        return self.point(points[0].seg_start())
+    def end_point(self, points):
+        return self.point(points[-1].seg_end())
+
+class DeleteDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Delete drawing items")
+        self.document = document
+        self.items = [(self.document.drawing, item.row(), item) for item in items]
+        self.items = sorted(self.items, key=lambda item: item[1])
+    def undo(self):
+        for parent, pos, item in self.items:
+            parent.insertRow(pos, item)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        deletedItems = []
+        for parent, pos, item in self.items[::-1]:
+            deletedItems.append(parent.takeRow(pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
+        self.document.shapesUpdated.emit()
+
+class AddDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Add drawing items")
+        self.document = document
+        self.items = items
+        self.pos = self.document.drawing.rowCount()
+    def undo(self):
+        deletedItems = []
+        for i in range(len(self.items)):
+            deletedItems.append(self.document.drawing.takeRow(self.pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.document.drawing.insertRows(self.pos, self.items)
+        self.document.shapesUpdated.emit()
+
+class ModifyPolylineUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, new_points, new_closed):
+        QUndoCommand.__init__(self, "Modify polyline")
+        self.document = document
+        self.polyline = polyline
+        self.new_points = new_points
+        self.new_closed = new_closed
+        self.orig_points = polyline.points
+        self.orig_closed = polyline.closed
+    def undo(self):
+        self.polyline.points = self.orig_points
+        self.polyline.closed = self.orig_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points = self.new_points
+        self.polyline.closed = self.new_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+
+class ModifyPolylinePointUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, position, location, mergeable):
+        QUndoCommand.__init__(self, "Move polyline point")
+        self.document = document
+        self.polyline = polyline
+        self.position = position
+        self.new_location = location
+        self.orig_location = self.polyline.points[self.position]
+        self.mergeable = mergeable
+    def undo(self):
+        self.polyline.points[self.position] = self.orig_location
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points[self.position] = self.new_location
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def id(self):
+        return 1000
+    def mergeWith(self, other):
+        if not isinstance(other, ModifyPolylinePointUndoCommand):
+            return False
+        if not self.mergeable:
+            return False
+        self.new_location = other.new_location
+        return True
+
+class JoinItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Join items")
+        self.document = document
+        self.items = items
+        self.original_items = {}
+        self.removed_items = []
+    def undo(self):
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        for item, points in self.original_items.items():
+            item.untransformed.points = points
+            item.closed = False
+        for row, item in self.removed_items:
+            self.document.drawing.insertRow(row, item)
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        def rev(pts):
+            return geom.Path(pts, False).reverse().nodes
+        def join(p1, p2):
+            if not p1[-1].is_arc():
+                assert not p2[0].is_arc()
+                return p1[:-1] + p2
+            else:
+                return p1 + p2
+        blockmap = Blockmap()
+        joined = set()
+        edges = set()
+        toRemove = set()
+        toRecalc = set()
+        originals = {}
+        for i in self.items:
+            points = i.untransformed.points
+            originals[i] = points
+            start = blockmap.pt_to_index(points[0].seg_start())
+            end = blockmap.pt_to_index(points[-1].seg_end())
+            # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
+            if len(points) == 2:
+                if ((end, start) in edges or (start, end) in edges):
+                    toRemove.add(i)
+                    continue
+                edges.add((start, end))
+            blockmap.start_point(points).starts.add(i)
+            blockmap.end_point(points).ends.add(i)
+        for bme in blockmap.values():
+            while len(bme.starts) >= 1 and len(bme.ends) >= 1:
+                i = bme.ends.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    i.untransformed.closed = True
+                    del i.untransformed.points[-1:]
+                    continue
+                i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.starts) >= 2:
+                i = bme.starts.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    assert False
+                i.untransformed.points = join(rev(j.untransformed.points), i.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.starts.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.ends) >= 2:
+                i = bme.ends.pop()
+                j = bme.ends.pop()
+                i.untransformed.points = join(i.untransformed.points, rev(j.untransformed.points))
+                p = blockmap.start_point(j.untransformed.points)
+                p.starts.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+        for i in toRecalc:
+            i.untransformed.calcBounds()
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        self.original_items = {k : v for k, v in originals.items() if k in toRecalc}
+        self.removed_items = []
+        for i in toRemove:
+            row = i.row()
+            self.removed_items.append((row, self.document.drawing.takeRow(row)))
+        self.removed_items = self.removed_items[::-1]
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
     tabEditRequested = pyqtSignal([OperationTreeItem])
     islandsEditRequested = pyqtSignal([OperationTreeItem])
+    entryExitEditRequested = pyqtSignal([OperationTreeItem])
+    polylineEditRequested = pyqtSignal([DrawingPolylineTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
-    projectLoaded = pyqtSignal([str])
-    drawingImported = pyqtSignal([str])
+    shapesDeleted = pyqtSignal([list])
+    shapesUpdated = pyqtSignal([])
+    projectCleared = pyqtSignal([])
+    projectLoaded = pyqtSignal([])
+    drawingImported = pyqtSignal([])
     def __init__(self, config_settings):
         QObject.__init__(self)
         self.config_settings = config_settings
@@ -1834,7 +2413,7 @@ class DocumentModel(QObject):
         data['material'] = self.material.store()
         data['tools'] = [i.store() for i in self.project_toolbits.values()]
         data['tool_presets'] = [j.store() for i in self.project_toolbits.values() for j in i.presets]
-        data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items()]
+        data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items() if v is not None]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operation_cycles'] = [ { 'tool_id' : cycle.cutter.id, 'is_current' : (self.current_cutter_cycle is cycle), 'operations' : [op.store() for op in cycle.items()] } for cycle in self.allCycles() ]
         #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
@@ -1847,14 +2426,14 @@ class DocumentModel(QObject):
         cycleForCutter = {}
         if 'tool' in data:
             # Old style singleton tool
-            material = MaterialType.descriptions[self.material.material][2] if self.material.material is not None else material_plastics
+            material = MaterialType.toTuple(self.material.material)[2] if self.material.material is not None else material_plastics
             tool = data['tool']
             prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'])
             std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, milling_tool.carbide_uncoated).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None, 0, 0.5)
+                tool.get('direction', 0), 0, 0, None, 0, 0.5, inventory.EntryMode.PREFER_RAMP, 0)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset
@@ -1953,13 +2532,18 @@ class DocumentModel(QObject):
         self.filename = fn
         self.drawing_filename = None
         self.load(data)
-        self.projectLoaded.emit(fn)
+        self.projectLoaded.emit()
     def makeMachineParams(self):
-        self.gcode_machine_params = gcodegen.MachineParams(safe_z = self.material.clearance, semi_safe_z = self.material.safe_entry_z)
-    def importDrawing(self, fn):
+        self.gcode_machine_params = gcodeops.MachineParams(safe_z=self.material.clearance, semi_safe_z=self.material.safe_entry_z,
+            min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm)
+    def newDocument(self):
         self.reinitDocument()
         self.filename = None
-        self.drawing_filename = fn
+        self.drawing_filename = None
+        self.projectCleared.emit()
+    def importDrawing(self, fn):
+        if self.drawing_filename is None:
+            self.drawing_filename = fn
         self.drawing.importDrawing(fn)
     def allOperationsPlusRefinements(self, func=None):
         ops = set(self.allOperations(func))
@@ -2066,6 +2650,9 @@ class DocumentModel(QObject):
     def cancelAllWorkers(self):
         self.forEachOperation(lambda item: item.cancelWorker())
     def pollForUpdateCAM(self):
+        has_workers = any(self.forEachOperation(lambda item: item.worker))
+        if not has_workers:
+            return
         results = self.forEachOperation(lambda item: item.pollForUpdateCAM())
         totaldone = 0
         totaloverall = 0
@@ -2120,8 +2707,6 @@ class DocumentModel(QObject):
             if item.error is not None:
                 raise ValueError(item.error)
         self.forEachOperation(validateOperation)
-        if self.material.material is None:
-            raise ValueError("Material type not set")
     def setOperSelection(self, selection):
         changes = []
         def setSelected(operation):
@@ -2298,6 +2883,33 @@ class DocumentModel(QObject):
     def opModifyCutter(self, cutter, new_data):
         item = self.itemForCutter(cutter)
         self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
+    def opJoin(self, items):
+        self.undoStack.push(JoinItemsUndoCommand(self, items))
+    def opModifyPolyline(self, polyline, new_points, new_closed):
+        self.undoStack.push(ModifyPolylineUndoCommand(self, polyline, new_points, new_closed))
+    def opModifyPolylinePoint(self, polyline, position, location, mergeable):
+        self.undoStack.push(ModifyPolylinePointUndoCommand(self, polyline, position, location, mergeable))
+    def opAddDrawingItems(self, items):
+        self.undoStack.push(AddDrawingItemsUndoCommand(self, items))
+    def opDeleteDrawingItems(self, items):
+        shapes = []
+        tools = []
+        presets = []
+        for i in items:
+            if isinstance(i, DrawingItemTreeItem):
+                shapes.append(i)
+            elif isinstance(i, ToolTreeItem):
+                tools.append(i)
+            elif isinstance(i, ToolPresetTreeItem):
+                presets.append(i)
+            else:
+                raise ValueError("Cannot delete an item of type: " + str(i.__class__.__name__))
+        if shapes:
+            self.undoStack.push(DeleteDrawingItemsUndoCommand(self, shapes))
+        for i in presets:
+            self.opDeletePreset(i.inventory_preset)
+        for i in tools:
+            self.opDeleteCycle(self.cycleForCutter(i.inventory_tool))
     def undo(self):
         self.undoStack.undo()
     def redo(self):
@@ -2306,7 +2918,8 @@ class DocumentModel(QObject):
 class OpExporter(object):
     def __init__(self, document):
         document.waitForUpdateCAM()
-        self.operations = gcodegen.Operations(document.gcode_machine_params)
+        self.machine_params = document.gcode_machine_params
+        self.operations = gcodeops.Operations(document.gcode_machine_params)
         self.all_cutters = set([])
         self.cutter = None
         document.forEachOperation(self.add_cutter)
@@ -2317,7 +2930,7 @@ class OpExporter(object):
     def process_operation(self, item):
         if item.cam:
             if item.cutter != self.cutter and len(self.all_cutters) > 1:
-                self.operations.add(gcodegen.ToolChangeOperation(item.cutter))
+                self.operations.add(gcodeops.ToolChangeOperation(item.cutter, self.machine_params))
                 self.cutter = item.cutter
             self.operations.add_all(item.cam.operations)
     def write(self, fn):

@@ -26,7 +26,8 @@ class ConfigDialogTest(unittest.TestCase):
         del self.dlg
     def testSpinboxes(self):
         self.checkSpinbox("resolution", "resolutionSpin", [(42, 33.5), (21, 55)], geometry_setting='RESOLUTION')
-        self.checkSpinbox("grid_resolution", "gridSpin", [(42, 33.25), (21, 55)])
+        self.checkSpinbox("grid_resolution", "gridMajorSpin", [(42, 33.25), (21, 55)])
+        self.checkSpinbox("grid_resolution_minor", "gridMinorSpin", [(42, 33.25), (21, 55)])
         self.checkSpinbox("clearance_z", "clearanceZSpin", [(42, 33.25), (21, 55)])
         self.checkSpinbox("safe_entry_z", "safeEntryZSpin", [(42, 33.25), (21, -55)])
         self.checkSpinbox("spindle_warmup", "warmupSpin", [(42, 33.2)])

@@ -6,16 +6,11 @@ from DerpCAM.common import view, guiutils
 from DerpCAM.cam import toolpath
 from DerpCAM.gui import settings
 
-class DrawingUIMode(object):
-    MODE_NORMAL = 0
-    MODE_ISLANDS = 1
-    MODE_TABS = 2
-
 class DocumentRenderer(object):
     def __init__(self, document):
         self.document = document
     def bounds(self):
-        return max_bounds((0, 0, 1, 1), self.document.drawing.bounds())
+        return max_bounds((0, 0, 100, 100), self.document.drawing.bounds())
     def renderDrawing(self, owner):
         #PathViewer.renderDrawing(self)
         with guiutils.Spinner():
@@ -23,9 +18,8 @@ class DocumentRenderer(object):
                 # This works, but doesn't look particularly good
                 if owner.mode_item.renderer:
                     owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
-            modeData = (owner.mode, owner.mode_item)
-            self.document.drawing.renderTo(owner, modeData)
-            if owner.mode == DrawingUIMode.MODE_NORMAL:
+            self.document.drawing.renderTo(owner, owner.editor)
+            if owner.editor is None:
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
                 self.lastpt = PathPoint(0, 0)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
@@ -47,7 +41,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
     def renderToolpaths(self, owner, alpha_scale=1.0):
         self.isFlashHighlighted = lambda: owner.flash_highlight is self.owner
         view.OperationsRenderer.renderToolpaths(self, owner, alpha_scale)
-        if owner.mode == DrawingUIMode.MODE_NORMAL and GeometrySettings.draw_arrows:
+        if owner.editor is None and GeometrySettings.draw_arrows:
             self.renderArrows(owner)
     def renderArrows(self, owner):
         pen = QPen(QColor(0, 0, 0), 0)
@@ -101,7 +95,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
 
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
-    modeChanged = pyqtSignal(int)
+    editorChangeRequest = pyqtSignal(object)
     def __init__(self, document, configSettings):
         self.document = document
         self.configSettings = configSettings
@@ -109,99 +103,58 @@ class DrawingViewer(view.PathViewer):
         self.dragging = False
         self.rubberband_rect = None
         self.start_point = None
-        self.mode = DrawingUIMode.MODE_NORMAL
-        self.mode_item = None
+        self.editor = None
         self.flash_highlight = None
         view.PathViewer.__init__(self, DocumentRenderer(document))
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.Base)
-        self.applyIcon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
-        self.applyButton = QPushButton(self.applyIcon, "", self)
-        self.applyButton.setVisible(False)
-        self.applyButton.setFixedSize(30, 30)
-        self.applyButton.setCursor(QCursor(Qt.ArrowCursor))
-        self.applyButton.move(5, 5)
-        self.applyButton.clicked.connect(self.applyClicked)
     def flashHighlight(self, item):
         if self.flash_highlight is item:
             return
         self.flash_highlight = item
         self.repaint()
-    def changeMode(self, mode, item):
-        self.mode = mode
-        self.mode_item = item
-        if self.mode != DrawingUIMode.MODE_NORMAL:
-            self.document.setUpdateSuspended(item)
+    def setEditor(self, editor):
+        self.editor = editor
+        if self.editor is not None:
+            self.document.setUpdateSuspended(self.editor.item)
         else:
             self.document.setUpdateSuspended(None)
-        self.applyButton.setVisible(self.mode != DrawingUIMode.MODE_NORMAL)
         self.renderDrawing()
         self.repaint()
+    def paintGridPart(self, e, qp, grid):
+        size = self.size()
+        gridm = grid * self.scalingFactor()
+        gridres = 2 + int(size.height() / gridm)
+        if gridres > max(size.width(), size.height()) / 4:
+            return
+        gridfirst = int(self.unproject(QPointF(0, size.height())).y() / grid)
+        for i in range(gridres):
+            pt = self.project(QPointF(0, (i + gridfirst) * grid))
+            qp.drawLine(QLineF(0.0, pt.y(), size.width(), pt.y()))
+        gridfirst = int(self.unproject(QPointF(0, 0)).x() / grid)
+        gridres = 2 + int(size.width() / gridm)
+        for i in range(gridres):
+            pt = self.project(QPointF((i + gridfirst) * grid, 0))
+            qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
     def paintGrid(self, e, qp):
         size = self.size()
-
-        gridPen = QPen(QColor(224, 224, 224))
-        qp.setPen(gridPen)
         grid = self.configSettings.grid_resolution
         if grid > 0 and grid < 1000:
-            gridm = grid * self.scalingFactor()
-            gridres = 2 + int(size.height() / gridm)
-            gridfirst = int(self.unproject(QPointF(0, size.height())).y() / grid)
-            for i in range(gridres):
-                pt = self.project(QPointF(0, (i + gridfirst) * grid))
-                qp.drawLine(QLineF(0.0, pt.y(), size.width(), pt.y()))
-            gridfirst = int(self.unproject(QPointF(0, 0)).x() / grid)
-            gridres = 2 + int(size.width() / gridm)
-            for i in range(gridres):
-                pt = self.project(QPointF((i + gridfirst) * grid, 0))
-                qp.drawLine(QLineF(pt.x(), 0, pt.x(), size.height()))
-
+            qp.setPen(QPen(QColor(208, 208, 208), 0))
+            self.paintGridPart(e, qp, grid)
+        grid = self.configSettings.grid_resolution_minor
+        if grid > 0 and grid < 1000:
+            qp.setPen(QPen(QColor(244, 244, 244), 0))
+            self.paintGridPart(e, qp, grid)
         zeropt = self.project(QPointF())
         qp.setPen(QPen(QColor(144, 144, 144), 0))
         qp.drawLine(QLineF(0.0, zeropt.y(), size.width(), zeropt.y()))
         qp.drawLine(QLineF(zeropt.x(), 0.0, zeropt.x(), size.height()))
-    def paintIslandsEditor(self, e, qp):
-        op = self.mode_item
-        translation = (-op.document.drawing.x_offset, -op.document.drawing.y_offset)
-        shape = op.orig_shape.translated(*translation).toShape()
-        p = shape.boundary + shape.boundary[0:1]
-        path = QPainterPath()
-        path.setFillRule(Qt.WindingFill)
-        view.addPolylineToPath(path, p)
-        for p in shape.islands:
-            path2 = QPainterPath()
-            view.addPolylineToPath(path2, p + p[0:1])
-            path = path.subtracted(path2)
-        for island in op.islands:
-            shape = op.document.drawing.itemById(island).translated(*translation).toShape()
-            if shape.closed:
-                path2 = QPainterPath()
-                view.addPolylineToPath(path2, shape.boundary + shape.boundary[0:1])
-                path = path.subtracted(path2)
-        transform = self.drawingTransform()
-        brush = QBrush(QColor(0, 128, 192), Qt.DiagCrossPattern)
-        brush.setTransform(transform.inverted()[0])
-        qp.setTransform(transform)
-        qp.fillPath(path, brush)
-        qp.setTransform(QTransform())
     def paintOverlays(self, e, qp):
-        if self.mode == DrawingUIMode.MODE_ISLANDS and self.mode_item:
-            self.paintIslandsEditor(e, qp)
-        if self.mode != DrawingUIMode.MODE_NORMAL:
-            if self.mode == DrawingUIMode.MODE_TABS:
-                modeText = "Click on outlines to add/remove preferred locations for holding tabs"
-            if self.mode == DrawingUIMode.MODE_ISLANDS:
-                modeText = "Click on outlines to toggle exclusion of areas from the pocket"
-            pen = qp.pen()
-            qp.setPen(QPen(QColor(128, 0, 0), 0))
-            qp.drawText(QRectF(40, 5, self.width() - 40, 35), Qt.AlignVCenter | Qt.TextWordWrap, modeText)
-            if self.mode == DrawingUIMode.MODE_TABS:
-                qp.setPen(QPen(QColor(255, 0, 0), 0))
-                for tab in self.mode_item.user_tabs:
-                    pos = self.project(QPointF(tab.x, tab.y))
-                    qp.drawEllipse(pos, 10, 10)
-            qp.setPen(pen)
+        if self.editor:
+            self.editor.paint(e, qp)
         if self.rubberband_rect:
+            qp.setPen(QPen(QColor(0, 0, 0), 0))
             qp.setOpacity(0.33)
             qp.drawRect(self.rubberband_rect)
             qp.setOpacity(1.0)
@@ -215,49 +168,38 @@ class DrawingViewer(view.PathViewer):
                 qp.drawRect(QRectF(38, 35, 242, 55))
                 qp.drawText(QRectF(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
     def keyPressEvent(self, e):
-        if self.mode != DrawingUIMode.MODE_NORMAL and (e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter):
-            self.exitEditMode()
+        if self.editor:
+            res = self.editor.keyPressEvent(e)
+            if res is not None:
+                return res
         return view.PathViewer.keyPressEvent(self, e)
-    def exitEditMode(self):
-        item = self.mode_item
-        item.emitPropertyChanged()
-        self.changeMode(DrawingUIMode.MODE_NORMAL, None)
-        self.modeChanged.emit(DrawingUIMode.MODE_NORMAL)
+    def abortEditMode(self, reset_zoom=True):
+        if self.editor:
+            self.exitEditMode(reset_zoom)
+    def exitEditMode(self, reset_zoom=True):
+        self.editor.onExit()
+        self.editor = None
+        self.editorChangeRequest.emit(self.editor)
         self.renderDrawing()
-        self.majorUpdate()
+        self.majorUpdate(reset_zoom=reset_zoom)
     def applyClicked(self):
-        self.exitEditMode()
+        self.exitEditMode(False)
+    def mouseDoubleClickEvent(self, e):
+        if self.editor:
+            return self.editor.mouseDoubleClickEvent(e)
     def mousePressEvent(self, e):
-        b = e.button()
         if e.button() == Qt.LeftButton:
             self.rubberband_rect = None
             self.dragging = False
+        if self.editor and self.editor.mousePressEvent(e):
+            return
+        b = e.button()
+        if e.button() == Qt.LeftButton:
             pos = self.unproject(e.localPos())
-            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
-            if self.mode != DrawingUIMode.MODE_NORMAL:
-                if self.mode == DrawingUIMode.MODE_ISLANDS:
-                    objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
-                if self.mode == DrawingUIMode.MODE_ISLANDS and not objs:
-                    self.start_point = e.localPos()
-                    return
-                lpos = e.localPos()
-                if self.mode == DrawingUIMode.MODE_ISLANDS:
-                    self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs]))])
-                    self.renderDrawing()
-                    self.repaint()
-                elif self.mode == DrawingUIMode.MODE_TABS:
-                    pt = PathPoint(pos.x(), pos.y())
-                    ptToDelete = None
-                    for pp in self.mode_item.user_tabs:
-                        if dist(pt, pp) < 5:
-                            ptToDelete = pp
-                    if ptToDelete is not None:
-                        self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs - set([ptToDelete]))])
-                    else:
-                        self.document.opChangeProperty(self.mode_item.prop_user_tabs, [(self.mode_item, self.mode_item.user_tabs | set([pt]))])
-                    self.renderDrawing()
-                    self.repaint()
+            if self.editor and self.editor.mousePressEvent(e):
                 return
+            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
+            self.start_point = e.localPos()
             if objs:
                 if e.modifiers() & Qt.ControlModifier:
                     self.selection ^= set(objs)
@@ -265,41 +207,45 @@ class DrawingViewer(view.PathViewer):
                     self.selection = set(objs)
                 self.selectionChanged.emit()
                 self.repaint()
-                self.start_point = e.localPos()
             else:
-                self.start_point = e.localPos()
                 if self.selection and not (e.modifiers() & Qt.ControlModifier):
                     self.selection = set()
                     self.selectionChanged.emit()
                     self.repaint()
         else:
             view.PathViewer.mousePressEvent(self, e)
+    def emitCoordsUpdated(self, pos):
+        pt = PathPoint(pos.x(), pos.y())
+        if self.editor:
+            pt = self.editor.snapCoords(pt)
+        self.coordsUpdated.emit(pt.x, pt.y)
     def mouseMoveEvent(self, e):
-        if not self.dragging and self.mode == DrawingUIMode.MODE_ISLANDS:
-            pos = self.unproject(e.localPos())
-            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
-            objs = [o for o in objs if o.shape_id != self.mode_item.shape_id]
-            if objs:
-                self.setCursor(Qt.PointingHandCursor)
-            else:
-                self.updateCursor()
-        if not self.dragging and self.start_point:
-            dist = e.localPos() - self.start_point
-            if dist.manhattanLength() > QApplication.startDragDistance():
-                self.dragging = True
+        if self.editor and self.editor.mouseMoveEvent(e):
+            view.PathViewer.mouseMoveEvent(self, e)
+            return
         if self.dragging:
-            self.rubberband_rect = QRectF(self.start_point, e.localPos())
+            sp = self.start_point
+            ep = e.localPos()
+            self.rubberband_rect = QRectF(QPointF(min(sp.x(), ep.x()), min(sp.y(), ep.y())), QPointF(max(sp.x(), ep.x()), max(sp.y(), ep.y())))
             self.startDeferredRepaint()
             self.repaint()
+        else:
+            if self.start_point:
+                dist = e.localPos() - self.start_point
+                if dist.manhattanLength() > QApplication.startDragDistance():
+                    self.dragging = True
         view.PathViewer.mouseMoveEvent(self, e)
+    def rubberbandDrawingObjects(self):
+        pt1 = self.unproject(self.rubberband_rect.bottomLeft())
+        pt2 = self.unproject(self.rubberband_rect.topRight())
+        return self.document.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())
     def mouseReleaseEvent(self, e):
+        if self.editor and self.editor.mouseReleaseEvent(e):
+            view.PathViewer.mouseReleaseEvent(self, e)
+            return
         if self.dragging:
-            pt1 = self.unproject(self.rubberband_rect.bottomLeft())
-            pt2 = self.unproject(self.rubberband_rect.topRight())
-            objs = self.document.drawing.objectsWithin(pt1.x(), pt1.y(), pt2.x(), pt2.y())
-            if self.mode == DrawingUIMode.MODE_ISLANDS:
-                self.document.opChangeProperty(self.mode_item.prop_islands, [(self.mode_item, self.mode_item.islands ^ set([o.shape_id for o in objs if o.shape_id != self.mode_item.shape_id]))])
-            elif e.modifiers() & Qt.ControlModifier:
+            objs = self.rubberbandDrawingObjects()
+            if e.modifiers() & Qt.ControlModifier:
                 self.selection ^= set(objs)
             else:
                 self.selection = set(objs)
@@ -318,3 +264,45 @@ class DrawingViewer(view.PathViewer):
         self.selection = set(selection)
         self.repaint()
 
+def sortPoints(pos):
+    n = len(pos)
+    first = 0
+    startPos = PathPoint(0.0, 0.0)
+    firstDist = pos[0][0].dist(startPos)
+    for i in range(1, n):
+        tryDist = pos[i][0].dist(startPos)
+        if tryDist < firstDist:
+            first = i
+            firstDist = tryDist
+    deck = list(range(n))
+    seq = [first]
+    lastPoint = pos[first][1]
+    del deck[first]
+    while deck:
+        shortest = 0
+        shortestLen = lastPoint.dist(pos[deck[0]][0])
+        for i in range(1, len(deck)):
+            thisLen = lastPoint.dist(pos[deck[i]][0])
+            if thisLen < shortestLen:
+                shortest = i
+                shortestLen = thisLen
+        nearestIdx = deck[shortest]
+        seq.append(nearestIdx)
+        lastPoint = pos[nearestIdx][1]
+        del deck[shortest]
+    return seq
+
+def sortSelections(selections, shape_ids):
+    if len(selections) < 2:
+        return shape_ids
+    selections = list(selections)
+    pos = [i.startEndPos() for i in selections]
+    seq = sortPoints(pos)
+    # Map shape_id to order
+    spos = {}
+    for i, v in enumerate(seq):
+        spos[selections[v].shape_id] = i
+    res = {}
+    for i in list(sorted(shape_ids.keys(), key=lambda shape_id: spos[shape_id])):
+        res[i] = list(sorted(shape_ids[i], key=lambda shape_id: spos[shape_id]))
+    return res

@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common.geom import GeometrySettings
 from DerpCAM.common.guiutils import GuiSettings
 
+import os.path
+
 class ConfigSetting(object):
     def __init__(self, attr_name, setting_pathname, def_value):
         self.attr_name = attr_name
@@ -48,11 +50,16 @@ class ConfigSettings(object):
         FloatConfigSetting('resolution', 'geometry/resolution', GeometrySettings.RESOLUTION, 1),
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
+        BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
         BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
+        FloatConfigSetting('spindle_min_rpm', 'gcode/spindle_min_rpm', 8000, 1),
+        FloatConfigSetting('spindle_max_rpm', 'gcode/spindle_max_rpm', 24000, 1),
+        ConfigSetting('run_after_export', 'gcode/run_after_export', ''),
         BoolConfigSetting('draw_arrows', 'display/draw_arrows', GeometrySettings.draw_arrows),
         FloatConfigSetting('grid_resolution', 'display/grid_resolution', 50, 2),
+        FloatConfigSetting('grid_resolution_minor', 'display/grid_resolution_minor', 10, 2),
         ConfigSetting('input_directory', 'paths/input', ''),
         ConfigSetting('last_input_directory', 'paths/last_input', ''),
         ConfigSetting('gcode_directory', 'paths/gcode', ''),
@@ -67,6 +74,7 @@ class ConfigSettings(object):
         FloatConfigSetting('tab_dist', 'tabs/tab_dist', 200, 1),
         FloatConfigSetting('tab_min_length', 'tabs/tab_min_length', 50, 1),
     ]
+    NUM_MRU = 4
     def __init__(self):
         self.settings = self.createSettingsObj()
         for i in self.setting_list:
@@ -74,6 +82,24 @@ class ConfigSettings(object):
         self.load()
     def createSettingsObj(self):
         return QSettings("kfoltman", "DerpCAM")
+    def loadMru(self):
+        self.settings.sync()
+        res = []
+        for i in range(self.NUM_MRU):
+            label = f"mru{i}"
+            if self.settings.contains(label):
+                filename = self.settings.value(label)
+                if os.path.exists(filename):
+                    res.append(filename)
+        return res
+    def saveMru(self, data):
+        for i in range(self.NUM_MRU):
+            label = f"mru{i}"
+            if i < len(data):
+                self.settings.setValue(label, data[i])
+            else:
+                self.settings.remove(label)
+        self.settings.sync()
     def load(self):
         settings = self.settings
         settings.sync()
@@ -88,12 +114,16 @@ class ConfigSettings(object):
         GeometrySettings.RESOLUTION = self.resolution
         GeometrySettings.simplify_arcs = self.simplify_arcs
         GeometrySettings.simplify_lines = self.simplify_lines
+        GeometrySettings.paranoid_mode = self.paranoid_mode
         GeometrySettings.draw_arrows = self.draw_arrows
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
         GeometrySettings.grbl_output = self.grbl_output
         GeometrySettings.spindle_control = self.spindle_control
         GeometrySettings.spindle_warmup = self.spindle_warmup
+        GeometrySettings.spindle_min_rpm = self.spindle_min_rpm
+        GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
+        GeometrySettings.run_after_export = self.run_after_export
         GuiSettings.inch_mode = self.display_inches
 
 class DirectorySelector(QWidget):
@@ -165,6 +195,10 @@ class PreferencesDialog(QDialog):
         self.simplifyLinesCheck = QCheckBox("&Merge short segments (experimental)")
         self.simplifyLinesCheck.setChecked(self.config.simplify_lines)
         self.formCAM.addRow(self.simplifyLinesCheck)
+        self.paranoidModeCheck = QCheckBox("&Paranoid mode: never use rapids below safe entry Z")
+        self.paranoidModeCheck.setToolTip("Forbid rapid Z moves into previously removed stock or outside stock boundaries")
+        self.paranoidModeCheck.setChecked(self.config.paranoid_mode)
+        self.formCAM.addRow(self.paranoidModeCheck)
         self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
         self.grblOutputCheck.setChecked(self.config.grbl_output)
         self.formCAM.addRow(self.grblOutputCheck)
@@ -173,11 +207,20 @@ class PreferencesDialog(QDialog):
         self.formCAM.addRow(self.spindleControlCheck)
         self.warmupSpin = floatSpin(0, 60, 1, self.config.spindle_warmup, "Time in seconds to wait for the spindle to get up to target speed.")
         self.formCAM.addRow("&Spin-up time (seconds):", self.warmupSpin)
+        self.minRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_min_rpm, "Minimum spindle speed (that still provides usable torque) in revolutions per minute.")
+        self.formCAM.addRow("&Minimum RPM:", self.minRPMSpin)
+        self.maxRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_max_rpm, "Maximum spindle speed in revolutions per minute.")
+        self.formCAM.addRow("&Minimum RPM:", self.maxRPMSpin)
+        self.runAfterExportEdit = QLineEdit()
+        self.runAfterExportEdit.setText(self.config.run_after_export)
+        self.formCAM.addRow("&Run after G-Code export:", self.runAfterExportEdit)
 
         self.widgetDisplay = QWidget()
         self.formDisplay = QFormLayout(self.widgetDisplay)
-        self.gridSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
-        self.formDisplay.addRow("&Display grid (mm):", self.gridSpin)
+        self.gridMajorSpin = floatSpin(0, 1000, 2, self.config.grid_resolution, "Spacing between display grid lines in mm")
+        self.formDisplay.addRow("&Display grid - major (mm):", self.gridMajorSpin)
+        self.gridMinorSpin = floatSpin(0, 1000, 2, self.config.grid_resolution_minor, "Spacing between display grid lines in mm")
+        self.formDisplay.addRow("D&isplay grid - minor (mm):", self.gridMinorSpin)
         self.drawArrowsCheck = QCheckBox("Draw &arrows on toolpaths (experimental)")
         self.drawArrowsCheck.setChecked(self.config.draw_arrows)
         self.formDisplay.addRow(self.drawArrowsCheck)
@@ -239,11 +282,16 @@ class PreferencesDialog(QDialog):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
+        self.config.paranoid_mode = self.paranoidModeCheck.isChecked()
         self.config.grbl_output = self.grblOutputCheck.isChecked()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()
+        self.config.spindle_min_rpm = self.minRPMSpin.value()
+        self.config.spindle_max_rpm = self.maxRPMSpin.value()
+        self.config.run_after_export = self.runAfterExportEdit.text()
         self.config.draw_arrows = self.drawArrowsCheck.isChecked()
-        self.config.grid_resolution = self.gridSpin.value()
+        self.config.grid_resolution = self.gridMajorSpin.value()
+        self.config.grid_resolution_minor = self.gridMinorSpin.value()
         self.config.input_directory = self.inputDirEdit.value()
         self.config.gcode_directory = self.gcodeDirEdit.value()
         self.config.clearance_z = self.clearanceZSpin.value()

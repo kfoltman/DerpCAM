@@ -77,6 +77,12 @@ class EnumClass(object):
             if value == data[0]:
                 return data[1]
         return None
+    @classmethod
+    def toTuple(classInst, value):
+        for data in classInst.descriptions:
+            if value == data[0]:
+                return data
+        return None
 
 class FontEditableProperty(EditableProperty):
     def createEditor(self, parent, item, objects):
@@ -149,10 +155,12 @@ class EnumEditableProperty(EditableProperty):
         self.enum_class = enum_class
         self.allow_none = allow_none
         self.none_value = none_value
+    def descriptions(self):
+        return self.enum_class.descriptions
     def toEditString(self, value):
         return self.enum_class.toString(value) or str(value)
     def validateString(self, value):
-        for data in self.enum_class.descriptions:
+        for data in self.descriptions():
             id, description = data[0 : 2]
             if value == id or value == description:
                 return id, None
@@ -164,7 +172,7 @@ class EnumEditableProperty(EditableProperty):
         widget.setMinimumSize(200, 150)
         if self.allow_none:
             widget.addItem(self.none_value)
-        for data in self.enum_class.descriptions:
+        for data in self.descriptions():
             id, description = data[0 : 2]
             if item.valid_values is not None:
                 if id not in item.valid_values:
@@ -181,7 +189,7 @@ class EnumEditableProperty(EditableProperty):
             editor.setCurrentRow(0)
             return
         if type(value) is int:
-            for row, item in enumerate(self.enum_class.descriptions, start=1 if self.allow_none else 0):
+            for row, item in enumerate(self.descriptions(), start=1 if self.allow_none else 0):
                 if item[0] == value:
                     editor.setCurrentRow(row)
                     return
@@ -189,7 +197,7 @@ class EnumEditableProperty(EditableProperty):
             if self.allow_none and value == self.none_value:
                 editor.setCurrentRow(0)
                 return
-            for row, item in enumerate(self.enum_class.descriptions, start=1 if self.allow_none else 0):
+            for row, item in enumerate(self.descriptions(), start=1 if self.allow_none else 0):
                 if str(item[0]) == value or item[1] == value:
                     editor.setCurrentRow(row)
                     return
@@ -253,8 +261,15 @@ class FloatDistEditableProperty(FloatEditableProperty):
             return self.none_value
         return self.format(value)
     def toEditString(self, value):
+        if value is None:
+            return ""
         return self.toDisplayString(value)
     def validateString(self, value):
+        if value == "":
+            if self.allow_none:
+                return None, None
+            if self.default_value is not None:
+                return self.default_value, None
         value, unit = UnitConverter.parse(value, self.unit)
         return FloatEditableProperty.validateString(self, value)[0], unit
 

@@ -33,10 +33,13 @@ class Shape(object):
                 ls = shapely.geometry.LinearRing(pts)
             else:
                 ls = shapely.geometry.LineString(pts)
+            ls = ls.simplify(1.0 / GeometrySettings.RESOLUTION)
             lso = ls.parallel_offset(abs(offset), 'right' if offset > 0 else 'left', 4)
+            lso = lso.simplify(1.0 / GeometrySettings.RESOLUTION)
             return Path([PathPoint(x, y) for x, y in lso.coords], closed)
         tps = [toolpath.Toolpath(offset_path(self.boundary, self.closed, offset), tool)] + [
             toolpath.Toolpath(offset_path(island, True, offset), tool) for island in self.islands ]
+        tps = [tp for tp in tps if not tp.is_empty()]
         return toolpath.Toolpaths(tps)
     @staticmethod
     def _offset(points, closed, dist):
@@ -88,6 +91,10 @@ class Shape(object):
     @staticmethod
     def circle(x, y, r=None, d=None, n=None, sa=0, ea=2 * pi):
         return Shape(circle(x, y, r if r is not None else 0.5 * d, n, sa, ea), True, None)
+    @staticmethod
+    def sausage(x1, y1, x2, y2, r, n=None):
+        sa = atan2(y2 - y1, x2 - x1) + pi / 2
+        return Shape(circle(x1, y1, r, n, sa, sa + pi) + circle(x2, y2, r, n, sa + pi, sa + 2 * pi), True, None)
     @staticmethod
     def rectangle(sx, sy, ex, ey):
         polygon = [PathPoint(sx, sy), PathPoint(ex, sy), PathPoint(ex, ey), PathPoint(sx, ey)]

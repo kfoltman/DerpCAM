@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import *
 
 class GuiSettings(object):
     inch_mode = False
+    batch_text_hack = False
 
 class UnitConverter(object):
     alt_units = {"in", "sfm", "ipm", "ipt"}
@@ -118,13 +119,15 @@ class UnitConverter(object):
         if unit == "m/min":
             if value2.endswith('sfm'):
                 unit = "sfm"
-                value = UnitConverter.fromInch(value2[:-3], 1000.0 / (12 * 25.4))
+                value = UnitConverter.fromInch(value2[:-3], 12 * 25.4)
             elif value2.endswith('m/min'):
                 unit = "m/min"
-                value = UnitConverter.fromMetric(value2[:-5], 1)
+                value = UnitConverter.fromMetric(value2[:-5], 1000.0)
             elif GuiSettings.inch_mode:
                 unit = "sfm"
-                value = UnitConverter.fromInch(value2, 1000.0 / (12 * 25.4))
+                value = UnitConverter.fromInch(value2, 12 * 25.4)
+            else:
+                value = UnitConverter.fromMetric(value2, 1000.0)
         elif unit == "mm/min":
             if value2.endswith('ipm'):
                 unit = "ipm"
@@ -137,6 +140,21 @@ class UnitConverter(object):
                 value = UnitConverter.fromMetric(value2[:-6], 1)
             elif GuiSettings.inch_mode:
                 unit = "ipm"
+                value = UnitConverter.fromInch(value2)
+            else:
+                value = value2
+        elif unit == "mm/tooth":
+            if value2.endswith('ipt'):
+                unit = "ipt"
+                value = UnitConverter.fromInch(value2[:-3])
+            elif value2.endswith('in/tooth'):
+                unit = "ipt"
+                value = UnitConverter.fromInch(value2[:-8])
+            elif value2.endswith('mm/tooth'):
+                unit = "mm/tooth"
+                value = UnitConverter.fromMetric(value2[:-8], 1)
+            elif GuiSettings.inch_mode:
+                unit = "ipt"
                 value = UnitConverter.fromInch(value2)
             else:
                 value = value2
@@ -209,7 +227,7 @@ class Format(object):
         return Format.point_tuple((value.x, value.y), brief=brief)
 
 def is_gui_application():
-    return isinstance(QCoreApplication.instance(), QGuiApplication)
+    return isinstance(QCoreApplication.instance(), QGuiApplication) and not GuiSettings.batch_text_hack
 
 class Spinner(object):
     def __enter__(self):
@@ -218,3 +236,100 @@ class Spinner(object):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if is_gui_application():
             QGuiApplication.restoreOverrideCursor()
+
+cursor_cache = {}
+
+cursor_shapes = {
+    'scissors' : [ 13, 5,
+        #................
+        '.-----...-----..', # 0
+        '.-000--.--000--.', # 0
+        '-00-00---00-00--', # 1
+        '-00-00---00-00--', # 2
+        '--000--.--000--.', # 3
+        '.--00--.--00--..', # 4
+        '..--00---00--...', # 5
+        '..--00---00--...', # 6
+        '...--00-00--....', # 7
+        '....--000--.....', # 8
+        '...--00-00--....', # 9
+        '..--00---00--...', # 10
+        '..--00---00--...', # 11
+        '.--00--.--00--..', # 12
+        '.--00--.--00--..', # 13
+        '--00--..---00--.', # 14
+        '..----..------..', # 15
+    ],
+    'arrow_plus' : [ 1, 0,
+        "-0-.............",
+        "-00-............",
+        "-000-...........",
+        "-0000-..........",
+        "-00000-.........",
+        "-000000-........",
+        "-0000000-.......",
+        "-00000000-..---.",
+        "-000000000-.-0-.",
+        "-000000------0--",
+        "-000000-..-00000",
+        "-000--00-.---0--",
+        "-00-.-00-...-0-.",
+        "-0-...-00-..---.",
+        "--....-00-......",
+        ".......-00-.....",
+    ],
+    'arrow_minus' : [ 1, 0,
+        "-0-.............",
+        "-00-............",
+        "-000-...........",
+        "-0000-..........",
+        "-00000-.........",
+        "-000000-........",
+        "-0000000-.......",
+        "-00000000-......",
+        "-000000000-.....",
+        "-000000---------",
+        "-000000-..-00000",
+        "-000--00-.------",
+        "-00-.-00-.......",
+        "-0-...-00-......",
+        "--....-00-......",
+        ".......-00-.....",
+    ],
+    'polyline_join' : [ 1, 0,
+        "................",
+        ".-----.....-----",
+        ".-000-------000-",
+        ".-0000000000000-",
+        ".-000-------000-",
+        ".--0-......-0---",
+        "..-0-.....-0-...",
+        "..-0-....-0-....",
+        "...-0-..-0-.....",
+        "...-0-.-0-......",
+        "....-0-0-.......",
+        "...--00-........",
+        "...-000-........",
+        "....000-........",
+        "...-000-........",
+        "...-----........",
+    ],
+}
+
+
+def dataToBitmap(shape):
+    pixmap = QPixmap(["16 16 3 1", "- c #FFFFFF", "0 c #000000", ". c #FF00FF" ] + shape)
+    mask = pixmap.createMaskFromColor(QColor(255, 0, 255))
+    pixmap.setMask(mask)
+    return pixmap
+
+def newCursor(shape):
+    circleBitmap = dataToBitmap()
+
+
+def customCursor(name):
+    res = cursor_cache.get(name, None)
+    if not res:
+        shape = cursor_shapes[name]
+        res = cursor_cache[name] = QCursor(dataToBitmap(shape[2:]), shape[0], shape[1])
+    return res

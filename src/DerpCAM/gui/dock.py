@@ -1,4 +1,3 @@
-import argparse
 import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -7,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr
+from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr, editors
 
 OperationType = model.OperationType
 
@@ -22,11 +21,18 @@ class TreeViewWithAltArrows(QTreeView):
         else:
             return QTreeView.keyPressEvent(self, event)
 
+def defaultDockWidgetWidth(widget):
+    # screen() is Qt 5.14 and up
+    if hasattr(widget, 'screen'):
+        return max(300, widget.screen().size().width() // 4)
+    else:
+        return 300
+
 class CAMObjectTreeDockWidget(QDockWidget):
     operationTouched = pyqtSignal([QStandardItem])
     noOperationTouched = pyqtSignal([])
     selectionChanged = pyqtSignal([])
-    modeChanged = pyqtSignal([int])
+    editorChangeRequest = pyqtSignal([object])
     INPUTS_TAB = 0
     OPERATIONS_TAB = 1
     def __init__(self, document):
@@ -34,12 +40,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
         self.document = document
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        # screen() is Qt 5.14 and up
-        if hasattr(self, 'screen'):
-            screen_width = self.screen().size().width()
-            self.setMinimumSize(max(300, screen_width // 4), 100)
-        else:
-            self.setMinimumSize(300, 100)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
         self.tabs = QTabWidget()
         
         tree = TreeViewWithAltArrows()
@@ -128,6 +129,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             if isinstance(item, model.OperationTreeItem):
                 if item.operation == OperationType.OUTSIDE_CONTOUR or item.operation == OperationType.INSIDE_CONTOUR:
                     menu.addAction("Holding tabs").triggered.connect(self.operationHoldingTabs)
+                    menu.addAction("Entry/exit points").triggered.connect(self.operationEntryExitPoints)
                 elif item.areIslandsEditable():
                     menu.addAction("Islands").triggered.connect(self.operationIslands)
                 elif item.operation == OperationType.OUTSIDE_PEEL:
@@ -170,6 +172,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 menu.addSeparator()
                 action = menu.addAction("Delete from project")
                 action.triggered.connect(lambda: self.toolDelete(item))
+            elif isinstance(item, model.DrawingPolylineTreeItem):
+                action = menu.addAction("Edit")
+                action.triggered.connect(lambda: self.shapeEdit(item))
         if menu.isEmpty():
             return
         menu.exec_(point)
@@ -190,6 +195,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.refreshToolList()
     def onToolListRefreshed(self):
         self.shapeTree.expandAll()
+        if any([i for i in self.shapeSelection() if isinstance(i, (model.ToolTreeItem, model.ToolPresetTreeItem))]):
+            self.selectionChanged.emit()
     def onCutterSelected(self, cutter_cycle):
         if cutter_cycle:
             self.operTree.expand(cutter_cycle.index())
@@ -197,13 +204,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
         preset = cutter_mgr.createPresetDialog(self, self.document, item.inventory_tool, False)
         if preset:
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
     def toolRevertFromInventory(self, item):
         if item.inventory_tool.base_object:
             self.document.opRevertTool(item)
             item.inventory_tool.resetTo(item.inventory_tool.base_object)
             self.document.refreshToolList()
-            self.shapeTree.expandAll()
     def toolDelete(self, item):
         cycle = self.document.cycleForCutter(item.inventory_tool)
         if QMessageBox.question(self, "Delete cutter from project",
@@ -280,6 +285,20 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if self.tabs.currentIndex() == 1:
             return self.operTree
         assert False
+    def shapeJoin(self):
+        selType, items = self.activeSelection()
+        if selType == 's':
+            for i in items:
+                if not isinstance(i, model.DrawingPolylineTreeItem) or i.closed:
+                    QMessageBox.critical(self, None, "Only lines, open polylines and arcs can be joined")
+                    return
+            if not items:
+                QMessageBox.critical(self, None, "No items selected")
+                return
+            self.document.opJoin(items)
+    def shapeEdit(self, item):
+        if isinstance(item, model.DrawingPolylineTreeItem):
+            self.editorChangeRequest.emit(editors.CanvasPolylineEditor(item))
     def operationMove(self, selection, direction):
         mode, items = selection
         indexes = self.document.opMoveItems(items, direction)
@@ -307,9 +326,20 @@ class CAMObjectTreeDockWidget(QDockWidget):
         changes = [(i, oldState != Qt.CheckState.Checked) for i in items]
         self.document.opChangeActive(changes)
     def operationHoldingTabs(self):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_TABS)
+        ops = self.operSelection()
+        if len(ops) == 1:
+            self.editorChangeRequest.emit(editors.CanvasTabsEditor(ops[0]))
+    def operationEntryExitPoints(self):
+        ops = self.operSelection()
+        if len(ops) == 1:
+            self.editorChangeRequest.emit(editors.CanvasEntryPointEditor(ops[0]))
     def operationIslands(self):
-        self.modeChanged.emit(canvas.DrawingUIMode.MODE_ISLANDS)
+        ops = self.operSelection()
+        if len(ops) == 1:
+            if not ops[0].areIslandsEditable():
+                QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
+                return
+            self.editorChangeRequest.emit(editors.CanvasIslandsEditor(ops[0]))
     def cycleSetAsCurrent(self, item):
         self.document.selectCutterCycle(item)
 
@@ -318,7 +348,7 @@ class CAMPropertiesDockWidget(QDockWidget):
         QDockWidget.__init__(self, "Properties")
         self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.setMinimumSize(400, 100)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
         self.propsheet = propsheet.PropertySheetWidget([], document)
         self.setWidget(self.propsheet)
         self.updateModel()
@@ -348,3 +378,17 @@ class CAMPropertiesDockWidget(QDockWidget):
             properties = [p for p in properties if p in all_have]
         self.propsheet.setObjects(selection, properties)
 
+class CAMEditorDockWidget(QDockWidget):
+    applyClicked = pyqtSignal([])
+    def __init__(self, document):
+        QDockWidget.__init__(self, "Editor")
+        self.setFeatures(self.features() & ~QDockWidget.DockWidgetClosable)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setMinimumSize(defaultDockWidgetWidth(self), 100)
+    def setEditor(self, editor, canvas):
+        if editor is not None:
+            editor.initUI(self, canvas)
+            self.setVisible(True)
+        else:
+            self.setWidget(QWidget())
+            self.setVisible(False)

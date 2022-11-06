@@ -1,8 +1,8 @@
-from DerpCAM.common import geom
+from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipper
-from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, Point
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
@@ -58,18 +58,32 @@ def calculate_tool_margin(shape, tool, displace):
             boundary_transformed_nonoverlap = []
     return boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap
 
-def contour_parallel(shape, tool, displace=0):
+def pts2path(pts, orientation):
+    path = geom.Path(pts, True)
+    if path.orientation() != orientation:
+        return path.reverse()
+    return path
+
+def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap):
+    for b in boundary_transformed:
+        for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
+            tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
+    for h in islands_transformed_nonoverlap:
+        for pts in shapes.Shape._intersection(h, *boundary_transformed):
+            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
+
+def contour_parallel(shape, tool, displace=0, roughing_offset=0):
     if not shape.closed:
         raise ValueError("Cannot mill pockets of open polylines")
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
     tps = []
     tps_islands = []
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace + roughing_offset)
     for path in islands_transformed_nonoverlap:
         for ints in shapes.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
-    displace_now = displace
+    displace_now = displace + roughing_offset
     stepover = tool.stepover * tool.diameter
     # No idea why this was here given the joinClosePaths call later on is
     # already merging the island paths.
@@ -90,6 +104,9 @@ def contour_parallel(shape, tool, displace=0):
     tps = toolpath.joinClosePaths(tps_islands + tps)
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
+    if roughing_offset:
+        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace)
+        finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap)
     return toolpath.Toolpaths(tps)
 
 class AxisParallelRow(object):
@@ -175,9 +192,9 @@ def process_rows(rows, tool):
             tps.append(toolpath.Toolpath(geom.Path(sum([i.nodes for i in path], []), False), tool))
     return tps
 
-def axis_parallel(shape, tool, angle, margin, zigzag):
+def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0):
     offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
-    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
+    boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin + roughing_offset)
 
     coords = sum([i.int_points for i in boundary_transformed], [])
     xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
@@ -239,20 +256,11 @@ def axis_parallel(shape, tool, angle, margin, zigzag):
     tps = process_rows(rows, tool)
     if not tps:
         raise ValueError("Milled area is empty")
-
-    def pts2path(pts, orientation):
-        path = geom.Path(pts, True)
-        if path.orientation() != orientation:
-            return path.reverse()
-        return path
-
+    if roughing_offset:
+        # Recalculate final shapes without the roughing offset
+        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin)
     # Add a final pass around the perimeter
-    for b in boundary_transformed:
-        for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
-            tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
-    for h in islands_transformed_nonoverlap:
-        for pts in shapes.Shape._intersection(h, *boundary_transformed):
-            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
+    finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap)
     return toolpath.Toolpaths(tps)
 
 pyvlock = threading.RLock()
@@ -299,6 +307,7 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
         boundary = LinearRing([(p.x, p.y) for p in boundary_offset])
         polygon = Polygon(boundary)
         islands_offset = []
+        holes = []
         for island in shape.islands:
             island_offsets = shapes.Shape._offset(geom.PtsToInts(island), True, tdist)
             island_offsets = pyclipper.SimplifyPolygons(island_offsets)
@@ -306,142 +315,198 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False):
                 island_offset_pts = geom.PtsFromInts(island_offset)
                 islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
-                polygon = polygon.difference(Polygon(ii))
-        all_inputs += objects_to_polygons(polygon)
+                if not from_outside:
+                    polygon = polygon.difference(Polygon(ii))
+                else:
+                    holes.append(Polygon(ii))
+        if from_outside:
+            all_inputs.append((polygon, holes))
+        else:
+            all_inputs += objects_to_polygons(polygon)
     return all_inputs
 
-def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False):
+# only works for closed linestrings
+def linestring2path(ls, orientation):
+    path = geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
+    if orientation is not None and path.orientation() != orientation:
+        return path.reverse()
+    return path
+
+def add_arcdata(gen_path, item):
+    steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
+    cc = geom.CandidateCircle(item.origin.x, item.origin.y, item.radius)
+    sa = math.pi / 2 - item.start_angle
+    span = -item.span_angle
+    osp = geom.PathPoint(item.start.x, item.start.y)
+    sp = cc.at_angle(sa)
+    ep = cc.at_angle(math.pi / 2 - (item.start_angle + item.span_angle))
+    oep = geom.PathPoint(item.end.x, item.end.y)
+    #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
+    #assert geom.dist(osp, sp) < 0.1
+    if geom.dist(sp, osp) >= 0.1:
+        print ("Excessive difference in start point coordinates", sp, osp, geom.dist(osp, sp))
+    if geom.dist(ep, oep) >= 0.1:
+        print ("Excessive difference in end point coordinates", ep, oep, geom.dist(oep, ep), (sa + span) % (2 * math.pi), cc.angle(oep) % (2 * math.pi), item.radius, cc.dist(oep))
+    #assert geom.dist(oep, ep) < 0.1
+    # Fix slight inaccuracies with line segments
+    if geom.dist(osp, sp) >= 0.0005:
+        gen_path.append(osp)
+    gen_path += [sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span)]
+    if geom.dist(ep, oep) >= 0.0005:
+        gen_path.append(oep)
+    return oep
+
+def polygon_to_shape(polygon):
+    exterior = linestring2path(polygon.exterior, None)
+    interiors = [linestring2path(i, None).nodes for i in polygon.interiors]
+    return shapes.Shape(exterior.nodes, True, interiors)
+
+def add_outer_passes2(polygon, tool):
+    tps = []
+    interiors = MultiPolygon([Polygon(i) for i in polygon.interiors])
+    while True:
+        outside_pass = polygon.exterior
+        exterior = Polygon(polygon.exterior).buffer(-tool.diameter * tool.stepover)
+        if not exterior.contains(interiors):
+            break
+        tps.append(toolpath.Toolpath(linestring2path(outside_pass, None), tool))
+        polygon = exterior.difference(interiors)
+    return polygon, tps
+
+def add_outer_passes(polygon, tool):
+    tps = []
+    exterior = Polygon(polygon.exterior)
+    interiors = MultiPolygon([Polygon(i) for i in polygon.interiors])
+    while True:
+        new_exterior = exterior.buffer(-tool.diameter * tool.stepover)
+        if not new_exterior.contains(interiors):
+            break
+        tps.append(toolpath.Toolpath(linestring2path(exterior.exterior, None), tool))
+        exterior = new_exterior
+    polygon = exterior.difference(interiors)
+    return polygon, tps
+
+def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
+    path = geom.Path(gen_path, False)
+    if path.length():
+        tpo = toolpath.Toolpath(path, tool, was_previously_cut=was_previously_cut)
+        spt = path.seg_start()
+        spt2 = Point(spt.x, spt.y)
+        if (already_cut and already_cut.intersection(spt2.buffer(tool.diameter / 20))) or (tp is not None and tp.starting_angle is None):
+            tpo.helical_entry = toolpath.PlungeEntry(spt)
+            tpo.was_previously_cut = True
+        else:
+            if tp and tp.starting_angle:
+                cc = geom.CandidateCircle(tp.start_point.x, tp.start_point.y, tool.min_helix_diameter / 2)
+                a = -tp.starting_angle + math.pi / 2
+                tpo.helical_entry = toolpath.HelicalEntry(cc.centre(), cc.r, angle=a, climb=tool.climb)
+        tps.append(tpo)
+        gen_path = []
+        was_previously_cut = True
+    return gen_path, was_previously_cut, None
+
+def add_finishing_outlines(tps, polygon, tool, from_outside):
+    if not from_outside:
+        tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+    for h in polygon.interiors:
+        tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+
+def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None, roughing_offset=0):
     from DerpCAM import cam
     import DerpCAM.cam.geometry
+    already_cut = None
+    if not from_outside and shape_to_refine is not None:
+        already_cut = MultiPolygon()
+        for i in shape_to_refine:
+            for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
+                already_cut = already_cut.union(j)
+        already_cut = already_cut.buffer(-tool.diameter / 2)
+        display_already_cut = False
+        if display_already_cut:
+            tps = []
+            for polygon in objects_to_polygons(already_cut):
+                tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+            return toolpath.Toolpaths(tps)
     alltps = []
-    all_inputs = shape_to_polygons(shape, tool, displace, from_outside)
+    all_inputs = shape_to_polygons(shape, tool, displace + roughing_offset, from_outside)
+    if zigzag:
+        arc_dir = cam.geometry.ArcDir.Closest
+    else:
+        arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
+    num_polys = len(all_inputs)
+    outer_progress = 0
     for polygon in all_inputs:
+        if from_outside:
+            polygon, islands = polygon
         tps = []
         step = tool.diameter * tool.stepover
-        if zigzag:
-            arc_dir = cam.geometry.ArcDir.Closest
+        tactic = cam.geometry.StartPointTactic.WIDEST
+        if from_outside:
+            tactic = cam.geometry.StartPointTactic.PERIMETER
+            adaptive = False
+            if adaptive:
+                polygon, tps = add_outer_passes(polygon, tool)
+            if shape_to_refine:
+                outside_poly = Polygon(polygon.exterior)
+                stock = outside_poly.buffer(tool.diameter)
+                already_cut_outline = MultiPolygon()
+                for i in shape_to_refine:
+                    for j in shape_to_polygons(i, milling_tool.FakeTool(0), 0, False):
+                        already_cut_outline = already_cut_outline.union(j)
+                already_cut = already_cut_for_this = stock.difference(already_cut_outline.buffer(tool.diameter / 2))
+                polygon = stock.difference(outside_poly)
+            else:
+                td = tool.diameter
+                stock = polygon.buffer(td / 2)
+                for i in islands:
+                    polygon = polygon.difference(i)
+                # Generous margins
+                already_cut_for_this = stock.difference(polygon)
+                for i in islands:
+                    already_cut_for_this = already_cut_for_this.difference(i)
         else:
-            arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
+            already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
+        #polygon = polygon.difference(already_cut_for_this)
         with pyvlock:
-            if from_outside:
-                tp = cam.geometry.OutsidePocketSimple(polygon, step, arc_dir, generate=True)
-            else:
-                tp = cam.geometry.InsidePocket(polygon, step, arc_dir, generate=True)
-        if not from_outside:
-            rt = tp.start_radius
-            min_helix_dia = tool.min_helix_diameter
-            max_helix_dia = 2 * rt
-            if min_helix_dia <= max_helix_dia:
-                r = 0.5 * min_helix_dia
-            else:
-                raise ValueError(f"Entry location smaller than safe minimum of {tool.min_helix_diameter + tool.diameter:0.3f} mm")
-        else:
-            rt = 0
-        generator = tp._get_arcs(100)
+            tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
+        has_entry_circle = tp.starting_angle is not None
+        if already_cut_for_this and already_cut_for_this.contains(tp.start_point):
+            has_entry_circle = False
+        if has_entry_circle and tp.max_starting_radius < tool.min_helix_diameter / 2:
+            raise ValueError(f"Entry location smaller than safe minimum of {guiutils.Format.cutter_dia(tool.min_helix_diameter + tool.diameter)}")
+        generator = tp.get_arcs(100)
         try:
             while not geom.is_calculation_cancelled():
                 progress = max(0, min(1000, 1000 * next(generator)))
-                geom.set_calculation_progress(progress, 1000)
+                geom.set_calculation_progress(outer_progress + progress, 1000 * num_polys)
         except StopIteration:
             pass
         hsm_path = tp.path
+        if not hsm_path:
+            continue
         gen_path = []
-        if from_outside:
-            if not hsm_path:
-                continue
-            x, y = hsm_path[0].start.x, hsm_path[0].start.y
-        else:
-            x, y = tp.start_point.x, tp.start_point.y
-        if not from_outside:
-            r = 0
-            c = geom.CandidateCircle(x, y, rt)
-            if hsm_path:
-                a = math.atan2(hsm_path[0].start.y - y, hsm_path[0].start.x - x)
-            else:
-                a = 0
-            pitch = tool.diameter * tool.stepover
-            if False:
-                # Old method, uses concentric circles, marginally better tested but has direction changes
-                while r < rt:
-                    r = min(rt, r + pitch)
-                    c = geom.CandidateCircle(x, y, r)
-                    cp = c.at_angle(a)
-                    gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, 2 * math.pi)]
-            else:
-                sign = (1 if tool.climb else -1)
-                rdiff = rt - r
-                if rdiff:
-                    turns = math.ceil(rdiff / pitch)
-                    pitch = rdiff / turns
-                    # Number of arcs per circle
-                    res = 2
-                    slice = 2 * math.pi / res * sign
-                    dr = pitch / (2 * math.sin(slice / 2) * res)
-                    dr = abs(dr)
-                    sa = (math.pi / res + math.pi / 2) * sign + a
-                    xc0 = x - dr * math.cos(sa)
-                    yc0 = y - dr * math.sin(sa)
-                    for i in range(res * turns):
-                        t1 = slice * i
-                        c = geom.CandidateCircle(xc0 + dr * math.cos(t1 + sa), yc0 + dr * math.sin(t1 + sa), r + pitch * i / res)
-                        cp1 = c.at_angle(t1 + a)
-                        cp2 = c.at_angle(t1 + a + slice)
-                        gen_path += [cp1, geom.PathArc(cp1, cp2, c, int(2 * math.pi * r), t1 + a, slice)]
-                c = geom.CandidateCircle(x, y, rt)
-                cp = c.at_angle(a)
-                gen_path += [cp, geom.PathArc(cp, cp, c, int(2 * math.pi * r), a, sign * 2 * math.pi)]
-
         lastpt = None
-        was_previously_cut = False
+        was_previously_cut = from_outside
         for item in hsm_path:
+            MoveStyle = cam.geometry.MoveStyle
             if isinstance(item, cam.geometry.LineData):
-                if item.move_style == cam.geometry.MoveStyle.RAPID_OUTSIDE:
-                    if geom.Path(gen_path, False).length():
-                        tps.append(toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut))
-                    was_previously_cut = True
-                    gen_path = []
-                    lastpt = None
+                #if item.start.distance(item.end) < 1e-6:
+                #    continue
+                #print (item.move_style, item.start.distance(item.end), item.start)
+                if item.move_style == MoveStyle.RAPID_OUTSIDE:
+                    gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
-                    gen_path += [geom.PathPoint(x, y) for x, y in item.path.coords]
-                    lastpt = geom.PathPoint(item.end.x, item.end.y)
+                    gen_path += [geom.PathPoint(x, y, toolpath.RapidMove if item.move_style == MoveStyle.RAPID_INSIDE else None) for x, y in item.path.coords]
             elif isinstance(item, cam.geometry.ArcData):
-                steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
-                cc = geom.CandidateCircle(item.origin.x, item.origin.y, item.radius)
-                sa = math.pi / 2 - item.start_angle
-                span = -item.span_angle
-                osp = geom.PathPoint(item.start.x, item.start.y)
-                sp = cc.at_angle(sa)
-                ep = cc.at_angle(math.pi / 2 - (item.start_angle + item.span_angle))
-                oep = geom.PathPoint(item.end.x, item.end.y)
-                #assert lastpt is None or geom.dist(lastpt, osp) < 0.1, f"{lastpt} vs {osp}"
-                #assert geom.dist(osp, sp) < 0.1
-                if geom.dist(sp, osp) >= 0.1:
-                    print ("Excessive difference in start point coordinates", sp, osp, geom.dist(osp, sp))
-                if geom.dist(ep, oep) >= 0.1:
-                    print ("Excessive difference in end point coordinates", ep, oep, geom.dist(oep, ep), (sa + span) % (2 * math.pi), cc.angle(oep) % (2 * math.pi), item.radius, cc.dist(oep))
-                #assert geom.dist(oep, ep) < 0.1
-                # Fix slight inaccuracies with line segments
-                if geom.dist(osp, sp) >= 0.0005:
-                    gen_path.append(osp)
-                gen_path += [sp, geom.PathArc(sp, ep, geom.CandidateCircle(item.origin.x, item.origin.y, item.radius), steps, sa, span)]
-                if geom.dist(ep, oep) >= 0.0005:
-                    gen_path.append(oep)
-                lastpt = oep
-        if geom.Path(gen_path, False).length():
-            tpo = toolpath.Toolpath(geom.Path(gen_path, False), tool, was_previously_cut=was_previously_cut)
-            tps.append(tpo)
-        if not from_outside and tps and min_helix_dia <= max_helix_dia:
-            tps[0].helical_entry = toolpath.HelicalEntry(tp.start_point, min_helix_dia / 2.0, angle=a, climb=tool.climb)
+                add_arcdata(gen_path, item)
+        gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
         # Add a final pass around the perimeter
-        def ls2path(ls, orientation):
-            path = geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], True)
-            if path.orientation() != orientation:
-                return path.reverse()
-            return path
-        tps.append(toolpath.Toolpath(ls2path(polygon.exterior, tool.climb), tool, was_previously_cut=True))
-        for h in polygon.interiors:
-            tps.append(toolpath.Toolpath(ls2path(h, not tool.climb), tool, was_previously_cut=True))
+        if not roughing_offset:
+            add_finishing_outlines(tps, polygon, tool, from_outside)
+        else:
+            add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
         alltps += tps
+        outer_progress += 1000
     return toolpath.Toolpaths(alltps)
 
 def shape_to_object(shape, tool, displace=0, from_outside=False):
@@ -464,6 +529,7 @@ def refine_shape_internal(shape, previous, current, min_entry_dia):
     unmilled_polygons = objects_to_polygons(unmilled)
     output_polygons = []
     junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
+    cnt = 0
     for polygon in unmilled_polygons:
         # Skip very tiny shapes
         polygons = polygon.buffer(-junk_cutoff)
@@ -491,7 +557,9 @@ def refine_shape_internal(shape, previous, current, min_entry_dia):
 
 def refine_shape_external(shape, previous, current, min_entry_dia):
     alltps = []
-    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
+    entire_shape, holes = shape_to_object(shape, milling_tool.FakeTool(0), from_outside=True)
+    for i in holes:
+        entire_shape = entire_shape.difference(i)
     previous_milled_outline = entire_shape.buffer(previous / 2)
     previous_milled = previous_milled_outline.buffer(-previous / 2)
     mill_slot = previous_milled_outline.difference(previous_milled)
@@ -514,4 +582,25 @@ def refine_shape_external(shape, previous, current, min_entry_dia):
         exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
         interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
         output_shapes.append(shapes.Shape(exterior, True, interiors))
+    return output_shapes
+
+def shape_to_refine_internal(shape, previous):
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
+    previous_milled = entire_shape.buffer(-previous / 2).buffer(previous / 2)
+    output_polygons = objects_to_polygons(previous_milled)
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        interiors = [[geom.PathPoint(x, y) for x, y in interior.coords] for interior in polygon.interiors]
+        output_shapes.append(shapes.Shape(exterior, True, interiors))
+    return output_shapes
+
+def shape_to_refine_external(shape, previous):
+    entire_shape = shape_to_object(shape, milling_tool.FakeTool(0))
+    previous_milled = entire_shape.buffer(previous / 2).buffer(-previous / 2)
+    output_polygons = objects_to_polygons(previous_milled)
+    output_shapes = []
+    for polygon in sort_polygons(output_polygons):
+        exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
+        output_shapes.append(shapes.Shape(exterior, True))
     return output_shapes
