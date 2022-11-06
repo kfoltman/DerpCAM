@@ -269,20 +269,20 @@ class CanvasPolylineEditor(CanvasEditor):
     def updateLabel(self):
         modeText = f"Drag to add or move a point, double-click to remove, snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
         self.descriptionLabel.setText(modeText)
-    def paint(self, e, qp):
-        polyline = self.item
-        transform = self.canvas.drawingTransform()
-        Format = guiutils.Format
+    def paintPoint(self, qp, loc):
         hbox = QPointF(3, 3)
         hbox2a = QPointF(50, 20)
         hbox2b = QPointF(50, -5)
+        pt = self.canvas.project(QPointF(loc.x, loc.y))
+        qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
+        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")")
+    def paint(self, e, qp):
+        polyline = self.item
         normPen = QColor(0, 0, 0)
         qp.setPen(normPen)
         for i in polyline.points:
             if i.is_point():
-                pt = self.canvas.project(QPointF(i.x, i.y))
-                qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
-                qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + Format.coord(i.x, brief=True) + ", " + Format.coord(i.y, brief=True) + ")")
+                self.paintPoint(qp, i)
     def clickOnPolyline(self, pos, e, is_double):
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
@@ -307,8 +307,7 @@ class CanvasPolylineEditor(CanvasEditor):
                 return
             else:
                 if nearest == 0 or not polyline.points[nearest - 1].is_arc():
-                    self.canvas.dragging = True
-                    self.drag_inertia = True
+                    self.canvas.start_point = e.localPos()
                     self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
                     return
         if not is_double:
@@ -316,16 +315,14 @@ class CanvasPolylineEditor(CanvasEditor):
             if item is not None:
                 pt = self.snapCoords(pt)
                 polyline.document.opModifyPolyline(polyline, polyline.points[:item] + [pt] + polyline.points[item:], polyline.closed)
-                self.canvas.dragging = True
-                self.drag_inertia = True
+                self.canvas.start_point = e.localPos()
                 self.drag_start_data = (e.localPos(), item, pt)
                 self.canvas.renderDrawing()
                 self.canvas.repaint()
             elif is_add:
                 pt = self.snapCoords(pt)
                 polyline.document.opModifyPolyline(polyline, polyline.points + [pt], False)
-                self.canvas.dragging = True
-                self.drag_inertia = True
+                self.canvas.start_point = e.localPos()
                 self.drag_start_data = (e.localPos(), len(polyline.points) - 1, pt)
     def nearestPolylineItem(self, pt, exclude=None):
         polyline = self.item
@@ -382,16 +379,13 @@ class CanvasPolylineEditor(CanvasEditor):
     def mouseMoveEvent(self, e):
         if self.canvas.dragging:
             sp, dragging, start_pos = self.drag_start_data
-            if self.drag_inertia and QLineF(e.localPos(), sp).length() >= 5 / self.canvas.scalingFactor():
-                self.drag_inertia = False
             pos = self.canvas.unproject(e.localPos())
             pt = geom.PathPoint(pos.x(), pos.y())
             nearest = self.nearestPolylineItem(pt, dragging)
             if nearest is not None:
                 self.canvas.setCursor(Qt.ForbiddenCursor)
             else:
-                if not self.drag_inertia:
-                    self.item.document.opModifyPolylinePoint(self.item, dragging, self.snapCoords(pt), True)
+                self.item.document.opModifyPolylinePoint(self.item, dragging, self.snapCoords(pt), True)
                 self.canvas.setCursor(Qt.SizeAllCursor)
             self.canvas.renderDrawing()
             self.canvas.repaint()
@@ -408,27 +402,23 @@ class CanvasPolylineEditor(CanvasEditor):
             else:
                 self.canvas.setCursor(Qt.ArrowCursor)
     def mouseReleaseEvent(self, e):
-        if self.canvas.dragging:
-            sp, dragged, start_pos = self.drag_start_data
-            pos = self.canvas.unproject(e.localPos())
-            pt = geom.PathPoint(pos.x(), pos.y())
-            if isinstance(self, CanvasNewPolylineEditor) and dragged == 0 and self.snapCoords(pt) == start_pos and len(self.item.points) > 2:
-                self.canvas.dragging = False
-                self.item.closed = True
+        if e.button() == Qt.LeftButton:
+            self.canvas.start_point = None
+            if self.canvas.dragging:
+                sp, dragged, start_pos = self.drag_start_data
+                pos = self.canvas.unproject(e.localPos())
+                pt = geom.PathPoint(pos.x(), pos.y())
+                nearest = self.nearestPolylineItem(pt, dragged)
+                if nearest is not None:
+                    if not self.item.closed or len(self.item.points) > 3:
+                        self.item.document.opModifyPolyline(self.item, self.item.points[:dragged] + self.item.points[dragged + 1:], self.item.closed)
+                else:
+                    self.item.document.opModifyPolylinePoint(self.item, dragged, self.snapCoords(pt), False)
+                self.item.calcBounds()
                 self.canvas.renderDrawing()
-                self.canvas.exitEditMode(False)
+                self.canvas.repaint()
+                self.canvas.dragging = False
                 return True
-            nearest = self.nearestPolylineItem(pt, dragged)
-            if nearest is not None:
-                if not self.item.closed or len(self.item.points) > 3:
-                    self.item.document.opModifyPolyline(self.item, self.item.points[:dragged] + self.item.points[dragged + 1:], self.item.closed)
-            else:
-                self.item.document.opModifyPolylinePoint(self.item, dragged, self.snapCoords(pt), False)
-            self.item.calcBounds()
-            self.canvas.renderDrawing()
-            self.canvas.repaint()
-            self.canvas.dragging = False
-            return True
     def penForPath(self, item, path):
         if self.item.shape_id == item.shape_id:
             return None
@@ -437,10 +427,37 @@ class CanvasPolylineEditor(CanvasEditor):
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
     def __init__(self, item):
         CanvasPolylineEditor.__init__(self, item)
+        self.last_pos = None
     def setTitle(self):
         self.parent.setWindowTitle("Create a polyline")
     def updateLabel(self):
         modeText = "Click to add a node. Clicking the first point closes the polyline.\nDrag a line to add a node.\nDrag a node to move it.\nDouble-click a middle point to remove it.\nDouble-click the last point to complete a polyline."
         modeText += f"\nsnap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
         self.descriptionLabel.setText(modeText)
+    def paint(self, e, qp):
+        CanvasPolylineEditor.paint(self, e, qp)
+        if self.last_pos is not None:
+            qp.setPen(QColor(0, 0, 0, 128))
+            self.paintPoint(qp, self.last_pos)
+    def mouseMoveEvent(self, e):
+        pos = self.canvas.unproject(e.localPos())
+        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+        res = CanvasPolylineEditor.mouseMoveEvent(self, e)
+        if not self.canvas.dragging:
+            self.canvas.repaint()
+        return res
+    def mouseReleaseEvent(self, e):
+        if CanvasPolylineEditor.mouseReleaseEvent(self, e):
+            return True
+        if e.button() == Qt.LeftButton and not self.canvas.dragging:
+            # Click on first point to close the polyline
+            pos = self.canvas.unproject(e.localPos())
+            pt = geom.PathPoint(pos.x(), pos.y())
+            nearest = self.nearestPolylineItem(pt)
+            if nearest == 0 and len(self.item.points) > 2:
+                self.canvas.dragging = False
+                self.item.closed = True
+                self.canvas.renderDrawing()
+                self.canvas.exitEditMode(False)
+                return True
 
