@@ -612,7 +612,11 @@ class CutPathWallProfile(BaseCutPath):
                     subpaths = []
                 else:
                     assert isinstance(path_output, PathOutput)
-                    subpaths = [path.optimize() for path in path_output.paths]
+                    subpaths = []
+                    for path in path_output.paths:
+                        subpaths.append(path.optimize())
+                        pbpaths = path_output.piggybacked_paths_dict.get(path, [])
+                        subpaths += [pbpath.optimize() for pbpath in pbpaths]
                     self.correct_helical_entry(subpaths)
                 self.generate_preview(subpaths)
                 csubpaths = CalculatedSubpaths(subpaths, layer.depth)
@@ -685,9 +689,11 @@ class CutPathWallProfile(BaseCutPath):
         print ("Dump preview end")
 
 class PathOutput(object):
-    def __init__(self, paths, paths_for_helical_entry):
+    def __init__(self, paths, paths_for_helical_entry, piggybacked_paths_dict):
         self.paths = paths
         self.paths_for_helical_entry = paths_for_helical_entry
+        # Additional paths to cut before a given path, at each depth level (used for widened slots)
+        self.piggybacked_paths_dict = piggybacked_paths_dict
 
 class BaseCut(object):
     def __init__(self, machine_params, props, tool):

@@ -110,17 +110,17 @@ class Engrave(UntabbedOperation):
     def build_paths(self, margin):
         if margin != 0:
             raise ValueError("Offset not supported for engraving")
-        return PathOutput(self.shape.engrave(self.tool, self.props.margin).flattened(), None)
+        return PathOutput(self.shape.engrave(self.tool, self.props.margin).flattened(), None, {})
 
 class FaceMill(UntabbedOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None)
+        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None, {})
 
 class Pocket(UntabbedOperation):
     def build_cutpaths(self):
         return [CutPathWallProfile(self.machine_params, self.props, self.tool, None, self.subpaths_for_margin, True)]
     def build_paths(self, margin):
-        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset).flattened(), None)
+        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset).flattened(), None, {})
     def subpaths_for_margin(self, margin, is_sublayer):
         if is_sublayer:
             # Edges only (this is used for refining the wall profile after a roughing pass)
@@ -128,7 +128,7 @@ class Pocket(UntabbedOperation):
             for i in self.shape.islands:
                 paths += cam.contour.plain(shapes.Shape(i, True), self.tool.diameter, True, self.props.margin + margin, self.tool.climb)
             paths += cam.contour.plain(self.shape, self.tool.diameter, False, self.props.margin + margin, self.tool.climb)
-            return PathOutput([toolpath.Toolpath(path, self.tool) for path in paths], None)
+            return PathOutput([toolpath.Toolpath(path, self.tool) for path in paths], None, {})
         else:
             # Full pocket (roughing pass)
             return self.build_paths(margin)
@@ -139,15 +139,15 @@ class HSMOperation(UntabbedOperation):
 
 class HSMPocket(HSMOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset).flattened(), None)
+        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset).flattened(), None, {})
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin).flattened(), None)
+        return PathOutput(cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin).flattened(), None, {})
 
 class OutsidePeelHSM(HSMOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine).flattened(), None)
+        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine).flattened(), None, {})
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, machine_params, props, outside, tabs, extra_attribs):
@@ -249,7 +249,10 @@ class Contour(TabbedOperation):
         for i in contours:
             if i in tabs_dict:
                 i.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length())
-        return PathOutput(contours, paths_for_helical_entry)
+                ctwins = twins.get(i, [])
+                for j in ctwins:
+                    j.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length())
+        return PathOutput(contours, paths_for_helical_entry, twins)
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
     def apply_entry_exit(self, contours, twins):
@@ -287,7 +290,7 @@ class Contour(TabbedOperation):
             offset = cam.contour.plain(shapes.Shape(points, True), 0, True, extension, not contour.path.orientation())
             if offset:
                 merged = False
-                if len(offset) == 1:
+                if len(offset) == 1 and not tabs:
                     offset_tp = toolpath.Toolpath(offset[0], tool)
                     if toolpath.startWithClosestPoint(offset_tp, points[0], tool.diameter):
                         # Replace with a combination of the original and the offset path
@@ -308,10 +311,7 @@ class Contour(TabbedOperation):
                         tabs_dict[contour] = moretabs
                 if not merged:
                     paths_for_helical_entry += offset
-                    offset = [toolpath.Toolpath(i, tool) for i in offset]
-                    res += offset
-                    res.append(contour)
-                    twins[contour] = offset
+                    twins[contour] = [toolpath.Toolpath(i, tool) for i in offset]
             res.append(contour)
         return res
 
@@ -360,7 +360,7 @@ class PeckDrill(UntabbedOperation):
         self.retract = retract or RetractToSemiSafe()
         self.slow_retract = slow_retract
     def build_paths(self, margin):
-        return PathOutput([toolpath.Toolpath(Path([PathPoint(self.x, self.y)], True), self.tool)], None)
+        return PathOutput([toolpath.Toolpath(Path([PathPoint(self.x, self.y)], True), self.tool)], None, {})
     def to_gcode(self, gcode):
         gcode.rapid(x=self.x, y=self.y)
         gcode.rapid(z=self.machine_params.semi_safe_z)
@@ -398,7 +398,7 @@ class HelicalDrill(UntabbedOperation):
         coords = []
         for cd in self.diameters():
             coords += shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary
-        return PathOutput([toolpath.Toolpath(Path(coords, False), self.tool)], None)
+        return PathOutput([toolpath.Toolpath(Path(coords, False), self.tool)], None, {})
     def diameters(self):
         if self.d < self.min_dia:
             return [self.d]
