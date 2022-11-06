@@ -244,7 +244,10 @@ class Contour(TabbedOperation):
             if extra_width and trc_rate:
                 # This will require handling segmentation
                 raise ValueError("Cannot use entry/exit with trochoidal paths yet")
-            contours = self.apply_entry_exit(contours, twins)
+            if tab_locations:
+                # How would that even work without separate entry/exit point per tab?
+                raise ValueError("Cannot use entry/exit with tabs")
+            contours, twins = self.apply_entry_exit(contours, twins)
         self.add_tabs_if_close(contours, tabs_dict, tab_locations, tool.diameter * sqrt(2))
         for i in contours:
             if i in tabs_dict:
@@ -258,6 +261,7 @@ class Contour(TabbedOperation):
     def apply_entry_exit(self, contours, twins):
         ee = self.entry_exit
         cut_contours = []
+        res_twins = {}
         for sp, ep in ee:
             path = contours[0]
             pos, min_dist = path.path.closest_point(sp)
@@ -266,9 +270,10 @@ class Contour(TabbedOperation):
                 if dist < min_dist:
                     min_dist = dist
                     path = j
-            path_and_twins = twins.get(path, [path])
-            for path in path_and_twins:
-                orig_path = path.path
+            path_and_twins = [path] + twins.get(path, [])
+            cur_twins = []
+            for i in path_and_twins:
+                orig_path = i.path
                 pos, dist = orig_path.closest_point(sp)
                 pos2, dist2 = orig_path.closest_point(ep)
                 if pos < pos2:
@@ -279,8 +284,14 @@ class Contour(TabbedOperation):
                     newpath = Path([sp], False).joined(newpath).joined(Path([ep], False))
                 else:
                     newpath = orig_path
-                cut_contours.append(toolpath.Toolpath(newpath, path.tool))
-        return cut_contours
+                if i is path:
+                    path = toolpath.Toolpath(newpath, path.tool)
+                else:
+                    cur_twins.append(toolpath.Toolpath(newpath, path.tool))
+            cut_contours.append(path)
+            if cur_twins:
+                res_twins[path] = cur_twins
+        return cut_contours, res_twins
     def widened_contours(self, contours, tool, extension, twins, tabs, tabs_dict, paths_for_helical_entry):
         res = []
         for contour in contours:
@@ -290,7 +301,7 @@ class Contour(TabbedOperation):
             offset = cam.contour.plain(shapes.Shape(points, True), 0, True, extension, not contour.path.orientation())
             if offset:
                 merged = False
-                if len(offset) == 1 and not tabs:
+                if len(offset) == 1 and not tabs and not self.entry_exit:
                     offset_tp = toolpath.Toolpath(offset[0], tool)
                     if toolpath.startWithClosestPoint(offset_tp, points[0], tool.diameter):
                         # Replace with a combination of the original and the offset path
