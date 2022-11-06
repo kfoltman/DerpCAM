@@ -57,6 +57,7 @@ class CAMMainWindow(QMainWindow):
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
         self.document.shapesUpdated.connect(self.onShapesUpdated)
+        self.document.shapesDeleted.connect(self.onShapesDeleted)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
         self.document.tabEditRequested.connect(self.projectDW.operationHoldingTabs)
         self.document.entryExitEditRequested.connect(self.projectDW.operationEntryExitPoints)
@@ -200,6 +201,9 @@ class CAMMainWindow(QMainWindow):
         return True
     def onEditorApplyClicked(self):
         self.viewer.applyClicked()
+    def onShapesDeleted(self, shapes):
+        if self.viewer.editor is not None:
+            self.viewer.editor.onShapesDeleted(shapes)
     def onShapesUpdated(self):
         self.scheduleMajorRedraw()
         self.doRefreshNow()

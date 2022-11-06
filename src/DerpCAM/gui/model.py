@@ -2173,8 +2173,10 @@ class DeleteDrawingItemsUndoCommand(QUndoCommand):
             parent.insertRow(pos, item)
         self.document.shapesUpdated.emit()
     def redo(self):
+        deletedItems = []
         for parent, pos, item in self.items[::-1]:
-            parent.takeRow(pos)
+            deletedItems.append(parent.takeRow(pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
         self.document.shapesUpdated.emit()
 
 class AddDrawingItemsUndoCommand(QUndoCommand):
@@ -2184,8 +2186,10 @@ class AddDrawingItemsUndoCommand(QUndoCommand):
         self.items = items
         self.pos = self.document.drawing.rowCount()
     def undo(self):
+        deletedItems = []
         for i in range(len(self.items)):
-            self.document.drawing.takeRow(self.pos)
+            deletedItems.append(self.document.drawing.takeRow(self.pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
         self.document.shapesUpdated.emit()
     def redo(self):
         self.document.drawing.insertRows(self.pos, self.items)
@@ -2340,6 +2344,7 @@ class DocumentModel(QObject):
     entryExitEditRequested = pyqtSignal([OperationTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
+    shapesDeleted = pyqtSignal([list])
     shapesUpdated = pyqtSignal([])
     projectCleared = pyqtSignal([])
     projectLoaded = pyqtSignal([])

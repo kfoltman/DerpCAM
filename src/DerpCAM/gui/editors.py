@@ -53,6 +53,8 @@ class CanvasEditor(object):
         pass
     def penForPath(self, item, path):
         return None
+    def onShapesDeleted(self, shapes):
+        pass
 
 class CanvasTabsEditor(CanvasEditor):
     def __init__(self, item):
@@ -269,6 +271,11 @@ class CanvasPolylineEditor(CanvasEditor):
         self.visual_feedback = None
     def connectSignals(self):
         self.canvas.zoomChanged.connect(self.updateLabel)
+        self.item.document.shapesUpdated.connect(self.resetVisualFeedback)
+    def resetVisualFeedback(self):
+        if self.visual_feedback:
+            self.visual_feedback = None
+            self.canvas.repaint()
     def setTitle(self):
         self.parent.setWindowTitle("Modify a polyline")
     def updateLabel(self):
@@ -523,6 +530,9 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         if self.item.shape_id == item.shape_id:
             return None
         return item.defaultGrayPen
+    def onShapesDeleted(self, shapes):
+        if self.item in shapes:
+            self.canvas.exitEditMode(False)
 
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
     def __init__(self, item):
