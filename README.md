@@ -17,8 +17,8 @@ or capricious vendors removing features.
 The following features are available in the current version:
 
 * import of DXF files from LibreCAD (other DXF files may or may not work,
-  some objects like points, splines, ellipses, dimensions and multiline text
-  are not supported)
+  some objects like points, dimensions and multiline text are ignored; ellipses
+  and splines are converted to polylines during import)
 
 * outside/inside slot milling with optional tabs, wide slots and trochoidal paths
 
@@ -47,13 +47,19 @@ The following features are available in the current version:
 The following features may have unexpected limitations or bugs, but also might work
 just fine in many cases.
 
-* external milling - producing a target shape by milling from the outside edges
+* external (side) milling - producing a target shape by milling from the outside edges
 
 * rest machining - refining a coarsely-milled pocket or outline using a finer tool
 
 * single-line text objects - no need to convert text to paths for most operations, it is based on system fonts like TrueType/OpenType etc.
 
-* inch support - import/export and some of the data entry supports inch values, but values are displayed in metric only
+* basic CAD-like functions (rectangles, circles, polylines) for quick tasks that don't require full CAD
+
+* inch support - works for all CAM functionality, but not for the new CAD-like facilities
+
+* Python API for generating G-Code from data instead of a CAD drawing
+
+* wall profile support for efficient milling of draft angles or fillets with flat end endmills, Python API only
 
 * automated testing facilities are limited and need a lot more work
 
