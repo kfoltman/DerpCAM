@@ -801,6 +801,9 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_diameter = FloatDistEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
     prop_length = FloatDistEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
     prop_material = MaterialEnumEditableProperty("Material", "material", inventory.CutterMaterial, allow_none=False)
+    prop_shape = EnumEditableProperty("Shape", "shape", inventory.EndMillShape, allow_none=False)
+    prop_angle = FloatDistEditableProperty("Tip angle", "angle", format=Format.angle, unit='\u00b0', min=1, max=179, allow_none=False)
+    prop_tip_diameter = FloatDistEditableProperty("Tip diameter", "tip_diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -823,10 +826,14 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material]
+            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material, self.prop_shape, self.prop_angle, self.prop_tip_diameter]
         elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
             return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material]
         return []
+    def isPropertyValid(self, name):
+        if self.inventory_tool.shape != inventory.EndMillShape.TAPERED and name in ['angle', 'tip_diameter']:
+            return False
+        return True
     def resetProperties(self):
         self.emitPropertyChanged()
     def getPropertyValue(self, name):
@@ -2437,7 +2444,7 @@ class DocumentModel(QObject):
             # Old style singleton tool
             material = MaterialType.toTuple(self.material.material)[2] if self.material.material is not None else material_plastics
             tool = data['tool']
-            prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'])
+            prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'], inventory.EndMillShape.FLAT, 0, 0)
             std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter.flutes, material, milling_tool.carbide_uncoated).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,

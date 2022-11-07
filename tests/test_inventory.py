@@ -103,8 +103,8 @@ class InventoryTest(unittest.TestCase):
             self.assertFalse(orig is saved)
             self.assertTrue(orig.equals(saved))
     def checkStdCutters(self, inventory):
-        self.checkCutterAttribs(inventory, 1, "cheapo 2F 3.2/15", 3.2, 2, 15, "2F \u23003.2 L15 carbide end mill", gui.inventory.EndMillCutter)
-        self.checkCutterAttribs(inventory, 2, "cheapo 2F 2.5/12", 2.5, 2, 12, "2F \u23002.5 L12 carbide end mill", gui.inventory.EndMillCutter)
+        self.checkCutterAttribs(inventory, 1, "cheapo 2F 3.2/15", 3.2, 2, 15, "2F \u23003.2 L15 carbide flat end mill", gui.inventory.EndMillCutter)
+        self.checkCutterAttribs(inventory, 2, "cheapo 2F 2.5/12", 2.5, 2, 12, "2F \u23002.5 L12 carbide flat end mill", gui.inventory.EndMillCutter)
         self.checkCutterAttribs(inventory, 50, "2mm HSS", 2, 2, 25, "2 mm HSS drill bit, L=25 mm", gui.inventory.DrillBitCutter)
         self.checkCutterAttribs(inventory, 51, "3mm HSS", 3, 2, 41, "3 mm HSS drill bit, L=41 mm", gui.inventory.DrillBitCutter)
         self.checkPreset(inventory, "cheapo 2F 3.2/15", "Wood-roughing",

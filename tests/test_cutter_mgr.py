@@ -215,7 +215,7 @@ class CutterListDialogTest(CutterMgrTestBase):
         self.verifyButtonUpdates(dlg, "inventory")
         self.verifyButtonUpdates(dlg, "project")
     def testEditCutterEM(self):
-        self.verifyEditCutter("cheapo 2F 3.2/15", "pricey 4F 2/8", "carbide+TiN", gui.inventory.EndMillCutter, "\u23002 L8 carbide+TiN end mill")
+        self.verifyEditCutter("cheapo 2F 3.2/15", "pricey 4F 2/8", "carbide+TiN", gui.inventory.EndMillCutter, "\u23002 L8 carbide+TiN flat end mill")
     def testEditCutterDB(self):
         self.verifyEditCutter("3mm HSS", "2mm 4F HSS stubby", "HSSCo5", gui.inventory.DrillBitCutter, "2 mm HSSCo5 drill bit, L=8 mm")
     def verifyEditCutter(self, cutter_name, new_cutter_name, new_material, cutter_type, expected_str):

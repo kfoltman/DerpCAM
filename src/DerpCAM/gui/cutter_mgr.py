@@ -351,6 +351,16 @@ class CreateEditCutterDialog(QDialog):
         self.form.addRow("# Flutes", self.flutesEdit)
         self.lengthEdit = QLineEdit()
         self.form.addRow("Usable flute length (max depth, opt.)", self.lengthEdit)
+        if self.edit_cutter is None or isinstance(self.edit_cutter, inventory.EndMillCutter):
+            self.shapeCombo = QComboBox()
+            self.shapeCombo.currentIndexChanged.connect(self.cutterShapeChanged)
+            self.form.addRow("Shape", self.shapeCombo)
+            self.angleEdit = QLineEdit()
+            self.form.addRow("Tip angle", self.angleEdit)
+            self.tipDiaEdit = QLineEdit()
+            self.form.addRow("Tip diameter", self.tipDiaEdit)
+            for item in inventory.EndMillShape.descriptions:
+                self.shapeCombo.addItem(item[1], item[0])
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -363,6 +373,9 @@ class CreateEditCutterDialog(QDialog):
             self.lengthEdit.setText(Format.cutter_length(self.edit_cutter.length) if self.edit_cutter.length else "")
             if isinstance(self.edit_cutter, inventory.EndMillCutter):
                 self.emRadio.setChecked(True)
+                self.shapeCombo.setCurrentIndex(self.shapeCombo.findData(self.edit_cutter.shape))
+                self.angleEdit.setText(Format.angle(self.edit_cutter.angle))
+                self.tipDiaEdit.setText(Format.cutter_dia(self.edit_cutter.tip_diameter))
             elif isinstance(self.edit_cutter, inventory.DrillBitCutter):
                 self.drillRadio.setChecked(True)
             self.emRadio.setEnabled(False)
@@ -370,6 +383,14 @@ class CreateEditCutterDialog(QDialog):
         else:
             self.flutesEdit.setText("2")
             self.emRadio.setChecked(True)
+            self.drillRadio.clicked.connect(self.cutterShapeChanged)
+            self.emRadio.clicked.connect(self.cutterShapeChanged)
+            self.cutterShapeChanged()
+    def cutterShapeChanged(self):
+        self.shapeCombo.setEnabled(self.emRadio.isChecked())
+        is_tapered = self.emRadio.isChecked() and self.shapeCombo.findData(self.shapeCombo.currentIndex()) == inventory.EndMillShape.TAPERED
+        self.angleEdit.setEnabled(is_tapered)
+        self.tipDiaEdit.setEnabled(is_tapered)
     def accept(self):
         name = self.nameEdit.text()
         if name == '':
@@ -418,7 +439,33 @@ class CreateEditCutterDialog(QDialog):
             return
         material = inventory.inventory.materialByName(self.materialCombo.currentData())
         if self.emRadio.isChecked():
-            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes)
+            shape = self.shapeCombo.itemData(self.shapeCombo.currentIndex())
+            angle = 0
+            tip_diameter = 0
+            if shape == inventory.EndMillShape.TAPERED:
+                try:
+                    if self.angleEdit.text() == "":
+                        raise ValueError("Invalid tip angle value")
+                    else:
+                        angle, unit = propsheet.UnitConverter.parse(self.angleEdit.text(), "\u00b0", as_float=True)
+                        if angle < 1 or angle > 179:
+                            raise ValueError("Invalid tip angle value")
+                except ValueError as e:
+                    QMessageBox.critical(self, None, str(e))
+                    self.angleEdit.setFocus()
+                    return
+                try:
+                    if self.tipDiaEdit.text() == "":
+                        tip_diameter = 0
+                    else:
+                        tip_diameter, unit = propsheet.UnitConverter.parse(self.tipDiaEdit.text(), "mm", as_float=True)
+                        if tip_diameter <= 0 or tip_diameter > self.diameter:
+                            raise ValueError("Invalid tip diameter value")
+                except ValueError as e:
+                    QMessageBox.critical(self, None, str(e))
+                    self.tipDiaEdit.setFocus()
+                    return
+            self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes, shape, angle, tip_diameter)
         if self.drillRadio.isChecked():
             self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes)
         QDialog.accept(self)
