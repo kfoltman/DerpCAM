@@ -1777,7 +1777,7 @@ class OperationTreeItem(CAMTreeItem):
             if self.cutter.length and depth > self.cutter.length:
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than usable flute length ({self.cutter.length:0.1f} mm)")
             # Only checking for end mills because most drill bits have a V tip and may require going slightly past
-            if isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
+            if thickness and isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
                 self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
             if self.operation == OperationType.DRILLED_HOLE and self.cutter.diameter > 2 * self.orig_shape.r + 0.01:
                 self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
