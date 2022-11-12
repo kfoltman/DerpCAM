@@ -819,7 +819,7 @@ class BaseCut2D(BaseCut):
             gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
             gcode.rapid(z=self.machine_params.semi_safe_z)
             gcode.feed(subpath.tool.vfeed)
-            gcode.linear(z=self.curz)
+            self.curz = self.machine_params.semi_safe_z
             return
         # Z slightly above the previous cuts. There will be no ramping or helical
         # entry above that, just a straight plunge. However, the speed of the
