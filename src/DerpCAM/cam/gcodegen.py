@@ -181,10 +181,6 @@ class Gcode(object):
         self.feed(tool.hfeed)
 
     def apply_vcarve_subpath(self, subpath, lastpt, tool, base_z, target_z):
-        slope = -0.5 / tan((tool.tip_angle * pi / 180) / 2)
-        def dia2depth(dia):
-            eff_dia = max(0, min(dia, tool.diameter) - tool.tip_diameter)
-            return slope * eff_dia
         self.section_info("Start vcarve subpath")
         first = True
         for lastpt, pt in PathSegmentIterator(subpath):
@@ -193,10 +189,10 @@ class Gcode(object):
             assert not pt.is_arc()
             assert base_z is not None
             if first:
-                start_z = max(target_z, base_z + dia2depth(lastpt.speed_hint.diameter))
+                start_z = max(target_z, base_z + tool.dia2depth(lastpt.speed_hint.diameter))
                 self.linear(z=start_z)
                 first = False
-            end_z = max(target_z, base_z + dia2depth(pt.speed_hint.diameter))
+            end_z = max(target_z, base_z + tool.dia2depth(pt.speed_hint.diameter))
             self.linear(x=pt.x, y=pt.y, z=end_z)
         lastpt = pt.seg_end()
         self.section_info("End vcarve subpath")
@@ -726,13 +722,13 @@ class BaseCut(object):
         self.props = props
         self.tool = tool
 
-# Simple tabbed 2D toolpath
-class BaseCut2D(BaseCut):
+class BaseCutLayered(BaseCut):
     def __init__(self, machine_params, props, tool, cutpaths):
         BaseCut.__init__(self, machine_params, props, tool)
         self.cutpaths = cutpaths
 
     def build(self, gcode):
+        self.curz = self.machine_params.safe_z
         for cutpath in self.cutpaths:
             self.build_cutpath(gcode, cutpath)
 
@@ -745,6 +741,52 @@ class BaseCut2D(BaseCut):
     def layers_for_cutpath(self, cutpath):
         return cutpath.cut_layers
 
+    def go_to_safe_z(self, gcode):
+        gcode.rapid(z=self.machine_params.safe_z)
+        self.curz = self.machine_params.safe_z
+
+class VCarveCut(BaseCutLayered):
+    def build_layer(self, gcode, cutpath, layer):
+        subpaths = layer.subpaths
+        assert subpaths
+        if all([self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth) for subpath in subpaths]):
+            return
+        gcode.section_info(f"Start v-carve layer")
+        for subpath in subpaths:
+            self.build_subpath(gcode, cutpath, layer, subpath)
+        gcode.section_info(f"End v-carve layer")
+
+    def build_subpath(self, gcode, cutpath, layer, subpath):
+        if subpath.path.length() < 0.001:
+            return
+        if self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth):
+            return
+        # This will always be false for subpaths_full.
+        self.lastpt = subpath.path.seg_start()
+        gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
+        gcode.rapid(z=self.machine_params.semi_safe_z)
+        gcode.feed(subpath.tool.vfeed)
+        assert self.lastpt is not None
+        assert isinstance(self.lastpt, PathPoint)
+        self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
+        assert isinstance(self.lastpt, PathPoint)
+        self.go_to_safe_z(gcode)
+
+    def start_cutpath(self, gcode, cutpath):
+        self.lastpt = None
+
+    def end_cutpath(self, gcode, cutpath):
+        pass
+
+    def is_redundant_pass(self, subpath, base_z, target_z, prev_z):
+        lowest_z = base_z
+        for pt in subpath.path.nodes:
+            lowest_z = min(lowest_z, base_z + subpath.tool.dia2depth(pt.speed_hint.diameter))
+        lowest_z = max(lowest_z, target_z)
+        return lowest_z >= prev_z
+
+# Simple tabbed 2D toolpath
+class BaseCut2D(BaseCutLayered):
     def build_layer(self, gcode, cutpath, layer):
         subpaths = layer.subpaths
         assert subpaths
@@ -797,10 +839,7 @@ class BaseCut2D(BaseCut):
         self.enter_or_leave_cut(gcode, cutpath, layer, subpath, newz)
         assert self.lastpt is not None
         assert isinstance(self.lastpt, PathPoint)
-        if subpath.is_vcarve():
-            self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
-        else:
-            self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
+        self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
         assert isinstance(self.lastpt, PathNode)
         self.end_subpath(subpath)
 
@@ -814,13 +853,6 @@ class BaseCut2D(BaseCut):
                 self.curz = newz
 
     def enter_cut(self, gcode, cutpath, layer, subpath, newz):
-        if subpath.is_vcarve():
-            self.lastpt = subpath.path.seg_start()
-            gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
-            gcode.rapid(z=self.machine_params.semi_safe_z)
-            gcode.feed(subpath.tool.vfeed)
-            self.curz = self.machine_params.semi_safe_z
-            return
         # Z slightly above the previous cuts. There will be no ramping or helical
         # entry above that, just a straight plunge. However, the speed of the
         # plunge will be dependent on whether a ramped or helical entry is used
@@ -889,7 +921,4 @@ class BaseCut2D(BaseCut):
         self.go_to_safe_z(gcode)
         gcode.section_info(f"End cutpath")
 
-    def go_to_safe_z(self, gcode):
-        gcode.rapid(z=self.machine_params.safe_z)
-        self.curz = self.machine_params.safe_z
 

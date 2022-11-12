@@ -5,7 +5,7 @@ import DerpCAM.cam.contour
 import DerpCAM.cam.peel
 import DerpCAM.cam.pocket
 from DerpCAM.cam.wall_profile import PlainWallProfile
-from DerpCAM.cam.gcodegen import Gcode, PathOutput, BaseCut2D, CutPath2D, CutPathWallProfile
+from DerpCAM.cam.gcodegen import Gcode, PathOutput, BaseCut2D, VCarveCut, CutPath2D, CutPathWallProfile
 
 from DerpCAM.cam import shapes, toolpath
 
@@ -129,6 +129,8 @@ class VCarve(UntabbedOperation):
         if not self.shape.closed:
             raise ValueError("V-carving cuts are not supported for open shapes")
         return PathOutput(cam.pocket.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth).flattened(), None, {})
+    def to_gcode(self, gcode):
+        VCarveCut(self.machine_params, self.props, self.tool, self.cutpaths).build(gcode)
 
 class Pocket(UntabbedOperation):
     def build_cutpaths(self):

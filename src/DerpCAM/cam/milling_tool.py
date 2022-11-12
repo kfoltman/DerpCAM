@@ -22,6 +22,7 @@ class Tool(object):
         # evacuation may be a problem.
         if min_helix_ratio is None:
             min_helix_ratio = 0.5
+        self.min_helix_ratio = min_helix_ratio
         self.min_helix_diameter = min_helix_ratio * diameter
         self.helix_entry_diameter = self.min_helix_diameter
         self.material = None
@@ -44,6 +45,11 @@ class Tool(object):
     # Path slope for ramp/helical entry
     def slope(self):
         return max(1, int(self.hfeed / self.vfeed))
+    # Diameter to depth conversion for v-carving
+    def dia2depth(self, dia):
+        slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
+        eff_dia = max(0, min(dia, self.diameter) - self.tip_diameter)
+        return slope * eff_dia
     def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, tip_angle=None, tip_diameter=None):
         def ovr(v1, v2):
             return v1 if v1 is not None else v2
