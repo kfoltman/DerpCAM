@@ -296,8 +296,9 @@ class CAMMainWindow(QMainWindow):
             self.scheduleMajorRedraw(True)
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
+        cancel_index = self.document.undoStack.index()
         self.document.opAddDrawingItems([polyline])
-        self.switchToEditor(editors.CanvasNewPolylineEditor(polyline))
+        self.switchToEditor(editors.CanvasNewPolylineEditor(polyline, cancel_index))
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False

@@ -121,6 +121,7 @@ class DrawingViewer(view.PathViewer):
             self.document.setUpdateSuspended(None)
         self.renderDrawing()
         self.repaint()
+        self.updateCursor()
     def paintGridPart(self, e, qp, grid):
         size = self.size()
         gridm = grid * self.scalingFactor()

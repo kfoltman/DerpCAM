@@ -298,7 +298,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.opJoin(items)
     def shapeEdit(self, item):
         if isinstance(item, model.DrawingPolylineTreeItem):
-            self.editorChangeRequest.emit(editors.CanvasPolylineEditor(item))
+            self.editorChangeRequest.emit(editors.CanvasPolylineEditor(item, self.document.undoStack.index()))
     def operationMove(self, selection, direction):
         mode, items = selection
         indexes = self.document.opMoveItems(items, direction)

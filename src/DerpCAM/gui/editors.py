@@ -11,6 +11,7 @@ from DerpCAM.common import geom, guiutils, view
 class CanvasEditor(object):
     def __init__(self, item):
         self.item = item
+        self.can_cancel = False
     def initUI(self, parent, canvas):
         self.parent = parent
         self.canvas = canvas
@@ -19,6 +20,11 @@ class CanvasEditor(object):
         self.setTitle()
         self.createControls()
         self.connectSignals()
+    def cancel(self):
+        while self.item.document.undoStack.index() > self.cancel_index:
+            self.item.document.undoStack.undo()
+        if self.canvas.editor:
+            self.canvas.exitEditMode(False)
     def createControls(self):
         self.createLabel()
         self.createButtons()
@@ -34,13 +40,25 @@ class CanvasEditor(object):
         self.layout.addWidget(self.descriptionLabel)
     def createButtons(self):
         self.applyButton = QPushButton(self.parent.style().standardIcon(QStyle.SP_DialogApplyButton), "&Apply")
-        self.applyButton.clicked.connect(lambda: self.parent.applyClicked.emit())
-        self.layout.addWidget(self.applyButton)
+        self.applyButton.clicked.connect(lambda: self.apply())
+        if self.can_cancel:
+            self.cancelButton = QPushButton(self.parent.style().standardIcon(QStyle.SP_DialogCancelButton), "&Cancel")
+            self.cancelButton.clicked.connect(lambda: self.cancel())
+            self.btnLayout = QHBoxLayout()
+            self.btnLayout.addWidget(self.applyButton)
+            self.btnLayout.addWidget(self.cancelButton)
+            self.layout.addRow(self.btnLayout)
+        else:
+            self.layout.addWidget(self.applyButton)
     def snapCoords(self, pt):
         return pt
+    def apply(self):
+        self.parent.applyClicked.emit()
     def keyPressEvent(self, e):
-        if e.key() == Qt.Key_Escape or e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter:
-            self.canvas.exitEditMode(False)
+        if e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter:
+            self.apply()
+        if e.key() == Qt.Key_Escape and self.can_cancel:
+            self.cancel()
     def onExit(self):
         self.item.emitPropertyChanged()
     def mousePressEvent(self, e):
@@ -93,6 +111,8 @@ class CanvasTabsEditor(CanvasEditor):
 class CanvasIslandsEditor(CanvasEditor):
     def __init__(self, item):
         CanvasEditor.__init__(self, item)
+        self.can_cancel = True
+        self.cancel_index = self.item.document.undoStack.index()
     def setTitle(self):
         self.parent.setWindowTitle("Select areas to exclude")
     def updateLabel(self):
@@ -265,10 +285,22 @@ FEEDBACK_ADD = 1
 FEEDBACK_REMOVE = 2
 
 class CanvasPolylineEditor(CanvasEditor):
-    def __init__(self, item):
+    def __init__(self, item, cancel_index):
         CanvasEditor.__init__(self, item)
         self.last_pos = None
         self.visual_feedback = None
+        self.can_cancel = True
+        self.cancel_index = cancel_index
+    def apply(self):
+        if not self.item.closed and len(self.item.points) < 2:
+            QMessageBox.critical(self.parent, None, "An open polyline must have at least 2 points")
+            return
+        if self.item.closed and len(self.item.points) < 3:
+            QMessageBox.critical(self.parent, None, "A closed polyline must have at least 3 points")
+            return
+        CanvasEditor.apply(self)
+    def cancel(self):
+        CanvasEditor.cancel(self)
     def connectSignals(self):
         self.canvas.zoomChanged.connect(self.updateLabel)
         self.item.document.shapesUpdated.connect(self.resetVisualFeedback)
@@ -475,7 +507,7 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         nearest = self.nearestPolylineItem(pt)
         if nearest is not None:
             is_add = isinstance(self, CanvasNewPolylineEditor)
-            if is_add and (nearest == 0 or nearest == npts - 1):
+            if is_add and (nearest == 0 or nearest == npts - 1) and npts >= 3:
                 self.canvas.setCursor(guiutils.customCursor('polyline_join'))
             else:
                 self.canvas.setCursor(Qt.PointingHandCursor)
@@ -535,8 +567,6 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
             self.canvas.exitEditMode(False)
 
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
-    def __init__(self, item):
-        CanvasPolylineEditor.__init__(self, item)
     def setTitle(self):
         self.parent.setWindowTitle("Create a polyline")
     def updateLabel(self):
@@ -548,12 +578,10 @@ Double-click a middle point to remove it.
 Double-click the last point to complete a polyline."""
         modeText += f"\nsnap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
         self.descriptionLabel.setText(modeText)
-    def paint(self, e, qp):
-        CanvasPolylineEditor.paint(self, e, qp)
     def mouseMoveEvent(self, e):
         res = CanvasPolylineEditor.mouseMoveEvent(self, e)
         if not self.canvas.dragging:
-            if self.item.points:
+            if self.item.points and self.visual_feedback is None:
                 self.visual_feedback = (FEEDBACK_ADD, self.item.points[-1])
             self.canvas.repaint()
         return res
