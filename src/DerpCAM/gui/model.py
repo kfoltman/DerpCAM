@@ -1317,9 +1317,10 @@ class PresetDerivedAttributes(object):
         target.emitPropertyChanged()
 
 class WorkerThread(threading.Thread):
-    def __init__(self, parentOp, workerFunc):
+    def __init__(self, parentOp, workerFunc, cam):
         self.worker_func = workerFunc
         self.parent_operation = parentOp
+        self.cam = cam
         self.exception = None
         self.exception_text = None
         self.progress = (0, 10000000)
@@ -1332,7 +1333,7 @@ class WorkerThread(threading.Thread):
     def threadMain(self):
         try:
             self.worker_func()
-            if self.parent_operation.cam and self.parent_operation.cam.is_nothing():
+            if self.cam and self.cam.is_nothing():
                 self.parent_operation.addWarning("No cuts produced")
             self.progress = (self.progress[1], self.progress[1])
         except Exception as e:
@@ -1350,8 +1351,9 @@ class WorkerThread(threading.Thread):
             traceback.print_exc()
 
 class WorkerThreadPack(object):
-    def __init__(self, parentOp, workerFuncList):
-        self.threads = [WorkerThread(parentOp, workerFunc) for workerFunc in workerFuncList]
+    def __init__(self, parentOp, threadDataList):
+        self.parent_operation = parentOp
+        self.threads = [WorkerThread(parentOp, workerFunc, cam) for cam, workerFunc in threadDataList]
         self.exception = None
         self.exception_text = None
     def getProgress(self):
@@ -1370,6 +1372,7 @@ class WorkerThreadPack(object):
     def join(self):
         for thread in self.threads:
             thread.join()
+            self.parent_operation.cam.add_all(thread.cam.operations)
         exceptions = ""
         for thread in self.threads:
             if thread.exception is not None:
@@ -1668,7 +1671,7 @@ class OperationTreeItem(CAMTreeItem):
             self.worker.join()
             self.worker = None
             self.last_progress = None
-    def operationFunc(self, shape, pda):
+    def operationFunc(self, shape, pda, parent_cam):
         translation = self.document.drawing.translation()
         if len(self.user_tabs):
             tabs = self.user_tabs
@@ -1679,55 +1682,55 @@ class OperationTreeItem(CAMTreeItem):
             return
         if self.operation == OperationType.OUTSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
+                return lambda: parent_cam.outside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
+                return lambda: parent_cam.outside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
         elif self.operation == OperationType.INSIDE_CONTOUR:
             if pda.trc_rate:
-                return lambda: self.cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
+                return lambda: parent_cam.inside_contour_trochoidal(shape, pda.extra_width / 100.0, pda.trc_rate / 100.0, tabs=tabs, entry_exit=self.entry_exit)
             else:
-                return lambda: self.cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
+                return lambda: parent_cam.inside_contour(shape, tabs=tabs, widen=pda.extra_width / 50.0, entry_exit=self.entry_exit)
         elif self.operation == self.operation == OperationType.REFINE and self.shape_to_refine is not None:
             assert pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG
             if self.is_external:
                 if isinstance(self.shape_to_refine, dict):
-                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                    return lambda: parent_cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
                 else:
-                    return lambda: self.cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine)
+                    return lambda: parent_cam.outside_peel_hsm(shape, shape_to_refine=self.shape_to_refine)
             else:
                 if isinstance(self.shape_to_refine, dict):
-                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
+                    return lambda: parent_cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine.get(shape, None))
                 else:
-                    return lambda: self.cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine)
+                    return lambda: parent_cam.pocket_hsm(shape, shape_to_refine=self.shape_to_refine)
         elif self.operation == OperationType.POCKET or self.operation == OperationType.REFINE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
-                return lambda: self.cam.pocket(shape)
+                return lambda: parent_cam.pocket(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL or pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
-                return lambda: self.cam.pocket_axis_parallel(shape)
+                return lambda: parent_cam.pocket_axis_parallel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                return lambda: self.cam.pocket_hsm(shape)
+                return lambda: parent_cam.pocket_hsm(shape)
         elif self.operation == OperationType.FACE:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
-                return lambda: self.cam.face_mill(shape)
+                return lambda: parent_cam.face_mill(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL or pda.pocket_strategy == inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG:
-                return lambda: self.cam.face_mill_axis_parallel(shape)
+                return lambda: parent_cam.face_mill_axis_parallel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                return lambda: self.cam.outside_peel_hsm(shape)
+                return lambda: parent_cam.outside_peel_hsm(shape)
         elif self.operation == OperationType.OUTSIDE_PEEL:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
-                return lambda: self.cam.outside_peel(shape)
+                return lambda: parent_cam.outside_peel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
-                return lambda: self.cam.outside_peel_hsm(shape)
+                return lambda: parent_cam.outside_peel_hsm(shape)
             else:
                 raise ValueError("Strategy not supported for outside cuts")
         elif self.operation == OperationType.ENGRAVE:
-            return lambda: self.cam.engrave(shape)
+            return lambda: parent_cam.engrave(shape)
         elif self.operation == OperationType.INTERPOLATED_HOLE:
-            return lambda: self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
+            return lambda: parent_cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
         elif self.operation == OperationType.DRILLED_HOLE:
-            return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
+            return lambda: parent_cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         elif self.operation == OperationType.V_CARVE:
-            return lambda: self.cam.vcarve(shape)
+            return lambda: parent_cam.vcarve(shape)
         raise ValueError("Unsupported operation")
     def shapeToRefine(self, shape, previous, is_external):
         if is_external:
@@ -1863,19 +1866,23 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = None
             if isinstance(self.shape, list) and len(self.shape) == 1:
                 self.shape = self.shape[0]
-            self.cam = gcodeops.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
+            self.cam = self.createOpsObject(tool)
             self.renderer = canvas.OperationsRendererWithSelection(self)
             if self.shape:
                 if isinstance(self.shape, list):
-                    threadFuncs = [ self.operationFunc(shape, pda) for shape in self.shape ]
-                    threadFuncs = [ fn for fn in threadFuncs if fn is not None]
-                    if threadFuncs:
-                        self.worker = WorkerThreadPack(self, threadFuncs)
+                    threadDataList = []
+                    for shape in self.shape:
+                        subcam = self.createOpsObject(tool)
+                        func = self.operationFunc(shape, pda, subcam)
+                        if func is not None:
+                            threadDataList.append((subcam, func))
+                    if threadDataList:
+                        self.worker = WorkerThreadPack(self, threadDataList)
                         self.worker.start()
                 else:
-                    threadFunc = self.operationFunc(self.shape, pda)
+                    threadFunc = self.operationFunc(self.shape, pda, self.cam)
                     if threadFunc:
-                        self.worker = WorkerThread(self, threadFunc)
+                        self.worker = WorkerThread(self, threadFunc, self.cam)
                         self.worker.start()
             self.error = None
         except Exception as e:
@@ -1885,6 +1892,8 @@ class OperationTreeItem(CAMTreeItem):
             self.document.operationsUpdated.emit()
             if not isinstance(e, ValueError):
                 raise
+    def createOpsObject(self, tool):
+        return gcodeops.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
     def reorderItem(self, direction):
         index = self.reorderItemImpl(direction, self.parent())
         if index is not None:
