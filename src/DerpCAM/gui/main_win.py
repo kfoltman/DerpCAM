@@ -114,6 +114,7 @@ class CAMMainWindow(QMainWindow):
             ("&Face mill", self.millFace, QKeySequence("Shift+Ctrl+F"), "Face-mill a top surface only without refining side edges"),
             ("&Side mill", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling from the outer edges of the part"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
+            ("&V-carve", self.millVCarve, QKeySequence("Shift+Ctrl+R"), "Use a v-bit at a variable depth of cut to engrave a contour"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
             ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
@@ -348,6 +349,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.OUTSIDE_PEEL)
     def millEngrave(self):
         self.millSelectedShapes(OperationType.ENGRAVE)
+    def millVCarve(self):
+        self.millSelectedShapes(OperationType.V_CARVE)
     def millInterpolatedHole(self):
         self.millSelectedShapes(OperationType.INTERPOLATED_HOLE)
     def millRefine(self):
@@ -480,6 +483,8 @@ class CAMMainWindow(QMainWindow):
             self.document.exportGcode(fn)
             self.configSettings.last_gcode_directory = os.path.split(fn)[0]
             self.configSettings.save()
+            dlg = None
+            self.repaint()
             os.system(self.configSettings.run_after_export + " '" + os.path.abspath(fn) + "'")
     def fileExit(self):
         self.close()

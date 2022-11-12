@@ -75,6 +75,13 @@ class PathNode(object):
         return False
     def is_circle(self):
         return False
+    def joinable(self, other):
+        h1 = self.speed_hint
+        h2 = other.speed_hint
+        if not (h1 and h2):
+            # Simple case - either none have speed hints (that's joinable) or only one has (that's not joinable)
+            return not h1 and not h2
+        return h1.joinable(h2)
     @staticmethod
     def from_tuple(t):
         l = len(t)
@@ -707,7 +714,11 @@ class CircleFitter(object):
                     return [(start, end, c, error, 1 if pangles else -1)], error
         if not recurse:
             return [], -1
+        if not pts[start].joinable(pts[end - 1]):
+            return [], -1
         mid = (start + end) // 2
+        if not pts[start].joinable(pts[mid - 1]):
+            return [], -1
         left, lerror = CircleFitter.fit_arcs1(pts, start, mid)
         right, rerror = CircleFitter.fit_arcs1(pts, mid, end)
         # Coalesce

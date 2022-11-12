@@ -2,7 +2,7 @@ from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipper
-from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, Point
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
@@ -272,10 +272,13 @@ def sort_polygons(polygons):
     output = [polygons.pop(0)]
     # Basic unoptimized greedy algo for now
     while polygons:
+        last = output[-1]
+        if isinstance(last, Polygon):
+            last = Point(*last.exterior.coords[-1])
         best = 0
-        bestd = polygons[0].distance(output[-1])
+        bestd = polygons[0].distance(last)
         for j in range(1, len(polygons)):
-            d = polygons[j].distance(output[-1])
+            d = polygons[j].distance(last)
             if d < bestd:
                 bestd = d
                 best = j
@@ -332,6 +335,9 @@ def linestring2path(ls, orientation):
     if orientation is not None and path.orientation() != orientation:
         return path.reverse()
     return path
+
+def linestring2path_open(ls):
+    return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], False)
 
 def add_arcdata(gen_path, item):
     steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
@@ -605,3 +611,105 @@ def shape_to_refine_external(shape, previous):
         exterior = [geom.PathPoint(x, y) for x, y in polygon.exterior.coords]
         output_shapes.append(shapes.Shape(exterior, True))
     return output_shapes
+
+def sort_linestrings(linestrings):
+    if len(linestrings) <= 1:
+        return linestrings
+    output = [linestrings.pop(0)]
+    # Basic unoptimized greedy algo for now
+    lastp = Point(*output[-1].coords[-1])
+    while linestrings:
+        best = 0
+        bestdir = 1
+        bestd = Point(*linestrings[0].coords[0]).distance(lastp)
+        d = Point(*linestrings[0].coords[-1]).distance(lastp)
+        if d < bestd:
+            bestd = d
+            bestdir = -1
+        for j in range(1, len(linestrings)):
+            d = Point(*linestrings[j].coords[0]).distance(lastp)
+            if d < bestd:
+                bestd = d
+                best = j
+                bestdir = 1
+            d = Point(*linestrings[j].coords[-1]).distance(lastp)
+            if d < bestd:
+                bestd = d
+                best = j
+                bestdir = -1
+        bestls = linestrings.pop(best)
+        if bestdir == -1:
+            bestls = LineString(list(bestls.coords)[::-1])
+        output.append(bestls)
+        lastp = Point(*bestls.coords[-1])
+    i = 0
+    while i < len(output) - 1:
+        cur = output[i]
+        next = output[i + 1]
+        if Point(cur.coords[-1]).distance(Point(next.coords[0])) < 1.0 / geom.GeometrySettings.RESOLUTION:
+            output[i] = LineString(list(cur.coords) + list(next.coords))
+            del output[i + 1]
+        else:
+            i += 1
+    return output
+
+def vcarve(shape, tool, thickness):
+    from DerpCAM.cam import voronoi_centers
+    if not shape.closed:
+        raise ValueError("Cannot v-carve open polylines")
+    if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
+        raise ValueError("V-carving is only supported using tapered tools")
+    all_inputs = shape_to_polygons(shape, tool, -0.5 * tool.diameter, False)
+    # depth = slope * diameter, max_diameter = max_depth / slope (and max_depth=thickness)
+    slope = 0.5 / math.tan((tool.tip_angle * math.pi / 180) / 2)
+    max_diameter = min(tool.diameter, thickness / slope + tool.tip_diameter)
+    tps = []
+    for polygon in sort_polygons(all_inputs):
+        with pyvlock:
+            v = voronoi_centers.VoronoiCenters(polygon, preserve_edge=True)
+            edges = list(v.edges.values())
+        sausages = []
+        edges = sort_linestrings(edges)
+        for edge in edges:
+            dists = []
+            points = []
+            sausage = []
+            for ptuple in edge.coords:
+                x, y = ptuple
+                dia = 2 * v.distance_from_geom(Point(x, y))
+                dia = max(dia, 0.001)
+                pt = geom.PathPoint(x, y, toolpath.DesiredDiameter(min(max_diameter, dia)))
+                points.append(pt)
+                pt = geom.PathPoint(x, y, toolpath.DesiredDiameter(dia))
+                if dia > max_diameter:
+                    sausage.append(pt)
+                else:
+                    if len(sausage) > 1 or (sausage and sausage[0].speed_hint.diameter > max_diameter):
+                        sausage.append(pt)
+                        sausages.append(sausage)
+                    sausage = [pt]
+            tps.append(toolpath.Toolpath(geom.Path(points, False), tool))
+            if len(sausage) > 1 or (sausage and sausage[0].speed_hint.diameter > max_diameter):
+                sausage.append(pt)
+                sausages.append(sausage)
+        for sausage in sausages:
+            # Ignore the degenerate case
+            if len(sausage) == 1:
+                continue
+            shape = MultiPolygon()
+            prev = None
+            for pt in sausage:
+                b = Point(pt.x, pt.y).buffer(pt.speed_hint.diameter / 2)
+                if prev is not None:
+                    shape = shape.union(b.union(prev).convex_hull)
+                prev = b
+            shape = shape.buffer(-max_diameter / 2)
+            if not shape.is_empty:
+                if isinstance(shape, Polygon):
+                    points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in shape.exterior.coords]
+                    tps.append(toolpath.Toolpath(geom.Path(points, True), tool))
+                else:
+                    for i in shape.geoms:
+                        points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in i.exterior.coords]
+                        tps.append(toolpath.Toolpath(geom.Path(points, False), tool))
+    return toolpath.Toolpaths(tps)

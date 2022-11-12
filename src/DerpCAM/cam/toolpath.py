@@ -2,9 +2,20 @@ from pyclipper import *
 from math import *
 from ..common.geom import *
 from .milling_tool import *
+from shapely.geometry import Polygon, LinearRing, MultiPolygon, Point
 
 class RapidMove(object):
-    pass
+    @classmethod
+    def joinable(self, other):
+        return self == other
+
+class DesiredDiameter(object):
+    def __init__(self, diameter):
+        self.diameter = diameter
+    def joinable(self, other):
+        # For now, don't permit any line2arc
+        return False
+        #return abs(self.diameter - other.diameter) < 0.001
 
 class Tab(object):
     def __init__(self, start, end, helical_entry=None):
@@ -160,10 +171,11 @@ class Toolpath(object):
 
     def optimize(self):
         path = self
-        if GeometrySettings.simplify_arcs:
-            path = path.lines_to_arcs()
-        if GeometrySettings.simplify_lines:
-            path = path.optimize_lines()
+        if not self.is_vcarve():
+            if GeometrySettings.simplify_arcs:
+                path = path.lines_to_arcs()
+            if GeometrySettings.simplify_lines:
+                path = path.optimize_lines()
         return path
 
     def subpath(self, start, end, is_tab=False, helical_entry=None):
@@ -297,7 +309,22 @@ class Toolpath(object):
             return self
         return Toolpaths(self.tab_maker.tabify(cutpath, self))
 
+    def render_vcarve_as_outlines(self):
+        def ring2points(ring):
+            return [PathPoint(p[0], p[1]) for p in ring.coords]
+        preview = MultiPolygon()
+        for s, e in PathSegmentIterator(self.path):
+            sp = Point(s.x, s.y).buffer(s.speed_hint.diameter / 2)
+            ep = Point(e.x, e.y).buffer(e.speed_hint.diameter / 2)
+            sausage = sp.union(ep).convex_hull
+            preview = preview.union(sausage)
+        if isinstance(preview, Polygon):
+            return [ring2points(preview.exterior)]
+        return [ring2points(p.exterior) for p in preview.geoms]
+
     def render_as_outlines(self):
+        if self.is_vcarve():
+            return self.render_vcarve_as_outlines()
         points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
         resolution = GeometrySettings.RESOLUTION
         offset = resolution * self.tool.diameter / 2
@@ -340,6 +367,8 @@ class Toolpath(object):
         return [PtsFromInts(ints, resolution) for ints in outlines]
     def is_empty(self):
         return self.path.is_empty()
+    def is_vcarve(self):
+        return all([isinstance(i.speed_hint, DesiredDiameter) for i in self.path.nodes])
 
 class Toolpaths(object):
     def __init__(self, toolpaths):

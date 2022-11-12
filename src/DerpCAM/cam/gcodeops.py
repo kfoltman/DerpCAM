@@ -124,6 +124,12 @@ class AxisParallelFaceMill(FaceMill):
             raise ValueError("Face milling cuts are not supported for open shapes")
         return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2).flattened(), None, {})
     
+class VCarve(UntabbedOperation):
+    def build_paths(self, margin):
+        if not self.shape.closed:
+            raise ValueError("V-carving cuts are not supported for open shapes")
+        return PathOutput(cam.pocket.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth).flattened(), None, {})
+
 class Pocket(UntabbedOperation):
     def build_cutpaths(self):
         return [CutPathWallProfile(self.machine_params, self.props, self.tool, None, self.subpaths_for_margin, True)]
@@ -562,6 +568,8 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, self.machine_params, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, self.machine_params, props or self.props))
+    def vcarve(self, shape, props=None):
+        self.add(VCarve(shape, self.tool, self.machine_params, props or self.props))
     def pocket_axis_parallel(self, shape, props=None):
         self.add(AxisParallelPocket(shape, self.tool, self.machine_params, props or self.props))
     def face_mill(self, shape, props=None):

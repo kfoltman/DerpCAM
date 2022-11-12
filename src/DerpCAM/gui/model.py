@@ -458,6 +458,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
                     res[-1].add_island(path.nodes)
                 else:
                     res.append(shapes.Shape(path.nodes, path.closed))
+        res = list(sorted(res, key=lambda item: item.bounds[0]))
         return res
     def renderTo(self, path, editor):
         for i in self.paths:
@@ -1056,6 +1057,7 @@ class OperationType(EnumClass):
     OUTSIDE_PEEL = 7
     REFINE = 8
     FACE = 9
+    V_CARVE = 10
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -1066,6 +1068,7 @@ class OperationType(EnumClass):
         (OUTSIDE_PEEL, "Side mill"),
         (REFINE, "Refine"),
         (FACE, "Face mill"),
+        (V_CARVE, "V-Carve"),
     ]
 
 class CutterAdapter(object):
@@ -1500,7 +1503,7 @@ class OperationTreeItem(CAMTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
-                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE]
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE, OperationType.V_CARVE]
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
@@ -1723,6 +1726,8 @@ class OperationTreeItem(CAMTreeItem):
             return lambda: self.cam.helical_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r)
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: self.cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
+        elif self.operation == OperationType.V_CARVE:
+            return lambda: self.cam.vcarve(shape)
         raise ValueError("Unsupported operation")
     def shapeToRefine(self, shape, previous, is_external):
         if is_external:
@@ -1737,7 +1742,7 @@ class OperationTreeItem(CAMTreeItem):
     def createShapeObject(self):
         translation = self.document.drawing.translation()
         self.shape = self.orig_shape.translated(*translation).toShape()
-        if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE):
+        if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE):
             extra_shapes = []
             for island in self.islands:
                 item = self.document.drawing.itemById(island).translated(*translation).toShape()
@@ -1795,7 +1800,9 @@ class OperationTreeItem(CAMTreeItem):
                     self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
 
             if isinstance(self.cutter, inventory.EndMillCutter):
-                tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0, climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0)
+                is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
+                tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
+                    climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, pda.entry_mode != inventory.EntryMode.PREFER_RAMP)
             else:

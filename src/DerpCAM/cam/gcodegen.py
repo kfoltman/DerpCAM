@@ -180,12 +180,39 @@ class Gcode(object):
         self.linear(z=new_z)
         self.feed(tool.hfeed)
 
+    def apply_vcarve_subpath(self, subpath, lastpt, tool, base_z, target_z):
+        slope = -0.5 / tan((tool.tip_angle * pi / 180) / 2)
+        def dia2depth(dia):
+            eff_dia = max(0, min(dia, tool.diameter) - tool.tip_diameter)
+            return slope * eff_dia
+        self.section_info("Start vcarve subpath")
+        first = True
+        for lastpt, pt in PathSegmentIterator(subpath):
+            assert isinstance(pt.speed_hint, toolpath.DesiredDiameter)
+            assert isinstance(lastpt.speed_hint, toolpath.DesiredDiameter)
+            assert not pt.is_arc()
+            assert base_z is not None
+            if first:
+                start_z = max(target_z, base_z + dia2depth(lastpt.speed_hint.diameter))
+                self.linear(z=start_z)
+                first = False
+            end_z = max(target_z, base_z + dia2depth(pt.speed_hint.diameter))
+            self.linear(x=pt.x, y=pt.y, z=end_z)
+        lastpt = pt.seg_end()
+        self.section_info("End vcarve subpath")
+        return lastpt
+
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None, subject=None):
         self.section_info("Start subpath" if not subject else f"Start {subject} subpath")
         assert isinstance(lastpt, PathPoint)
         assert dist(lastpt, subpath.seg_start()) < 1 / GeometrySettings.RESOLUTION, f"lastpt={lastpt} != firstpt={subpath.seg_start()}"
         tdist = 0
         for lastpt, pt in PathSegmentIterator(subpath):
+            if new_z is not None:
+                tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
+                ramp_end = tdist / tlength
+            else:
+                ramp_end = 1
             if pt.is_arc() and pt.length() > 1 / GeometrySettings.RESOLUTION and pt.c.r > 1 / GeometrySettings.RESOLUTION:
                 arc = pt
                 assert dist(lastpt, arc.p1) < 1 / GeometrySettings.RESOLUTION
@@ -200,18 +227,16 @@ class Gcode(object):
                     self.arc(arc_dir, x=subarc.p2.x, y=subarc.p2.y, i=cdist.x, j=cdist.y, z=dest_z)
                     cdist = PathPoint(subarc.c.cx - subarc.p2.x, subarc.c.cy - subarc.p2.y)
                 tdist += arc.length()
-                dest_z = old_z + (new_z - old_z) * tdist / tlength if new_z is not None else None
+                dest_z = old_z + (new_z - old_z) * ramp_end if new_z is not None else None
                 self.arc(arc_dir, x=arc.p2.x, y=arc.p2.y, i=cdist.x, j=cdist.y, z=dest_z)
             else:
-                pt = pt.seg_end() # in case this was an arc
+                pt = pt.seg_end() # in case this was a short arc approximated with a line
                 if new_z is not None:
-                    tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
-                    self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * tdist / tlength)
+                    self.linear(x=pt.x, y=pt.y, z=old_z + (new_z - old_z) * ramp_end)
+                elif not GeometrySettings.paranoid_mode and pt.speed_hint is toolpath.RapidMove:
+                    self.rapid(x=pt.x, y=pt.y)
                 else:
-                    if not GeometrySettings.paranoid_mode and pt.speed_hint is toolpath.RapidMove:
-                        self.rapid(x=pt.x, y=pt.y)
-                    else:
-                        self.linear(x=pt.x, y=pt.y)
+                    self.linear(x=pt.x, y=pt.y)
         lastpt = pt.seg_end()
         self.section_info("End subpath" if not subject else f"End {subject} subpath")
         return lastpt
@@ -772,7 +797,10 @@ class BaseCut2D(BaseCut):
         self.enter_or_leave_cut(gcode, cutpath, layer, subpath, newz)
         assert self.lastpt is not None
         assert isinstance(self.lastpt, PathPoint)
-        self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
+        if subpath.is_vcarve():
+            self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
+        else:
+            self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
         assert isinstance(self.lastpt, PathNode)
         self.end_subpath(subpath)
 
@@ -786,6 +814,13 @@ class BaseCut2D(BaseCut):
                 self.curz = newz
 
     def enter_cut(self, gcode, cutpath, layer, subpath, newz):
+        if subpath.is_vcarve():
+            self.lastpt = subpath.path.seg_start()
+            gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
+            gcode.rapid(z=self.machine_params.semi_safe_z)
+            gcode.feed(subpath.tool.vfeed)
+            gcode.linear(z=self.curz)
+            return
         # Z slightly above the previous cuts. There will be no ramping or helical
         # entry above that, just a straight plunge. However, the speed of the
         # plunge will be dependent on whether a ramped or helical entry is used

@@ -6,7 +6,7 @@ class FakeTool(object):
         self.diameter = diameter
 
 class Tool(object):
-    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None):
+    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None, tip_angle=0, tip_diameter=0):
         self.diameter = diameter
         self.flutes = None
         self.hfeed = hfeed
@@ -29,6 +29,8 @@ class Tool(object):
         self.rpm = None
         self.info = None
         self.short_info = None
+        self.tip_angle = tip_angle
+        self.tip_diameter = tip_diameter
     def max_ramp_length(self, z_diff):
         return 2 * self.diameter + 2 * z_diff
     def adjusted_hfeed(self, radial_engagement):
@@ -42,8 +44,11 @@ class Tool(object):
     # Path slope for ramp/helical entry
     def slope(self):
         return max(1, int(self.hfeed / self.vfeed))
-    def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None):
-        tool = Tool(self.diameter, hfeed or self.hfeed, vfeed or self.vfeed, maxdoc or self.maxdoc, stepover or self.stepover, self.stepover_fulldepth, climb if climb is not None else self.climb)
+    def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, tip_angle=None, tip_diameter=None):
+        def ovr(v1, v2):
+            return v1 if v1 is not None else v2
+        tool = Tool(self.diameter, hfeed or self.hfeed, vfeed or self.vfeed, maxdoc or self.maxdoc, stepover or self.stepover, self.stepover_fulldepth, 
+            ovr(climb, self.climb), ovr(min_helix_ratio, self.min_helix_ratio), ovr(tip_angle, self.tip_angle), ovr(tip_diameter, self.tip_diameter))
         if rpm is None:
             tool.rpm = self.rpm
         else:
@@ -53,7 +58,8 @@ class Tool(object):
         tool.flutes = self.flutes
         tool.material = self.material
         tool.coating = self.coating
-        tool.set_info()
+        if self.coating is not None and self.material is not None:
+            tool.set_info()
         return tool
     def mrr(self):
         return self.maxdoc * self.diameter * self.vfeed
