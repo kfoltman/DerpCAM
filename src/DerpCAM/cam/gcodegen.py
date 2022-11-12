@@ -746,37 +746,35 @@ class BaseCutLayered(BaseCut):
         self.curz = self.machine_params.safe_z
 
 class VCarveCut(BaseCutLayered):
-    def build_layer(self, gcode, cutpath, layer):
-        subpaths = layer.subpaths
-        assert subpaths
-        if all([self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth) for subpath in subpaths]):
-            return
-        gcode.section_info(f"Start v-carve layer")
-        for subpath in subpaths:
-            self.build_subpath(gcode, cutpath, layer, subpath)
-        gcode.section_info(f"End v-carve layer")
-
-    def build_subpath(self, gcode, cutpath, layer, subpath):
-        if subpath.path.length() < 0.001:
-            return
-        if self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth):
-            return
-        # This will always be false for subpaths_full.
-        self.lastpt = subpath.path.seg_start()
-        gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
-        gcode.rapid(z=self.machine_params.semi_safe_z)
-        gcode.feed(subpath.tool.vfeed)
-        assert self.lastpt is not None
-        assert isinstance(self.lastpt, PathPoint)
-        self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
-        assert isinstance(self.lastpt, PathPoint)
+    def build_cutpath(self, gcode, cutpath):
+        gcode.section_info(f"Start v-carve cutpath")
+        layers = self.layers_for_cutpath(cutpath)
+        self.lastpt = None
+        for subpath in cutpath.subpaths_full:
+            self.build_subpath(gcode, cutpath, layers, subpath)
+        gcode.section_info(f"End v-carve cutpath")
         self.go_to_safe_z(gcode)
 
-    def start_cutpath(self, gcode, cutpath):
-        self.lastpt = None
-
-    def end_cutpath(self, gcode, cutpath):
-        pass
+    def build_subpath(self, gcode, cutpath, layers, subpath):
+        if subpath.path.length() < 0.001:
+            return
+        reversed = False
+        if self.lastpt is None or self.lastpt.dist(subpath.path.seg_start()) > 0.001:
+            self.lastpt = subpath.path.seg_start()
+            gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
+            gcode.rapid(z=self.machine_params.semi_safe_z)
+        gcode.feed(subpath.tool.vfeed)
+        for layer in layers:
+            if self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth):
+                break
+            assert isinstance(self.lastpt, PathPoint)
+            if reversed:
+                self.lastpt = gcode.apply_vcarve_subpath(Path(list(subpath.path.nodes[::-1]), False), self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
+            else:
+                self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
+            assert isinstance(self.lastpt, PathPoint)
+            if not subpath.path.closed:
+                reversed = not reversed
 
     def is_redundant_pass(self, subpath, base_z, target_z, prev_z):
         lowest_z = base_z
