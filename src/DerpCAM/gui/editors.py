@@ -7,6 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import geom, guiutils, view
+from DerpCAM.gui import model
 
 class CanvasEditor(object):
     def __init__(self, item):
@@ -60,7 +61,8 @@ class CanvasEditor(object):
         if e.key() == Qt.Key_Escape and self.can_cancel:
             self.cancel()
     def onExit(self):
-        self.item.emitPropertyChanged()
+        if isinstance(self.item, model.DrawingItemTreeItem):
+            self.item.emitPropertyChanged()
     def mousePressEvent(self, e):
         return False
     def mouseMoveEvent(self, e):
@@ -284,13 +286,74 @@ class CanvasExitPointEditor(CanvasEntryPointEditor):
 FEEDBACK_ADD = 1
 FEEDBACK_REMOVE = 2
 
-class CanvasPolylineEditor(CanvasEditor):
-    def __init__(self, item, cancel_index):
+class CanvasDrawingItemEditor(CanvasEditor):
+    def __init__(self, item, cancel_index=None):
         CanvasEditor.__init__(self, item)
         self.last_pos = None
         self.visual_feedback = None
         self.can_cancel = True
         self.cancel_index = cancel_index
+    def paintPoint(self, qp, loc):
+        hbox = QPointF(3, 3)
+        hbox2a = QPointF(50, 20)
+        hbox2b = QPointF(50, -5)
+        pt = self.canvas.project(QPointF(loc.x, loc.y))
+        qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
+        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")")
+    def setTitle(self):
+        self.parent.setWindowTitle("Create a text object")
+    def updateLabel(self):
+        modeText = f"""\
+Click on a drawing to create a text object.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
+    def penForPath(self, item, path):
+        if isinstance(self.item, model.DrawingItemTreeItem) and self.item.shape_id == item.shape_id:
+            return None
+        return item.defaultGrayPen
+    def onShapesDeleted(self, shapes):
+        if isinstance(self.item, model.DrawingItemTreeItem) and self.item in shapes:
+            self.canvas.exitEditMode(False)
+    def coordSnapValue(self):
+        if self.canvas.scalingFactor() >= 330:
+            return 2
+        elif self.canvas.scalingFactor() >= 33:
+            return 1
+        else:
+            return 0
+    def snapCoords(self, pt):
+        snap = self.coordSnapValue()
+        def cround(val):
+            val = round(val, snap)
+            # Replace -0 by 0
+            return val if val else 0
+        return geom.PathPoint(cround(pt.x), cround(pt.y))
+    def snapInfo(self):
+        return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
+
+class CanvasNewTextEditor(CanvasDrawingItemEditor):
+    def mouseMoveEvent(self, e):
+        pos = self.canvas.unproject(e.localPos())
+        newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+        if self.last_pos is not None and self.last_pos != newPos:
+            self.canvas.repaint()
+        self.last_pos = newPos
+        return False
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            pos = self.canvas.unproject(e.localPos())
+            newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+            style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
+            text = model.DrawingTextTreeItem(self.item, newPos, 0, style, "Text")
+            self.item.opAddDrawingItems([text])
+            self.apply()
+            return True
+    def paint(self, e, qp):
+        if self.last_pos is not None:
+            qp.setPen(QColor(0, 0, 0, 128))
+            self.paintPoint(qp, self.last_pos)
+
+class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
         if not self.item.closed and len(self.item.points) < 2:
             QMessageBox.critical(self.parent, None, "An open polyline must have at least 2 points")
@@ -319,15 +382,8 @@ Moving the first node into the last one closes an open polyline.
 Dragging a line inserts a node at that point.
 Clicking near the start/end of an open polyline adds a node there.
 Double-clicking a node removes it.
-snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
+{self.snapInfo()}"""
         self.descriptionLabel.setText(modeText)
-    def paintPoint(self, qp, loc):
-        hbox = QPointF(3, 3)
-        hbox2a = QPointF(50, 20)
-        hbox2b = QPointF(50, -5)
-        pt = self.canvas.project(QPointF(loc.x, loc.y))
-        qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
-        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")")
     def paint(self, e, qp):
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
@@ -436,20 +492,6 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         if nearest_dist is not None and nearest_dist < 5 / self.canvas.scalingFactor():
             return nearest
         return None
-    def polylineSnapValue(self):
-        if self.canvas.scalingFactor() >= 330:
-            return 2
-        elif self.canvas.scalingFactor() >= 33:
-            return 1
-        else:
-            return 0
-    def snapCoords(self, pt):
-        snap = self.polylineSnapValue()
-        def cround(val):
-            val = round(val, snap)
-            # Replace -0 by 0
-            return val if val else 0
-        return geom.PathPoint(cround(pt.x), cround(pt.y))
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
             pos = self.canvas.unproject(e.localPos())
@@ -558,25 +600,18 @@ snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
                 self.canvas.repaint()
                 self.canvas.dragging = False
                 return True
-    def penForPath(self, item, path):
-        if self.item.shape_id == item.shape_id:
-            return None
-        return item.defaultGrayPen
-    def onShapesDeleted(self, shapes):
-        if self.item in shapes:
-            self.canvas.exitEditMode(False)
 
 class CanvasNewPolylineEditor(CanvasPolylineEditor):
     def setTitle(self):
         self.parent.setWindowTitle("Create a polyline")
     def updateLabel(self):
-        modeText = """\
+        modeText = f"""\
 Click to add a node. Clicking the first point closes the polyline.
 Drag a line or click near the start or end node to add a node.
 Drag a node to move it.
 Double-click a middle point to remove it.
-Double-click the last point to complete a polyline."""
-        modeText += f"\nsnap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"
+Double-click the last point to complete a polyline.
+{self.snapInfo()}"""
         self.descriptionLabel.setText(modeText)
     def mouseMoveEvent(self, e):
         res = CanvasPolylineEditor.mouseMoveEvent(self, e)

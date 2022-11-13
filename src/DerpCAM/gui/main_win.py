@@ -104,6 +104,7 @@ class CAMMainWindow(QMainWindow):
             ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
             ("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
             ("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
+            ("&Text", self.drawText, None, "Add a text to the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
@@ -299,6 +300,8 @@ class CAMMainWindow(QMainWindow):
         cancel_index = self.document.undoStack.index()
         self.document.opAddDrawingItems([polyline])
         self.switchToEditor(editors.CanvasNewPolylineEditor(polyline, cancel_index))
+    def drawText(self):
+        self.switchToEditor(editors.CanvasNewTextEditor(self.document))
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection
         anyLeft = False
