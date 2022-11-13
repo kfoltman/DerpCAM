@@ -75,16 +75,20 @@ class Gcode(object):
                 self.add(self.enc_feed(feed))
             self.last_feed = feed
             self.last_feed_index = len(self.gcode) - 1
-    def add_dedup_g0g1(self, cmd, x=None, y=None, z=None):
+    def add_dedup_g0g1(self, cmd, x=None, y=None, z=None, f=None):
         coords = self.enc_coords(x, y, z)
         if coords == self.last_coords:
+            if f is not None:
+                self.feed(f)
             return
+        if f is not None and f != self.last_feed:
+            cmd += " " + self.enc_feed(f)
         self.add_dedup(cmd + coords)
         self.last_coords = coords
     def rapid(self, x=None, y=None, z=None):
         self.add_dedup_g0g1("G0", x, y, z)
-    def linear(self, x=None, y=None, z=None):
-        self.add_dedup_g0g1("G1", x, y, z)
+    def linear(self, x=None, y=None, z=None, f=None):
+        self.add_dedup_g0g1("G1", x, y, z, f)
     def arc_cw(self, x=None, y=None, z=None, i=None, j=None, k=None):
         self.add("G2" + self.enc_coords_arc(x, y, z, i, j, k))
         self.last_coords = self.enc_coords(x, y, z)
@@ -190,10 +194,14 @@ class Gcode(object):
             assert base_z is not None
             if first:
                 start_z = max(target_z, base_z + tool.dia2depth(lastpt.speed_hint.diameter))
-                self.linear(z=start_z)
+                self.linear(z=start_z, f=tool.vfeed)
                 first = False
             end_z = max(target_z, base_z + tool.dia2depth(pt.speed_hint.diameter))
-            self.linear(x=pt.x, y=pt.y, z=end_z)
+            slope = min(1, max(0, start_z - end_z) / max(0.00001, pt.dist(lastpt)))
+            # Interpolate geometrically between vfeed and hfeed depending on the slope. May be
+            # changed in future based on testing with real materials.
+            self.linear(x=pt.x, y=pt.y, z=end_z, f=tool.hfeed * ((tool.vfeed / tool.hfeed) ** slope))
+            start_z = end_z
         lastpt = pt.seg_end()
         self.section_info("End vcarve subpath")
         return lastpt
