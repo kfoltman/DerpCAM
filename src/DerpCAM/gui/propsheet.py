@@ -526,12 +526,14 @@ class BaseCreateEditDialog(QDialog):
                     editor.setPlaceholderText(p.none_value)
                 def fmt(v):
                     return "" if v is None else useFormatBrief(p.format, v)
+                unit = p.unit
+                if p.format:
+                    unit = UnitConverter.curUnit(unit)
                 if p.min is not None or p.max is not None:
-                    unit = p.unit
                     self.form.addRow(f"{p.name} ({fmt(p.min)}-{fmt(p.max)} {unit})", editor)
                 else:
-                    if p.unit != "":
-                        self.form.addRow(f"{p.name} ({p.unit})", editor)
+                    if unit != "":
+                        self.form.addRow(f"{p.name} ({unit})", editor)
                     else:
                         self.form.addRow(p.name, editor)
                 self.prop_controls[p] = editor
