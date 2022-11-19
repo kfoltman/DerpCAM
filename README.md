@@ -22,7 +22,7 @@ The following features are available in the current version:
 
 * outside/inside slot milling with optional tabs, wide slots and trochoidal paths
 
-* pocket milling with island support, multiple strategies available (including a HSM strategy via an external library by Duncan Law)
+* pocket milling with island support, multiple strategies available including a HSM strategy
 
 * basic engraving and drilling
 
@@ -47,7 +47,7 @@ The following features are available in the current version:
 The following features may have unexpected limitations or bugs, but also might work
 just fine in many cases.
 
-* external (side) milling - producing a target shape by milling from the outside edges
+* external (side) milling - producing a target shape by milling from the outside edges (HSM mode works best)
 
 * rest machining - refining a coarsely-milled pocket or outline using a finer tool
 
@@ -72,6 +72,7 @@ A Python 3 interpreter (minimum version 3.9) is necessary to run DerpCAM. The fo
 * PyClipper
 * PyVoronoi
 * Shapely
+* HSM_nibble
 
 The current method of installing DerpCAM is to download it from github:
 
@@ -81,11 +82,6 @@ The current method of installing DerpCAM is to download it from github:
 Then, the required Python packages can be installed using the following command:
 
         pip3 install -r requirements.txt
-
-Additionally, it is highly recommended to obtain the HSM library by running the
-following command from the DerpCAM directory:
-
-        ./get-hsm.sh
 
 To launch the application, use the following command from the DerpCAM directory:
 
