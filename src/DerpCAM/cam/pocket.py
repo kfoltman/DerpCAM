@@ -1,3 +1,4 @@
+import hsm_nibble.geometry
 from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
@@ -419,8 +420,6 @@ def add_finishing_outlines(tps, polygon, tool, from_outside):
         tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True))
 
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None, roughing_offset=0):
-    from DerpCAM import cam
-    import DerpCAM.cam.geometry
     already_cut = None
     if not from_outside and shape_to_refine is not None:
         already_cut = MultiPolygon()
@@ -437,9 +436,9 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
     alltps = []
     all_inputs = shape_to_polygons(shape, tool, displace + roughing_offset, from_outside)
     if zigzag:
-        arc_dir = cam.geometry.ArcDir.Closest
+        arc_dir = hsm_nibble.geometry.ArcDir.Closest
     else:
-        arc_dir = cam.geometry.ArcDir.CCW if tool.climb else cam.geometry.ArcDir.CW
+        arc_dir = hsm_nibble.geometry.ArcDir.CCW if tool.climb else hsm_nibble.geometry.ArcDir.CW
     num_polys = len(all_inputs)
     outer_progress = 0
     for polygon in all_inputs:
@@ -447,9 +446,9 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
             polygon, islands = polygon
         tps = []
         step = tool.diameter * tool.stepover
-        tactic = cam.geometry.StartPointTactic.WIDEST
+        tactic = hsm_nibble.geometry.StartPointTactic.WIDEST
         if from_outside:
-            tactic = cam.geometry.StartPointTactic.PERIMETER
+            tactic = hsm_nibble.geometry.StartPointTactic.PERIMETER
             adaptive = False
             if adaptive:
                 polygon, tps = add_outer_passes(polygon, tool)
@@ -475,7 +474,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
             already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
         #polygon = polygon.difference(already_cut_for_this)
         with pyvlock:
-            tp = cam.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
+            tp = hsm_nibble.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
         has_entry_circle = tp.starting_angle is not None
         if already_cut_for_this and already_cut_for_this.contains(tp.start_point):
             has_entry_circle = False
@@ -495,8 +494,8 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         lastpt = None
         was_previously_cut = from_outside
         for item in hsm_path:
-            MoveStyle = cam.geometry.MoveStyle
-            if isinstance(item, cam.geometry.LineData):
+            MoveStyle = hsm_nibble.geometry.MoveStyle
+            if isinstance(item, hsm_nibble.geometry.LineData):
                 #if item.start.distance(item.end) < 1e-6:
                 #    continue
                 #print (item.move_style, item.start.distance(item.end), item.start)
@@ -504,7 +503,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                     gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
                 else:
                     gen_path += [geom.PathPoint(x, y, toolpath.RapidMove if item.move_style == MoveStyle.RAPID_INSIDE else None) for x, y in item.path.coords]
-            elif isinstance(item, cam.geometry.ArcData):
+            elif isinstance(item, hsm_nibble.geometry.ArcData):
                 add_arcdata(gen_path, item)
         gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
         # Add a final pass around the perimeter
