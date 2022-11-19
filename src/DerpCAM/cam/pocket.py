@@ -503,7 +503,11 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         if not roughing_offset:
             add_finishing_outlines(tps, polygon, tool, from_outside)
         else:
-            add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
+            if from_outside:
+                for i in islands:
+                    add_finishing_outlines(tps, i.buffer(-roughing_offset), tool, False)
+            else:
+                add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
         alltps += tps
         outer_progress += 1000
     return toolpath.Toolpaths(alltps)
