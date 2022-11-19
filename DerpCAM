@@ -24,6 +24,7 @@ parser.add_argument('--allow-text', action='store_true', help="Enable font suppo
 parser.add_argument('--debug', action='store_true', help="Display additional debugging information on errors")
 parser.add_argument('--close', action='store_true', help="Close the UI immediately after loading the project (for testing)")
 parser.add_argument('--window-id', nargs=1, metavar='XID', help="Embed within a window (for LinuxCNC integration)")
+parser.add_argument('--font', nargs=1, metavar='TYPEFACE:SIZE', help="Use an alternative font")
 
 args = parser.parse_args()
 has_gui = not args.export_gcode
@@ -32,6 +33,9 @@ if has_gui or args.allow_text:
     if not has_gui:
         guiutils.GuiSettings.batch_text_hack = True
     app = QApplication(sys.argv)
+    if args.font:
+        font_name, font_size = args.font[0].split(":")
+        app.setFont(QFont(font_name, int(font_size), 400))
     app.setApplicationDisplayName("My CAM experiment")
     app.processEvents()
 else:
