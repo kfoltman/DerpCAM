@@ -966,33 +966,48 @@ def run_clipper_checkpath(operation, subject_polys=[], clipper_polys=[], subject
     tree = run_clipper_advanced(operation, subject_polys, clipper_polys, subject_paths, fillMode)
     return OpenPathsFromPolyTree(tree)
 
+def arc_from_cad(p1, p2, bulge):
+    theta = 4 * atan(bulge)
+    dx, dy = p2.x - p1.x, p2.y - p1.y
+    mid = weighted(p1, p2, 0.5)
+    angle = atan2(dy, dx)
+    dist = sqrt(dx * dx + dy * dy)
+    d = dist / 2
+    r = abs(d / sin(theta / 2))
+    c = d / tan(theta / 2)
+    cx = mid.x - c * sin(angle)
+    cy = mid.y + c * cos(angle)
+    sa = atan2(p1.y - cy, p1.x - cx)
+    ea = sa + theta
+    return circle2(cx, cy, r, 1000, sa, ea)
+
 def dxf_polyline_to_points(entity, scaling=1):
     points = []
     lastx = entity[-1][0] * scaling
     lasty = entity[-1][1] * scaling
     lastbulge = entity[-1][4]
+    eps = 0.0001
     for point in entity:
         x = point[0] * scaling
         y = point[1] * scaling
+        endp = PathPoint(x, y)
         if lastbulge:
-            theta = 4 * atan(lastbulge)
-            dx, dy = x - lastx, y - lasty
-            mid = weighted(PathPoint(lastx, lasty), PathPoint(x, y), 0.5)
-            angle = atan2(dy, dx)
-            dist = sqrt(dx * dx + dy * dy)
-            d = dist / 2
-            r = abs(d / sin(theta / 2))
-            c = d / tan(theta / 2)
-            cx = mid.x - c * sin(angle)
-            cy = mid.y + c * cos(angle)
-            sa = atan2(lasty - cy, lastx - cx)
-            ea = sa + theta
-            points += circle2(cx, cy, r, 1000, sa, ea)
-            points.append(PathPoint(x, y))
-        else:
-            points.append(PathPoint(x, y))
+            cn = arc_from_cad(PathPoint(lastx, lasty), PathPoint(x, y), lastbulge)
+            # Do not add a zero-length segment.
+            if len(points) and points[-1].is_point() and cn[0].dist(PathPoint(lastx, lasty)) <= eps:
+                del cn[0]
+            points += cn
+            if points[-1].p2.dist(endp) > eps:
+                points.append(endp)
+        elif not points or points[-1].seg_end().dist(endp) > eps:
+            points.append(endp)
         lastbulge = point[4]
         lastx, lasty = x, y
+    if not entity.closed and len(points) > 3 and points[0].seg_start().dist(points[-1].seg_end()) <= eps:
+        # The endpoints are close enough to consider the polyline closed. Eliminate redundant point if any.
+        if points[-1].is_point():
+            del points[-1]
+        return points, True
     return points, entity.closed
 
 def is_calculation_cancelled():
