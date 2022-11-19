@@ -1,4 +1,5 @@
 import hsm_nibble.geometry
+import hsm_nibble.voronoi_centers
 from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
@@ -653,7 +654,6 @@ def sort_linestrings(linestrings):
     return output
 
 def vcarve(shape, tool, thickness):
-    from DerpCAM.cam import voronoi_centers
     if not shape.closed:
         raise ValueError("Cannot v-carve open polylines")
     if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
@@ -665,7 +665,7 @@ def vcarve(shape, tool, thickness):
     tps = []
     for polygon in sort_polygons(all_inputs):
         with pyvlock:
-            v = voronoi_centers.VoronoiCenters(polygon, preserve_edge=True)
+            v = hsm_nibble.voronoi_centers.VoronoiCenters(polygon, preserve_edge=True)
             edges = list(v.edges.values())
         sausages = []
         edges = sort_linestrings(edges)
