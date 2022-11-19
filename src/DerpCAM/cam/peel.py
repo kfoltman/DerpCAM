@@ -34,5 +34,5 @@ def outside_peel(shape, tool, displace=0):
     geom.set_calculation_progress(expected_size, expected_size)
     return toolpath.Toolpaths(tps + tps_islands)
 
-def outside_peel_hsm(shape, tool, zigzag, displace=0, shape_to_refine=None):
-    return pocket.hsm_peel(shape, tool, zigzag=zigzag, displace=displace, from_outside=True, shape_to_refine=shape_to_refine)
+def outside_peel_hsm(shape, tool, zigzag, displace=0, shape_to_refine=None, roughing_offset=0):
+    return pocket.hsm_peel(shape, tool, zigzag=zigzag, displace=displace, from_outside=True, shape_to_refine=shape_to_refine, roughing_offset=roughing_offset)

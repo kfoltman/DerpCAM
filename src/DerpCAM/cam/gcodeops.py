@@ -175,7 +175,7 @@ class OutsidePeelHSM(HSMOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Outside peel cuts are not supported for open shapes")
-        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine).flattened(), None, {})
+        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset).flattened(), None, {})
 
 class TabbedOperation(Operation):
     def __init__(self, shape, tool, machine_params, props, outside, tabs, extra_attribs):
