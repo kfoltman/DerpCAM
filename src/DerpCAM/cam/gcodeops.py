@@ -314,7 +314,7 @@ class Contour(TabbedOperation):
                         # Replace with a combination of the original and the offset path
                         orig_contour = contour
                         contour = toolpath.Toolpath(offset_tp.path.joined(contour.path), tool)
-                        paths_for_helical_entry.append(contour.path)
+                        paths_for_helical_entry.append(offset_tp.path)
                         merged = True
                         # Convert single-contour tabs to pairs
                         moretabs = []
