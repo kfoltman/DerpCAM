@@ -161,12 +161,17 @@ class DrawingViewer(view.PathViewer):
         if not self.document.progress_dialog_displayed:
             progress = self.document.pollForUpdateCAM()
             if progress is not None:
+                s = f"Update in progress (888%)"
+                metrics = QFontMetrics(qp.font())
+                size = metrics.size(Qt.TextSingleLine, s)
+                w, h = size.width() + 10, size.height() + 10
+                s = s.replace("888", str(int(100 * progress)))
                 qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
                 qp.setPen(QPen(QColor(128, 0, 0), 0))
-                qp.fillRect(QRectF(38, 35, 242, 55), QBrush(QColor(255, 255, 255)))
-                qp.fillRect(QRectF(39, 35, 240 * max(0, min(1, progress)), 55), QBrush(QColor(128, 0, 0, 64)))
-                qp.drawRect(QRectF(38, 35, 242, 55))
-                qp.drawText(QRectF(40, 35, 240, 55), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
+                qp.fillRect(QRectF(38, 35, w + 2, h), QBrush(QColor(255, 255, 255)))
+                qp.fillRect(QRectF(39, 35, w * max(0, min(1, progress)), h), QBrush(QColor(128, 0, 0, 64)))
+                qp.drawRect(QRectF(38, 35, w + 2, h))
+                qp.drawText(QRectF(40, 35, w, h), Qt.AlignCenter | Qt.AlignVCenter, f"Update in progress ({100 * progress:0.0f}%)")
     def keyPressEvent(self, e):
         if self.editor:
             res = self.editor.keyPressEvent(e)

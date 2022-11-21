@@ -290,12 +290,17 @@ Double-clicking a node removes it.
 snap={10 ** -self.polylineSnapValue():0.2f} mm (zoom-dependent)"""
         self.descriptionLabel.setText(modeText)
     def paintPoint(self, qp, loc):
+        coordsText = "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")"
         hbox = QPointF(3, 3)
-        hbox2a = QPointF(50, 20)
-        hbox2b = QPointF(50, -5)
+        metrics = QFontMetrics(qp.font())
+        size = metrics.size(Qt.TextSingleLine, coordsText)
+        width = size.width() + 10
+        hbox2a = QPointF(width / 2, size.height())
+        hbox2b = QPointF(width / 2, -5)
         pt = self.canvas.project(QPointF(loc.x, loc.y))
-        qp.fillRect(QRectF(pt - hbox, pt + hbox), QColor(0, 0, 0))
-        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")")
+        color = qp.pen().color()
+        qp.fillRect(QRectF(pt - hbox, pt + hbox), color)
+        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, coordsText)
     def paint(self, e, qp):
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
