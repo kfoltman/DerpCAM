@@ -1483,7 +1483,7 @@ class OperationTreeItem(CAMTreeItem):
         return True
     def getValidEnumValues(self, name):
         if name == 'pocket_strategy' and self.operation == OperationType.OUTSIDE_PEEL:
-            return [inventory.PocketStrategy.CONTOUR_PARALLEL, inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG]
+            return [inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG]
         if name == 'operation':
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
