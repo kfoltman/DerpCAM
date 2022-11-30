@@ -2265,10 +2265,16 @@ class ModifyPolylinePointUndoCommand(QUndoCommand):
         self.mergeable = mergeable
     def undo(self):
         self.polyline.points[self.position] = self.orig_location
+        if self.orig_location.is_arc():
+            assert self.position > 0
+            self.polyline.points[self.position - 1] = self.orig_location.p1
         self.polyline.calcBounds()
         self.document.shapesUpdated.emit()
     def redo(self):
         self.polyline.points[self.position] = self.new_location
+        if self.new_location.is_arc():
+            assert self.position > 0
+            self.polyline.points[self.position - 1] = self.new_location.p1
         self.polyline.calcBounds()
         self.document.shapesUpdated.emit()
     def id(self):

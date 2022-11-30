@@ -1,3 +1,4 @@
+import math
 import os.path
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -28,9 +29,12 @@ class CanvasEditor(object):
             self.canvas.exitEditMode(False)
     def createControls(self):
         self.createLabel()
+        self.createExtraControls()
         self.createButtons()
         self.updateLabel()
         self.parent.widget().setLayout(self.layout)
+    def createExtraControls(self):
+        pass
     def connectSignals(self):
         pass
     def createLabel(self):
@@ -293,18 +297,25 @@ class CanvasDrawingItemEditor(CanvasEditor):
         self.visual_feedback = None
         self.can_cancel = True
         self.cancel_index = cancel_index
-    def paintPoint(self, qp, loc):
+    def paintPoint(self, qp, loc, as_arc):
         coordsText = "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")"
         hbox = QPointF(3, 3)
         metrics = QFontMetrics(qp.font())
         size = metrics.size(Qt.TextSingleLine, coordsText)
         width = size.width() + 10
-        hbox2a = QPointF(width / 2, size.height())
-        hbox2b = QPointF(width / 2, -5)
+        hbox2a = QPointF(width / 2, size.height() + 1)
+        hbox2b = QPointF(width / 2, 5)
+        displ = QPointF(0, 7.5)
         pt = self.canvas.project(QPointF(loc.x, loc.y))
         color = qp.pen().color()
-        qp.fillRect(QRectF(pt - hbox, pt + hbox), color)
-        qp.drawText(QRectF(pt - hbox2a, pt + hbox2b), Qt.AlignBottom | Qt.AlignCenter, coordsText)
+        if as_arc:
+            brush = qp.brush()
+            qp.setBrush(color)
+            qp.drawEllipse(QRectF(pt - hbox, pt + hbox))
+            qp.setBrush(brush)
+        else:
+            qp.fillRect(QRectF(pt - hbox, pt + hbox), color)
+        qp.drawText(QRectF(pt - hbox2a - displ, pt + hbox2b - displ), Qt.AlignBottom | Qt.AlignCenter, coordsText)
     def setTitle(self):
         self.parent.setWindowTitle("Create a text object")
     def updateLabel(self):
@@ -356,7 +367,7 @@ class CanvasNewTextEditor(CanvasDrawingItemEditor):
     def paint(self, e, qp):
         if self.last_pos is not None:
             qp.setPen(QColor(0, 0, 0, 128))
-            self.paintPoint(qp, self.last_pos)
+            self.paintPoint(qp, self.last_pos, as_arc=False)
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
@@ -378,6 +389,29 @@ class CanvasPolylineEditor(CanvasDrawingItemEditor):
             self.canvas.repaint()
     def setTitle(self):
         self.parent.setWindowTitle("Modify a polyline")
+    def createExtraControls(self):
+        self.arcMode = 2
+        self.arcMoveButton = QPushButton("Move")
+        self.arcSpanButton = QPushButton("Span")
+        self.arcAnchorButton = QPushButton("Anchor")
+        self.arcModeButtons = [ self.arcMoveButton, self.arcSpanButton, self.arcAnchorButton ]
+        self.arcModeLayout = QHBoxLayout()
+        self.arcModeLayout.addWidget(QLabel("Arc edit mode:"))
+        self.updateArcButtons()
+        def buttonHandler(index):
+            return lambda: self.onArcButtonClicked(index)
+        for i, button in enumerate(self.arcModeButtons):
+            self.arcModeLayout.addWidget(button)
+            button.clicked.connect(buttonHandler(i))
+        self.arcModeLayout.addWidget(self.arcAnchorButton)
+        self.arcModeLayout.addStretch(1)
+        self.layout.addRow(self.arcModeLayout)
+    def updateArcButtons(self):
+        for i, button in enumerate(self.arcModeButtons):
+            button.setDown(i == self.arcMode)
+    def onArcButtonClicked(self, which):
+        self.arcMode = which
+        self.updateArcButtons()
     def updateLabel(self):
         modeText = f"""\
 Drag nodes to move them.
@@ -388,27 +422,47 @@ Dragging a line inserts a node at that point.
 Clicking near the start/end of an open polyline adds a node there.
 Double-clicking a node removes it.
 {self.snapInfo()}"""
+        #for i in self.item.points:
+        #    modeText += str(i) + "\n"
         self.descriptionLabel.setText(modeText)
     def paint(self, e, qp):
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
         normPen = QColor(0, 0, 0)
         qp.setPen(normPen)
-        for i in polyline.points:
-            if i.is_point():
-                self.paintPoint(qp, i)
+        for i, p in enumerate(polyline.points):
+            if p.is_point() and (i + 1 == len(polyline.points) or polyline.points[i + 1].is_point()):
+                self.paintPoint(qp, p, as_arc=False)
+            elif p.is_arc():
+                self.paintPoint(qp, p.p2, as_arc=True)
+            else:
+                self.paintPoint(qp, p, as_arc=True)
+        qp.setPen(QColor(0, 0, 0, 64))
+        for p in polyline.points:
+            if p.is_arc():
+                self.paintPoint(qp, p.c.centre(), as_arc=True)
         if is_add and self.last_pos is not None:
             qp.setPen(QColor(0, 0, 0, 128))
-            self.paintPoint(qp, self.last_pos)
+            self.paintPoint(qp, self.last_pos, as_arc=False)
         if self.visual_feedback:
             qp.setPen(QColor(0, 0, 0, 128))
             if self.visual_feedback[0] == FEEDBACK_ADD:
                 other = self.visual_feedback[1]
-                qp.drawLine(self.canvas.project(QPointF(other.x, other.y)), self.canvas.project(QPointF(self.last_pos.x, self.last_pos.y)))
+                if other.is_point():
+                    qp.drawLine(self.canvas.project(QPointF(other.x, other.y)), self.canvas.project(QPointF(self.last_pos.x, self.last_pos.y)))
             elif self.visual_feedback[0] == FEEDBACK_REMOVE:
-                other1 = self.visual_feedback[1]
-                other2 = self.visual_feedback[2]
-                qp.drawLine(self.canvas.project(QPointF(other1.x, other1.y)), self.canvas.project(QPointF(other2.x, other2.y)))
+                other1 = self.visual_feedback[1].seg_end()
+                other2 = self.visual_feedback[2].seg_end()
+                if other1.is_point() and other2.is_point():
+                    qp.drawLine(self.canvas.project(QPointF(other1.x, other1.y)), self.canvas.project(QPointF(other2.x, other2.y)))
+    def isArcEndpoint(self, index):
+        if self.item.points[index].is_arc():
+            return True, index, 1
+        elif index + 1 < len(self.item.points) and self.item.points[index + 1].is_arc():
+            return True, index + 1, 0
+        return False, index, None
+    def startDragArc(self, pos, index, where):
+        self.drag_start_data = (pos, index, where, self.item.points[index].as_tuple())
     def clickOnPolyline(self, pos, e, is_double):
         self.visual_feedback = None
         npts = len(self.item.points)
@@ -436,11 +490,21 @@ Double-clicking a node removes it.
                     self.canvas.repaint()
                 return
             else:
-                if nearest == 0 or not polyline.points[nearest - 1].is_arc():
+                is_arc_ep, index, t = self.isArcEndpoint(nearest)
+                if is_arc_ep:
+                    self.canvas.start_point = e.localPos()
+                    self.startDragArc(e.localPos(), index, t)
+                    return
+                else:
                     self.canvas.start_point = e.localPos()
                     self.drag_start_data = (e.localPos(), nearest, polyline.points[nearest])
                     return
         if not is_double:
+            nearest = self.nearestPolylineCentre(pt)
+            if nearest is not None:
+                self.canvas.start_point = e.localPos()
+                self.startDragArc(e.localPos(), nearest, 'centre')
+                return
             if not polyline.closed:
                 nearest = self.nearestPolylineItem(pt, margin=15)
                 if nearest == 0 or nearest == npts - 1:
@@ -475,10 +539,23 @@ Double-clicking a node removes it.
         for i, pp in enumerate(polyline.points):
             if exclude is not None and i == exclude:
                 continue
-            pdist = pt.dist(pp)
+            pdist = pt.dist(pp.seg_end())
             if nearest is None or pdist < nearest_dist:
                 nearest = i
                 nearest_dist = pdist
+        if nearest_dist is not None and nearest_dist < margin / self.canvas.scalingFactor():
+            return nearest
+        return None
+    def nearestPolylineCentre(self, pt, margin=5):
+        polyline = self.item
+        nearest = None
+        nearest_dist = None
+        for i, pp in enumerate(polyline.points):
+            if pp.is_arc():
+                pdist = pt.dist(pp.c.centre())
+                if nearest is None or pdist < nearest_dist:
+                    nearest = i
+                    nearest_dist = pdist
         if nearest_dist is not None and nearest_dist < margin / self.canvas.scalingFactor():
             return nearest
         return None
@@ -512,6 +589,106 @@ Double-clicking a node removes it.
         if min(i1, i2) == 0 and max(i1, i2) == len(self.item.points) - 1:
             return True
         return False
+    def editArcEndpoint(self, pt):
+        sp, dragged, start_pos, arc_as_tuple = self.drag_start_data
+        pt = self.snapCoords(pt)
+        mode = self.arcMode
+        old = geom.PathArc.from_tuple(arc_as_tuple)
+        c = old.c
+        cx, cy, r = c.cx, c.cy, c.r
+        sstart = old.sstart
+        sspan = old.sspan
+        if start_pos == 'centre':
+            #old = geom.PathArc.from_tuple(arc_as_tuple)
+            #cur = self.item.points[dragged]
+            #oldr = r
+            #r = min(old.p1.dist(pt), old.p2.dist(pt))
+            #if r < 0.001:
+            #    return
+            #angle = sstart + sspan / 2
+            #cx -= math.sqrt(2) * (r - oldr) * math.cos(angle)
+            #cy -= math.sqrt(2) * (r - oldr) * math.sin(angle)
+            r = min(old.p1.dist(pt), old.p2.dist(pt))
+            cx = old.p1.x - r * math.cos(sstart)
+            cy = old.p1.y - r * math.sin(sstart)
+        elif mode == 1:
+            old_angle = old.angle_at_fraction(start_pos)
+            new_angle = c.angle(pt)
+            adiff = (new_angle - old_angle) % (2 * math.pi)
+            if adiff >= math.pi:
+                adiff -= 2 * math.pi
+            if start_pos == 0:
+                sstart += adiff
+                sspan -= adiff
+            else:
+                sspan += adiff
+            if abs(sspan) >= 2 * math.pi:
+                return
+            if abs(sspan) * c.r < 0.001:
+                return
+        elif mode == 2:
+            if start_pos == 1:
+                p1 = old.p1
+                p2 = pt
+                angle = sstart
+            elif start_pos == 0:
+                p1 = old.p2
+                p2 = pt
+                angle = sstart + sspan
+            else:
+                return
+            p1ext = geom.PathPoint(p1.x - 10000 * math.cos(angle), p1.y - 10000 * math.sin(angle))
+            extension = QLineF(p1.x, p1.y, p1ext.x, p1ext.y)
+            conn = QLineF(p1.x, p1.y, p2.x, p2.y)
+            bisector = conn.normalVector().translated(conn.dx() / 2, conn.dy() / 2)            
+            mode, point = extension.intersects(bisector)
+            if mode == QLineF.NoIntersection:
+                return
+            cx = point.x()
+            cy = point.y()
+            r = QLineF(conn.p1(), point).length()
+            if r > 100 * conn.length():
+                return
+            cur = self.item.points[dragged]
+            old_dir = cur.sspan > 0
+            old_mag = abs(cur.sspan) > math.pi
+            if start_pos == 1:
+                sstart = math.atan2(p1.y - cy, p1.x - cx)
+                sspan = math.atan2(p2.y - cy, p2.x - cx) - sstart
+            else:
+                sstart = math.atan2(p2.y - cy, p2.x - cx)
+                sspan = math.atan2(p1.y - cy, p1.x - cx) - sstart
+            new_dir = sspan > 0
+            new_mag = abs(sspan) > math.pi
+            
+            if sspan > 0:
+                sspan2 = sspan - 2 * math.pi
+            else:
+                sspan2 = sspan + 2 * math.pi
+
+            flip = False
+            if abs(sspan2 - cur.sspan) < abs(sspan - cur.sspan):
+                flip = True
+            if flip:
+                sspan = sspan2
+        elif mode == 3:
+            bulge = 0.5
+            if start_pos == 0:
+                new_arc = geom.arc_from_cad(pt, old.p2, bulge)[1]
+            else:
+                new_arc = geom.arc_from_cad(old.p1, pt, bulge)[1]
+            self.item.document.opModifyPolylinePoint(self.item, dragged, new_arc, True)
+            return
+        elif mode == 0:
+            if start_pos == 0:
+                cx = pt.x - r * math.cos(sstart)
+                cy = pt.y - r * math.sin(sstart)
+            if start_pos == 1:
+                cx = pt.x - r * math.cos(sstart + sspan)
+                cy = pt.y - r * math.sin(sstart + sspan)
+        new_arc = geom.PathArc.xyra(cx, cy, r, sstart, sspan)
+        self.item.document.opModifyPolylinePoint(self.item, dragged, new_arc, True)
+        
     def mouseMoveEvent(self, e):
         repaint = False
         if self.visual_feedback:
@@ -521,9 +698,13 @@ Double-clicking a node removes it.
         self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
         npts = len(self.item.points)
         if self.canvas.dragging:
-            sp, dragged, start_pos = self.drag_start_data
+            sp, dragged, start_pos = self.drag_start_data[:3]
+            is_arc = len(self.drag_start_data) > 3
             pos = self.canvas.unproject(e.localPos())
             pt = geom.PathPoint(pos.x(), pos.y())
+            if is_arc:
+                self.editArcEndpoint(pt)
+                return True
             nearest = self.nearestPolylineItem(self.snapCoords(pt), dragged)
             if nearest is not None:
                 if not self.item.closed and npts > 3 and ((nearest == 0 and dragged == npts - 1) or (nearest == npts - 1 and dragged == 0)):
@@ -553,9 +734,12 @@ Double-clicking a node removes it.
         pt = geom.PathPoint(pos.x(), pos.y())
         nearest = self.nearestPolylineItem(pt)
         if nearest is not None:
+            is_arc_ep, index, t = self.isArcEndpoint(nearest)
             is_add = isinstance(self, CanvasNewPolylineEditor)
             if is_add and (nearest == 0 or nearest == npts - 1) and npts >= 3:
                 self.canvas.setCursor(guiutils.customCursor('polyline_join'))
+            elif is_arc_ep:
+                self.canvas.setCursor(guiutils.customCursor('polyline_arcep'))
             else:
                 self.canvas.setCursor(Qt.PointingHandCursor)
         else:
@@ -578,28 +762,32 @@ Double-clicking a node removes it.
             is_add = isinstance(self, CanvasNewPolylineEditor)
             self.canvas.start_point = None
             if self.canvas.dragging:
-                sp, dragged, start_pos = self.drag_start_data
+                is_arc = len(self.drag_start_data) > 3
+                sp, dragged, start_pos = self.drag_start_data[:3]
                 pos = self.canvas.unproject(e.localPos())
                 pt = geom.PathPoint(pos.x(), pos.y())
-                nearest = self.nearestPolylineItem(self.snapCoords(pt), dragged)
-                npts = len(self.item.points)
-                if nearest is not None:
-                    if not self.item.closed and npts > 3 and ((nearest == 0 and dragged == npts - 1) or (nearest == npts - 1 and dragged == 0)):
-                        # Join ends together - make an open polyline closed and (if new polyline) finish
-                        if dragged == npts - 1:
-                            self.item.document.opModifyPolyline(self.item, self.item.points[:npts - 1], True)
-                        else:
-                            self.item.document.opModifyPolyline(self.item, self.item.points[1:], True)
-                        if is_add:
-                            self.canvas.exitEditMode(False)
-                    elif self.item.closed and not self.adjacent(dragged, nearest):
-                        # Break a closed polyline line
-                        self.item.document.opModifyPolyline(self.item, self.item.points[dragged + 1:] + self.item.points[:dragged], False)
-                    elif (not self.item.closed or npts > 3) and self.adjacent(dragged, nearest):
-                        # Just remove the point
-                        self.item.document.opModifyPolyline(self.item, self.item.points[:dragged] + self.item.points[dragged + 1:], self.item.closed)
+                if is_arc:
+                    self.editArcEndpoint(pt)
                 else:
-                    self.item.document.opModifyPolylinePoint(self.item, dragged, self.snapCoords(pt), False)
+                    nearest = self.nearestPolylineItem(self.snapCoords(pt), dragged)
+                    npts = len(self.item.points)
+                    if nearest is not None:
+                        if not self.item.closed and npts > 3 and ((nearest == 0 and dragged == npts - 1) or (nearest == npts - 1 and dragged == 0)):
+                            # Join ends together - make an open polyline closed and (if new polyline) finish
+                            if dragged == npts - 1:
+                                self.item.document.opModifyPolyline(self.item, self.item.points[:npts - 1], True)
+                            else:
+                                self.item.document.opModifyPolyline(self.item, self.item.points[1:], True)
+                            if is_add:
+                                self.canvas.exitEditMode(False)
+                        elif self.item.closed and not self.adjacent(dragged, nearest):
+                            # Break a closed polyline line
+                            self.item.document.opModifyPolyline(self.item, self.item.points[dragged + 1:] + self.item.points[:dragged], False)
+                        elif (not self.item.closed or npts > 3) and self.adjacent(dragged, nearest):
+                            # Just remove the point
+                            self.item.document.opModifyPolyline(self.item, self.item.points[:dragged] + self.item.points[dragged + 1:], self.item.closed)
+                    else:
+                        self.item.document.opModifyPolylinePoint(self.item, dragged, self.snapCoords(pt), False)
                 self.item.calcBounds()
                 self.canvas.renderDrawing()
                 self.canvas.repaint()

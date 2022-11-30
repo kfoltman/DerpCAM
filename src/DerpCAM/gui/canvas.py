@@ -249,22 +249,23 @@ class DrawingViewer(view.PathViewer):
         if self.editor and self.editor.mouseReleaseEvent(e):
             view.PathViewer.mouseReleaseEvent(self, e)
             return
-        if self.dragging:
-            objs = self.rubberbandDrawingObjects()
-            if e.modifiers() & Qt.ControlModifier:
-                self.selection ^= set(objs)
+        if e.button() == Qt.LeftButton:
+            if self.dragging and self.rubberband_rect is not None:
+                objs = self.rubberbandDrawingObjects()
+                if e.modifiers() & Qt.ControlModifier:
+                    self.selection ^= set(objs)
+                else:
+                    self.selection = set(objs)
+                self.dragging = False
+                self.start_point = None
+                self.rubberband_rect = None
+                self.selectionChanged.emit()
+                self.renderDrawing()
+                self.repaint()
             else:
-                self.selection = set(objs)
-            self.dragging = False
-            self.start_point = None
-            self.rubberband_rect = None
-            self.selectionChanged.emit()
-            self.renderDrawing()
-            self.repaint()
-        else:
-            self.dragging = False
-            self.start_point = None
-            self.rubberband_rect = None
+                self.dragging = False
+                self.start_point = None
+                self.rubberband_rect = None
         view.PathViewer.mouseReleaseEvent(self, e)
     def setSelection(self, selection):
         self.selection = set(selection)
