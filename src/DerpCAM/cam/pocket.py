@@ -616,7 +616,7 @@ def shape_to_refine_external(shape, previous):
         output_shapes.append(shapes.Shape(exterior, True))
     return output_shapes
 
-def sort_linestrings(linestrings):
+def sort_linestrings(linestrings, overall_geom=None):
     if len(linestrings) <= 1:
         return linestrings
     output = [linestrings.pop(0)]
@@ -650,7 +650,7 @@ def sort_linestrings(linestrings):
     while i < len(output) - 1:
         cur = output[i]
         next = output[i + 1]
-        if Point(cur.coords[-1]).distance(Point(next.coords[0])) < 1.0 / geom.GeometrySettings.RESOLUTION:
+        if Point(cur.coords[-1]).distance(Point(next.coords[0])) < 1.0 / geom.GeometrySettings.RESOLUTION :
             output[i] = LineString(list(cur.coords) + list(next.coords))
             del output[i + 1]
         else:
@@ -671,7 +671,45 @@ def vcarve(shape, tool, thickness):
         with pyvlock:
             v = hsm_nibble.voronoi_centers.VoronoiCenters(polygon, preserve_edge=True)
             edges = list(v.edges.values())
+        climbs = {}
         sausages = []
+        true_edges = []
+        # Treat lines going to zero width specially by joining them into the middle
+        # of other lines (I call them climbs here)
+        for edge in edges:
+            s = v.distance_from_geom(Point(*edge.coords[0]))
+            e = v.distance_from_geom(Point(*edge.coords[-1]))
+            if s == 0 or e == 0:
+                # Always have the surface side at the end
+                if s == 0:
+                    coords = edge.coords[::-1]
+                else:
+                    coords = edge.coords
+                pt = coords[0]
+                if pt not in climbs:
+                    climbs[pt] = [coords]
+                else:
+                    climbs[pt].append(coords)
+            else:
+                true_edges.append(edge)
+        true_edges = sort_linestrings(true_edges)
+        edges = []
+        for edge in true_edges:
+            coords = edge.coords
+            coords2 = []
+            for ptuple in coords:
+                if ptuple in climbs:
+                    # Climb and come back in the same place
+                    for i in climbs[ptuple]:
+                        coords2 += i
+                        coords2 += list(i[::-1])
+                    del climbs[ptuple]
+                else:
+                    coords2.append(ptuple)
+            edges.append(LineString(coords2))
+        # Add unused climbs
+        for ptclimbs in climbs.values():
+            edges += ptclimbs
         edges = sort_linestrings(edges)
         for edge in edges:
             dists = []
@@ -695,6 +733,7 @@ def vcarve(shape, tool, thickness):
             if len(sausage) > 1 or (sausage and sausage[0].speed_hint.diameter > max_diameter):
                 sausage.append(pt)
                 sausages.append(sausage)
+        jsausages = MultiPolygon()
         for sausage in sausages:
             # Ignore the degenerate case
             if len(sausage) == 1:
@@ -707,12 +746,13 @@ def vcarve(shape, tool, thickness):
                     shape = shape.union(b.union(prev).convex_hull)
                 prev = b
             shape = shape.buffer(-max_diameter / 2)
-            if not shape.is_empty:
-                if isinstance(shape, Polygon):
-                    points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in shape.exterior.coords]
-                    tps.append(toolpath.Toolpath(geom.Path(points, True), tool))
-                else:
-                    for i in shape.geoms:
-                        points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in i.exterior.coords]
-                        tps.append(toolpath.Toolpath(geom.Path(points, False), tool))
+            jsausages = jsausages.union(shape)
+        if not jsausages.is_empty:
+            geoms = [jsausages] if isinstance(jsausages, Polygon) else jsausages.geoms
+            for i in geoms:
+                points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in i.exterior.coords]
+                tps.append(toolpath.Toolpath(geom.Path(points, False), tool))
+                for k in i.interiors:
+                    points = [geom.PathPoint(*j, toolpath.DesiredDiameter(max_diameter)) for j in k.coords]
+                    tps.append(toolpath.Toolpath(geom.Path(points, False), tool))
     return toolpath.Toolpaths(tps)
