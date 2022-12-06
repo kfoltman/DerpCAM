@@ -185,6 +185,10 @@ class Toolpath(object):
         tp = Toolpath(path, self.tool, transform=self.transform, helical_entry=helical_entry, is_tab=is_tab, was_previously_cut=self.was_previously_cut and start == 0, is_cleanup=self.is_cleanup, tab_maker=self.tab_maker)
         return tp
 
+    def with_new_nodes(self, nodes):
+        tp = Toolpath(nodes, self.tool, transform=self.transform, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup)
+        return tp
+
     def for_tab_below(self):
         return self.without_circles() if self.is_tab else self.with_helical_from_top(False)
 

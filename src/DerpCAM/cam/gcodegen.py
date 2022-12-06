@@ -83,6 +83,7 @@ class Gcode(object):
             return
         if f is not None and f != self.last_feed:
             cmd += " " + self.enc_feed(f)
+            self.last_feed = f
         self.add_dedup(cmd + coords)
         self.last_coords = coords
     def rapid(self, x=None, y=None, z=None):
@@ -187,6 +188,7 @@ class Gcode(object):
     def apply_vcarve_subpath(self, subpath, lastpt, tool, base_z, target_z):
         self.section_info("Start vcarve subpath")
         first = True
+        visited = set()
         for lastpt, pt in PathSegmentIterator(subpath):
             assert isinstance(pt.speed_hint, toolpath.DesiredDiameter)
             assert isinstance(lastpt.speed_hint, toolpath.DesiredDiameter)
@@ -197,11 +199,16 @@ class Gcode(object):
                 self.linear(z=start_z, f=tool.vfeed)
                 first = False
             end_z = max(target_z, base_z + tool.dia2depth(pt.speed_hint.diameter))
-            slope = min(1, max(0, start_z - end_z) / max(0.00001, pt.dist(lastpt)))
-            # Interpolate geometrically between vfeed and hfeed depending on the slope. May be
-            # changed in future based on testing with real materials.
-            self.linear(x=pt.x, y=pt.y, z=end_z, f=tool.hfeed * ((tool.vfeed / tool.hfeed) ** slope))
+            if (pt.x, pt.y) in visited:
+                # This has been cut before, go fast.
+                self.linear(x=pt.x, y=pt.y, z=end_z, f=tool.hfeed)
+            else:
+                slope = min(1, max(0, start_z - end_z) / max(0.00001, pt.dist(lastpt)))
+                # Interpolate geometrically between vfeed and hfeed depending on the slope. May be
+                # changed in future based on testing with real materials.
+                self.linear(x=pt.x, y=pt.y, z=end_z, f=round(tool.hfeed * ((tool.vfeed / tool.hfeed) ** slope), 2))
             start_z = end_z
+            visited.add((pt.x, pt.y))
         lastpt = pt.seg_end()
         self.section_info("End vcarve subpath")
         return lastpt
@@ -763,6 +770,34 @@ class VCarveCut(BaseCutLayered):
         gcode.section_info(f"End v-carve cutpath")
         self.go_to_safe_z(gcode)
 
+    def optimize_subpath(self, subpath, base_z, prev_depth, reversed):
+        valid = [False] * len(subpath.path.nodes)
+        loops = {}
+        deletes = []
+        for i, node in enumerate(subpath.path.nodes):
+            end_z = base_z + subpath.tool.dia2depth(node.speed_hint.diameter)
+            valid[i] = end_z <= prev_depth
+            if node.is_point():
+                if (node.x, node.y) in loops:
+                    start = loops[(node.x, node.y)]
+                    if not any(valid[start:i]):
+                        deletes.append((start, i))
+                loops[(node.x, node.y)] = i
+        if deletes:
+            nodes = list(subpath.path.nodes)
+            for start, end in deletes[::-1]:
+                del nodes[start:end]
+            subpath = subpath.with_new_nodes(Path(nodes, subpath.path.closed))
+        pos2 = len(valid)
+        while not reversed and pos2 > 0 and not valid[pos2 - 1]:
+            pos2 -= 1
+        pos = 0
+        while reversed and pos < pos2 and not valid[pos]:
+            pos += 1
+        if pos == 0 and pos2 == len(valid):
+            return subpath
+        return subpath.subpath(pos, pos2 - pos)
+
     def build_subpath(self, gcode, cutpath, layers, subpath):
         if subpath.path.length() < 0.001:
             return
@@ -776,6 +811,9 @@ class VCarveCut(BaseCutLayered):
             if self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth):
                 break
             assert isinstance(self.lastpt, PathPoint)
+            subpath = self.optimize_subpath(subpath, base_z=self.props.start_depth, prev_depth=layer.prev_depth, reversed=reversed)
+            if subpath is None:
+                break
             if reversed:
                 self.lastpt = gcode.apply_vcarve_subpath(Path(list(subpath.path.nodes[::-1]), False), self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
             else:
