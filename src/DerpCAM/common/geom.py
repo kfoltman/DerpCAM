@@ -704,7 +704,7 @@ class CircleFitter(object):
         if end < start + 3:
             return [], -1
         c = CircleFitter.fit_circle(pts, start, end)
-        if c:
+        if c and c.r < 100 * pts[start].dist(pts[end - 1]):
             # Reject the match if a mix of positive and negative relative angles
             # or if the total angle span is > 270 degrees
             pangles, nangles, tangle = c.count_angles(pts[start:end])
