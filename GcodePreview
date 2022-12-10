@@ -153,6 +153,8 @@ class MainWidget(QOpenGLWidget):
         self.zoom = 20
         self.rotatex = 180
         self.rotatey = 0
+        self.translatex = 0
+        self.translatey = 0
         self.click_data = None
         self.updateProjection()
         
@@ -167,7 +169,7 @@ class MainWidget(QOpenGLWidget):
         projection.scale(1, -1, 1.0 / self.zoom)
         self.program.setUniformValue('projection', projection)
         projection = QMatrix4x4()
-        projection.translate(0, 0, -200)
+        projection.translate(self.translatex / 2, self.translatey / 2, -200)
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
@@ -186,14 +188,22 @@ class MainWidget(QOpenGLWidget):
     def mousePressEvent(self, e):
         b = e.button()
         if e.button() == Qt.LeftButton:
-            self.click_data = (self.rotatex, self.rotatey, e.localPos())
+            self.click_data = (self.rotatex, self.rotatey, e.localPos(), 0)
+        if e.button() == Qt.RightButton:
+            self.click_data = (self.translatex, self.translatey, e.localPos(), 1)
     def mouseMoveEvent(self, e):
         if self.click_data:
-            self.rotatex = self.click_data[0] + (e.localPos().y() - self.click_data[2].y())
-            self.rotatey = self.click_data[1] + (e.localPos().x() - self.click_data[2].x())
+            if self.click_data[3] == 0:
+                self.rotatex = self.click_data[0] + (e.localPos().y() - self.click_data[2].y())
+                self.rotatey = self.click_data[1] + (e.localPos().x() - self.click_data[2].x())
+            elif self.click_data[3] == 1:
+                self.translatex = self.click_data[0] + (e.localPos().x() - self.click_data[2].x())
+                self.translatey = self.click_data[1] + (e.localPos().y() - self.click_data[2].y())
             self.repaint()
     def mouseReleaseEvent(self, e):
-        if e.button() == Qt.LeftButton:
+        if e.button() == Qt.LeftButton and self.click_data and self.click_data[3] == 0:
+            self.click_data = None
+        if e.button() == Qt.RightButton and self.click_data and self.click_data[3] == 1:
             self.click_data = None
     def resizeGL(self, w, h):
         QOpenGLWidget.resizeGL(self, w, h)
