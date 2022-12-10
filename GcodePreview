@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point
+import shapely.ops
+
+import argparse
+import math
+import os
+import sys
+import OpenGL.GL as gl
+import OpenGL.GLU as glu
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+from DerpCAM.common import gparser
+
+class PreviewGcodeReceiver(gparser.TestGcodeReceiver):
+    def handleStopCommand(self, cmd, data):
+        raise StopIteration
+
+vertex_code = '''
+#version 330 core
+uniform mat4 projection, mapping;
+attribute vec3 position, center;
+out float depth;
+out float x, y;
+void main()
+{
+    depth = (10 - position.z) / (10 - 5);
+    x = position.x;
+    y = position.y;
+    gl_Position = projection * mapping * vec4(position, 1.0);
+}
+'''
+
+fragment_code = '''
+#version 330 core
+uniform vec4 shapeColor;
+in float depth;
+in float x, y;
+
+void main_wood()
+{
+    float surface = (0.5 * sin(y + 0.3 * sin(x + y - depth) + 2 * smoothstep(0, 1, 2 * (cos(0.31 * x) + sin(0.17 * y)))));
+    surface = surface * 0.25 + surface * surface * surface;
+    gl_FragColor = shapeColor * (0.25 + depth * 0.25) * (1 - 0.4 * smoothstep(-0.75, 0.75, sin(10 * depth * 3.1415))) + vec4(0.3, 0, 0, 0) + surface * vec4(0.3, 0.3, 0, 0);
+}
+
+float random(vec2 co)
+{
+   return fract(sin(dot(co.xy,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+void main_plastic()
+{
+    gl_FragColor = vec4(0.7, 0.7, 0.7, 0) - (1 - depth) * vec4(0.1, 0.1, 0.1, 0) + (0.1 + 0.05 * cos(6 * x * (0.5 + sin(0.2 * y)) + 0.2 * random(vec2(x / 100, y / 100)) + depth)) * random(vec2(x, y)) * vec4(0.1, 0.1, 0.1, 0);
+}
+
+void main_copper()
+{
+    float r = random(vec2(int(y * 10), int(y * 10 + 0.02 * x * y)));
+    r = r * r * r + 0.05 * y + 0.03 * x;
+    gl_FragColor = vec4(0.5, 0.25, 0.15, 0) - (1 - depth) * vec4(0.3, 0.15, 0.1, 0) + r * vec4(0.08, 0.04, 0.02, 0);
+}
+
+void main_wood2()
+{
+    float surface = (0.5 * sin(y + 0.3 * sin(x + y - depth) + 2 * smoothstep(0, 1, 2 * (cos(0.31 * x) + sin(0.17 * y)))));
+    float r = random(vec2(int(y * 10), int(y * 10 + 0.02 * x * y)));
+    r = r * r * r + 0.05 * y + 0.03 * x + 0.05 * y * sin(0.019 * x) + 0.03 * x * sin(0.07 * y);
+    r = sin(r);
+    surface = r * 0.25 + surface * surface * surface;
+    gl_FragColor = shapeColor * (0.25 + depth * 0.25) * (1 - 0.4 * smoothstep(-0.75, 0.75, sin(10 * depth * 3.1415))) + vec4(0.3, 0, 0, 0) + surface * vec4(0.3, 0.3, 0, 0);
+}
+
+void main()
+{
+    main_wood2();
+}
+
+'''
+
+def compileShader(shtype, source):
+    shader = QOpenGLShader(shtype)
+    if not shader.compileSourceCode(source):
+        raise ValueError(shader.log())
+    return shader
+    
+z1 = 10
+z2 = 5
+z3 = 9
+
+def verticalWall(path, z1, z2):
+    coords = []
+    for i in range(len(path)):
+        p1 = path[i - 1]
+        p2 = path[i]
+        coords.append([p1[0], p1[1], z1])
+        coords.append([p2[0], p2[1], z1])
+        coords.append([p2[0], p2[1], z2])
+        coords.append([p1[0], p1[1], z1])
+        coords.append([p2[0], p2[1], z2])
+        coords.append([p1[0], p1[1], z2])
+    return coords
+
+def tesselate(contours, z):
+    resvtx = []
+    def vertexCallback(vertex):
+        resvtx.append(vertex)
+    def edgeFlagCallback(flag):
+        pass
+
+    tess = glu.gluNewTess()
+    glu.gluTessCallback(tess, glu.GLU_TESS_VERTEX, vertexCallback)
+    glu.gluTessCallback(tess, glu.GLU_TESS_EDGE_FLAG, edgeFlagCallback)
+    glu.gluTessBeginPolygon(tess, None)
+    for path in contours:
+        glu.gluTessBeginContour(tess)
+        for i in path:
+            vertex = [i[0], i[1], z]
+            glu.gluTessVertex(tess, vertex, vertex)
+        glu.gluTessEndContour(tess)
+    glu.gluTessEndPolygon(tess)
+    return resvtx
+
+class MainWidget(QOpenGLWidget):
+    def initializeGL(self):
+        QOpenGLWidget.initializeGL(self)
+        vertex = compileShader(QOpenGLShader.Vertex, vertex_code)
+        fragment = compileShader(QOpenGLShader.Fragment, fragment_code)
+        self.program = QOpenGLShaderProgram()
+        self.program.addShader(vertex)
+        self.program.addShader(fragment)
+        if not self.program.link():
+            raise ValueError(program.log())
+        self.program.bind()
+
+        self.program.setUniformValue('shapeColor', QColor(255, 255, 0))
+
+        self.coords = []
+        last_depth = 0
+        depth = 0
+        for depth, cuts in reversed(cuts_per_depth.items()):
+            for path in cuts:
+                self.coords += verticalWall(path, -depth, -last_depth)
+            self.coords += tesselate([stock.exterior.coords] + cuts, -last_depth)
+            last_depth = depth
+        if depth:
+            self.coords += tesselate([stock.exterior.coords] + cuts, -last_depth)
+            self.coords += verticalWall(stock.exterior.coords, 0, -depth)
+        
+        self.zoom = 20
+        self.rotatex = 180
+        self.rotatey = 0
+        self.click_data = None
+        self.updateProjection()
+        
+        vertexLocation = self.program.attributeLocation("position")
+        self.program.enableAttributeArray(vertexLocation)
+        self.program.setAttributeArray(vertexLocation, self.coords)
+        
+    def updateProjection(self):
+        self.program.bind()
+        projection = QMatrix4x4()
+        projection.frustum(-1, 1, -1, 1, 0.1, 10000)
+        projection.scale(1, -1, 1.0 / self.zoom)
+        self.program.setUniformValue('projection', projection)
+        projection = QMatrix4x4()
+        projection.translate(0, 0, -200)
+        projection.rotate(self.rotatex, 1, 0, 0)
+        projection.rotate(self.rotatey, 0, 1, 0)
+        self.program.setUniformValue('mapping', projection)
+        self.program.setUniformValue('center', QVector3D(0, 0, -2))
+    def wheelEvent(self, e):
+        delta = e.angleDelta().y()
+        if hasattr(e, 'position'):
+            pos = e.position()
+        else:
+            pos = e.posF()
+        if delta > 0:
+            self.zoom *= 1.1
+        else:
+            self.zoom /= 1.1
+        self.repaint()
+    def mousePressEvent(self, e):
+        b = e.button()
+        if e.button() == Qt.LeftButton:
+            self.click_data = (self.rotatex, self.rotatey, e.localPos())
+    def mouseMoveEvent(self, e):
+        if self.click_data:
+            self.rotatex = self.click_data[0] + (e.localPos().y() - self.click_data[2].y())
+            self.rotatey = self.click_data[1] + (e.localPos().x() - self.click_data[2].x())
+            self.repaint()
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.click_data = None
+    def resizeGL(self, w, h):
+        QOpenGLWidget.resizeGL(self, w, h)
+    def paintGL(self):
+        #QOpenGLWidget.paintGL(self)
+        self.updateProjection()
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LEQUAL)
+        gl.glClearColor(0.9, 0.9, 0.9, 1)
+        gl.glClearDepth(1)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        self.program.bind()
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
+
+class MainWin(QMainWindow):
+    def initUI(self):
+        self.w = MainWidget()
+        self.setMinimumSize(800, 800)
+        self.setCentralWidget(self.w)
+    
+format = QSurfaceFormat()
+format.setVersion(4, 0)
+QSurfaceFormat.setDefaultFormat(format)
+
+parser = argparse.ArgumentParser(description="Display a 3D preview of a G-Code file")
+parser.add_argument('input', type=str, help="File to render")
+parser.add_argument('--thickness', type=float, help="Thickness of the stock")
+
+args = parser.parse_args()
+
+recv = PreviewGcodeReceiver()
+gcode = gparser.GcodeState(recv)
+
+lines = list(map(str.strip, open(args.input, "r").readlines()))
+
+for l in lines:
+    try:
+        gcode.handle_line(l)
+    except StopIteration:
+        break
+    
+tool_diameter = 3.2
+bits_per_depth = {}
+for i in recv.motions:
+    if i.zs >= 0 or i.ze >= 0:
+        # Rapid move
+        continue
+    if i.zs != i.ze:
+        continue
+    z = i.zs
+    if args.thickness is not None and z < -args.thickness:
+        z = -args.thickness
+    bits = bits_per_depth.get(z)
+    if bits is None:
+        bits = bits_per_depth[z] = []
+    if isinstance(i, gparser.GcodeArc):
+        r = ((i.xs - i.xc) ** 2 + (i.ys - i.yc) ** 2) ** 0.5
+        sangle = math.atan2(i.ys - i.yc, i.xs - i.xc)
+        eangle = math.atan2(i.ye - i.yc, i.xe - i.xc)
+        # XXXKF This is limited to XY arcs
+        span = eangle - sangle
+        if i.clockwise:
+            if span > 0:
+                span -= 2 * math.pi
+        else:
+            if span < 0:
+                span += 2 * math.pi
+        if abs(span) < 0.001:
+            span = 2 * math.pi * (1 if span > 0 else -1)
+        nsegs = 20 # XXXKF
+        points = []
+        for j in range(nsegs + 1):
+            a = sangle + span * j / nsegs
+            xs = i.xc + r * math.cos(a)
+            ys = i.yc + r * math.sin(a)
+            vmax = max(abs(xs), abs(ys))
+            points.append(Point(xs, ys))
+        bits.append(LineString(points).buffer(tool_diameter / 2))
+    elif isinstance(i, gparser.GcodeLine):
+        bits.append(LineString([Point(i.xs, i.ys), Point(i.xe, i.ye)]).buffer(tool_diameter / 2))
+
+poly_per_depth = {depth : shapely.ops.unary_union(bits) for depth, bits in bits_per_depth.items()}
+
+overall = MultiPolygon()
+depths = list(sorted(poly_per_depth.keys()))
+opt_poly_per_depth = {}
+for depth in depths:
+    layer = poly_per_depth[depth]
+    layer_opt = layer.difference(overall)
+    prev_overall = overall
+    overall = layer.union(overall)
+    if not layer_opt.is_empty:
+        opt_poly_per_depth[depth] = overall
+stock = overall.convex_hull.buffer(10)
+
+cuts_per_depth = {}
+
+if args.thickness is not None and -args.thickness not in opt_poly_per_depth:
+    cuts_per_depth[-args.thickness] = []
+for depth, cuts_poly in opt_poly_per_depth.items():
+    cuts = []
+    polys = [cuts_poly] if isinstance(cuts_poly, Polygon) else cuts_poly.geoms
+    for i in polys:
+        cuts.append(i.exterior.coords)
+        for j in i.interiors:
+            cuts.append(j.coords)
+    cuts_per_depth[depth] = cuts
+
+app = QApplication(sys.argv)
+w = MainWin()
+w.initUI()
+w.show()
+app.exec_()
