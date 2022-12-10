@@ -153,8 +153,10 @@ class MainWidget(QOpenGLWidget):
         self.zoom = 20
         self.rotatex = 180
         self.rotatey = 0
-        self.translatex = 0
-        self.translatey = 0
+        bounds = stock.bounds
+        self.translatex = -(bounds[0] + bounds[2])
+        self.translatey = (bounds[1] + bounds[3])
+        self.max_depth = (bounds[2] - bounds[0]) * 2
         self.click_data = None
         self.updateProjection()
         
@@ -169,7 +171,7 @@ class MainWidget(QOpenGLWidget):
         projection.scale(1, -1, 1.0 / self.zoom)
         self.program.setUniformValue('projection', projection)
         projection = QMatrix4x4()
-        projection.translate(self.translatex / 2, self.translatey / 2, -200)
+        projection.translate(self.translatex / 2, self.translatey / 2, -self.max_depth)
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
