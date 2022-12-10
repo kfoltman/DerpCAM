@@ -266,6 +266,7 @@ for l in lines:
 tool_diameter = 3.2 if args.diameter is None else args.diameter
 bits_per_depth = {}
 recv.path = []
+cache = {}
 for i in recv.motions:
     is_cut = i.zs < 0 and i.zs == i.ze
     z = i.zs
@@ -300,13 +301,21 @@ for i in recv.motions:
             if is_cut:
                 points.append(Point(xs, ys))
         if is_cut:
-            bits.append(LineString(points).buffer(tool_diameter / 2))
+            key = (i.xs, i.ys, i.xe, i.ye, r, sangle, span)
+            buf = cache.get(key)
+            if buf is None:
+                cache[key] = buf = LineString(points).buffer(tool_diameter / 2)
+            bits.append(buf)
     elif isinstance(i, gparser.GcodeLine):
         w = 3 if i.feed is None else 2
         recv.path.append((i.xs, i.ys, -i.zs, w))
         recv.path.append((i.xe, i.ye, -i.ze, w))
         if is_cut:
-            bits.append(LineString([Point(i.xs, i.ys), Point(i.xe, i.ye)]).buffer(tool_diameter / 2))
+            key = (i.xs, i.ys, i.xe, i.ye)
+            buf = cache.get(key)
+            if buf is None:
+                cache[key] = buf = LineString([Point(i.xs, i.ys), Point(i.xe, i.ye)]).buffer(tool_diameter / 2)
+            bits.append(buf)
 
 poly_per_depth = {depth : shapely.ops.unary_union(bits) for depth, bits in bits_per_depth.items()}
 
@@ -315,10 +324,10 @@ depths = list(sorted(poly_per_depth.keys()))
 opt_poly_per_depth = {}
 for depth in depths:
     layer = poly_per_depth[depth]
-    layer_opt = layer.difference(overall)
+    layer_opt_empty = layer.difference(overall).is_empty
     prev_overall = overall
     overall = layer.union(overall)
-    if not layer_opt.is_empty:
+    if not layer_opt_empty:
         opt_poly_per_depth[depth] = overall
 stock = overall.convex_hull.buffer(10)
 
