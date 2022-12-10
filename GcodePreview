@@ -22,22 +22,25 @@ class PreviewGcodeReceiver(gparser.TestGcodeReceiver):
 vertex_code = '''
 #version 330 core
 uniform mat4 projection, mapping;
-attribute vec3 position, center;
+attribute vec4 position;
+attribute vec3 center;
 out float depth;
+out float vertical;
 out float x, y;
 void main()
 {
     depth = (10 - position.z) / (10 - 5);
     x = position.x;
     y = position.y;
-    gl_Position = projection * mapping * vec4(position, 1.0);
+    gl_Position = projection * mapping * vec4(position.xyz, 1.0);
+    vertical = position.w;
 }
 '''
 
 fragment_code = '''
 #version 330 core
 uniform vec4 shapeColor;
-in float depth;
+in float depth, vertical;
 in float x, y;
 
 void main_wood()
@@ -71,7 +74,7 @@ void main_wood2()
     r = r * r * r + 0.05 * y + 0.03 * x + 0.05 * y * sin(0.019 * x) + 0.03 * x * sin(0.07 * y);
     r = sin(r);
     surface = r * 0.25 + surface * surface * surface;
-    gl_FragColor = shapeColor * (0.25 + depth * 0.25) * (1 - 0.4 * smoothstep(-0.75, 0.75, sin(10 * depth * 3.1415))) + vec4(0.3, 0, 0, 0) + surface * vec4(0.3, 0.3, 0, 0);
+    gl_FragColor = (1 - 0.5 * vertical) * shapeColor * (0.25 + depth * 0.25) * (1 - 0.4 * smoothstep(-0.75, 0.75, sin(10 * depth * 3.1415))) + vec4(0.3, 0, 0, 0) + surface * vec4(0.3, 0.3, 0, 0);
 }
 
 void main()
@@ -96,18 +99,18 @@ def verticalWall(path, z1, z2):
     for i in range(len(path)):
         p1 = path[i - 1]
         p2 = path[i]
-        coords.append([p1[0], p1[1], z1])
-        coords.append([p2[0], p2[1], z1])
-        coords.append([p2[0], p2[1], z2])
-        coords.append([p1[0], p1[1], z1])
-        coords.append([p2[0], p2[1], z2])
-        coords.append([p1[0], p1[1], z2])
+        coords.append([p1[0], p1[1], z1, 1])
+        coords.append([p2[0], p2[1], z1, 1])
+        coords.append([p2[0], p2[1], z2, 1])
+        coords.append([p1[0], p1[1], z1, 1])
+        coords.append([p2[0], p2[1], z2, 1])
+        coords.append([p1[0], p1[1], z2, 1])
     return coords
 
 def tesselate(contours, z):
     resvtx = []
     def vertexCallback(vertex):
-        resvtx.append(vertex)
+        resvtx.append(vertex + [0])
     def edgeFlagCallback(flag):
         pass
 
@@ -228,11 +231,13 @@ class MainWin(QMainWindow):
     
 format = QSurfaceFormat()
 format.setVersion(4, 0)
+format.setSamples(4)
 QSurfaceFormat.setDefaultFormat(format)
 
 parser = argparse.ArgumentParser(description="Display a 3D preview of a G-Code file")
 parser.add_argument('input', type=str, help="File to render")
 parser.add_argument('--thickness', type=float, help="Thickness of the stock")
+parser.add_argument('--diameter', type=float, help="Tool diameter")
 
 args = parser.parse_args()
 
@@ -247,7 +252,7 @@ for l in lines:
     except StopIteration:
         break
     
-tool_diameter = 3.2
+tool_diameter = 3.2 if args.diameter is None else args.diameter
 bits_per_depth = {}
 for i in recv.motions:
     if i.zs >= 0 or i.ze >= 0:
