@@ -172,6 +172,8 @@ class MainWidget(QOpenGLWidget):
         projection = QMatrix4x4()
         projection.frustum(-1, 1, -1, 1, 0.1, 10000)
         projection.scale(1, -1, 1.0 / self.zoom)
+        self.aspect_ratio = self.width() / self.height()
+        projection.scale(1, self.aspect_ratio, 1)
         self.program.setUniformValue('projection', projection)
         projection = QMatrix4x4()
         projection.translate(self.translatex / 2, self.translatey / 2, -self.max_depth)
