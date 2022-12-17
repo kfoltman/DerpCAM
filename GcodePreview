@@ -6,6 +6,7 @@ from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRi
 import shapely.ops
 
 import argparse
+import ctypes
 import math
 import os
 import sys
@@ -23,7 +24,6 @@ vertex_code = '''
 #version 330 core
 uniform mat4 projection, mapping;
 attribute vec4 position;
-attribute vec3 center;
 out float depth;
 out float vertical;
 out float x, y;
@@ -134,8 +134,18 @@ def tesselate(contours, z):
     return resvtx
 
 class MainWidget(QOpenGLWidget):
+    def wrapGLFunction(self, name, args, result):
+        prototype = ctypes.CFUNCTYPE(result, *args)
+        proc = self.context().getProcAddress(name.encode('ascii'))
+        setattr(self, name, prototype(proc.__int__()))
     def initializeGL(self):
         QOpenGLWidget.initializeGL(self)
+        self.wrapGLFunction("glClear", [ctypes.c_int], None)
+        self.wrapGLFunction("glClearColor", [ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float], None)
+        self.wrapGLFunction("glClearDepth", [ctypes.c_double], None)
+        self.wrapGLFunction("glDepthFunc", [ctypes.c_int], None)
+        self.wrapGLFunction("glEnable", [ctypes.c_int], None)
+        self.wrapGLFunction("glDrawArrays", [ctypes.c_int, ctypes.c_int, ctypes.c_long], ctypes.c_int)
         vertex = compileShader(QOpenGLShader.Vertex, vertex_code)
         fragment = compileShader(QOpenGLShader.Fragment, fragment_code)
         self.program = QOpenGLShaderProgram()
@@ -174,6 +184,7 @@ class MainWidget(QOpenGLWidget):
         vertexLocation = self.program.attributeLocation("position")
         self.program.enableAttributeArray(vertexLocation)
         self.program.setAttributeArray(vertexLocation, self.coords + self.line_coords)
+        self.program.disableAttributeArray(vertexLocation)
         
     def updateProjection(self):
         self.program.bind()
@@ -188,7 +199,6 @@ class MainWidget(QOpenGLWidget):
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
-        self.program.setUniformValue('center', QVector3D(0, 0, -2))
     def wheelEvent(self, e):
         delta = e.angleDelta().y()
         if hasattr(e, 'position'):
@@ -225,14 +235,17 @@ class MainWidget(QOpenGLWidget):
     def paintGL(self):
         #QOpenGLWidget.paintGL(self)
         self.updateProjection()
-        gl.glEnable(gl.GL_DEPTH_TEST)
-        gl.glDepthFunc(gl.GL_LEQUAL)
-        gl.glClearColor(0.9, 0.9, 0.9, 1)
-        gl.glClearDepth(1)
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        self.glEnable(gl.GL_DEPTH_TEST)
+        self.glDepthFunc(gl.GL_LEQUAL)
+        self.glClearColor(0.9, 0.9, 0.9, 1)
+        self.glClearDepth(1)
+        self.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         self.program.bind()
-        gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
-        gl.glDrawArrays(gl.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
+        vertexLocation = self.program.attributeLocation("position")
+        self.program.enableAttributeArray(vertexLocation)
+        self.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
+        self.glDrawArrays(gl.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
+        self.program.disableAttributeArray(vertexLocation)
 
 class MainWin(QMainWindow):
     def initUI(self):
