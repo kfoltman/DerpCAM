@@ -10,7 +10,6 @@ import ctypes
 import math
 import os
 import sys
-import OpenGL.GL as gl
 import OpenGL.GLU as glu
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -146,6 +145,13 @@ class MainWidget(QOpenGLWidget):
         self.wrapGLFunction("glDepthFunc", [ctypes.c_int], None)
         self.wrapGLFunction("glEnable", [ctypes.c_int], None)
         self.wrapGLFunction("glDrawArrays", [ctypes.c_int, ctypes.c_int, ctypes.c_long], ctypes.c_int)
+        self.GL_LINE_STRIP = 3
+        self.GL_TRIANGLES = 4
+        self.GL_LEQUAL = 0x203
+        self.GL_DEPTH_TEST = 0xB71
+        self.GL_COLOR_BUFFER_BIT = 0x4000
+        self.GL_DEPTH_BUFFER_BIT = 0x100
+
         vertex = compileShader(QOpenGLShader.Vertex, vertex_code)
         fragment = compileShader(QOpenGLShader.Fragment, fragment_code)
         self.program = QOpenGLShaderProgram()
@@ -235,16 +241,16 @@ class MainWidget(QOpenGLWidget):
     def paintGL(self):
         #QOpenGLWidget.paintGL(self)
         self.updateProjection()
-        self.glEnable(gl.GL_DEPTH_TEST)
-        self.glDepthFunc(gl.GL_LEQUAL)
+        self.glEnable(self.GL_DEPTH_TEST)
+        self.glDepthFunc(self.GL_LEQUAL)
         self.glClearColor(0.9, 0.9, 0.9, 1)
         self.glClearDepth(1)
-        self.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        self.glClear(self.GL_COLOR_BUFFER_BIT | self.GL_DEPTH_BUFFER_BIT)
         self.program.bind()
         vertexLocation = self.program.attributeLocation("position")
         self.program.enableAttributeArray(vertexLocation)
-        self.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
-        self.glDrawArrays(gl.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
+        self.glDrawArrays(self.GL_TRIANGLES, 0, len(self.coords))
+        self.glDrawArrays(self.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
         self.program.disableAttributeArray(vertexLocation)
 
 class MainWin(QMainWindow):
