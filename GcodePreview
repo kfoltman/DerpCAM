@@ -5,8 +5,8 @@ from PyQt5.QtWidgets import *
 from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point
 import shapely.ops
 
+import array
 import argparse
-import ctypes
 import math
 import os
 import sys
@@ -24,6 +24,7 @@ vertex_code = '''
 #version 330 core
 attribute vec4 position;
 uniform mat4 projection, mapping;
+attribute vec3 center;
 out float depth;
 out float vertical;
 out float x, y;
@@ -134,13 +135,8 @@ def tesselate(contours, z):
     return resvtx
 
 class MainWidget(QOpenGLWidget):
-    def wrapGLFunction(self, name, args, result):
-        prototype = ctypes.CFUNCTYPE(result, *args)
-        proc = self.context().getProcAddress(name.encode('ascii'))
-        setattr(self, name, prototype(proc.__int__()))
     def initializeGL(self):
         QOpenGLWidget.initializeGL(self)
-
         vertex = compileShader(QOpenGLShader.Vertex, vertex_code)
         fragment = compileShader(QOpenGLShader.Fragment, fragment_code)
         self.program = QOpenGLShaderProgram()
@@ -156,7 +152,7 @@ class MainWidget(QOpenGLWidget):
         self.line_coords = []
         last_depth = 0
         depth = 0
-        for depth, cuts in reversed(cuts_per_depth.items()):
+        for depth, cuts in reversed(list(cuts_per_depth.items())):
             for path in cuts:
                 self.coords += verticalWall(path, -depth, -last_depth)
             self.coords += tesselate([stock.exterior.coords] + cuts, -last_depth)
@@ -165,6 +161,7 @@ class MainWidget(QOpenGLWidget):
             self.coords += tesselate([stock.exterior.coords] + cuts, -last_depth)
             self.coords += verticalWall(stock.exterior.coords, 0, -depth)
         self.line_coords = recv.path
+        self.program.release()
         
         self.zoom = 20
         self.rotatex = 180
@@ -175,11 +172,25 @@ class MainWidget(QOpenGLWidget):
         self.max_depth = (bounds[2] - bounds[0]) * 2
         self.click_data = None
         self.updateProjection()
+
+        values = []
+        for coords in self.coords + self.line_coords:
+            values.append(coords[0])
+            values.append(coords[1])
+            values.append(coords[2])
+            values.append(coords[3])
+        self.coordBytes = array.array('f', values).tobytes()
+
+        self.vao = gl.glGenVertexArrays(1)
+        gl.glBindVertexArray(self.vao)
+
+        self.vbo = gl.glGenBuffers(1)
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.vbo)
+        gl.glBufferData(gl.GL_ARRAY_BUFFER, len(self.coordBytes), self.coordBytes, gl.GL_STATIC_DRAW)
         
         vertexLocation = self.program.attributeLocation("position")
-        self.program.enableAttributeArray(vertexLocation)
-        self.program.setAttributeArray(vertexLocation, self.coords + self.line_coords)
-        self.program.release()
+        gl.glVertexAttribPointer(vertexLocation, 4, gl.GL_FLOAT, False, 0, None)
+        gl.glEnableVertexAttribArray(vertexLocation)
         
     def updateProjection(self):
         self.program.bind()
@@ -194,6 +205,7 @@ class MainWidget(QOpenGLWidget):
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
+        self.program.setUniformValue('center', QVector3D(0, 0, -2))
         self.program.release()
     def wheelEvent(self, e):
         delta = e.angleDelta().y()
@@ -231,14 +243,13 @@ class MainWidget(QOpenGLWidget):
     def paintGL(self):
         #QOpenGLWidget.paintGL(self)
         self.updateProjection()
-        self.program.bind()
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LEQUAL)
         gl.glClearColor(0.9, 0.9, 0.9, 1)
         gl.glClearDepth(1)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-        vertexLocation = self.program.attributeLocation("position")
-        self.program.enableAttributeArray(vertexLocation)
+        self.program.bind()
+        gl.glBindVertexArray(self.vao)
         gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
         gl.glDrawArrays(gl.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
         self.program.release()
