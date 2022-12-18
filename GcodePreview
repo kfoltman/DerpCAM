@@ -10,6 +10,7 @@ import ctypes
 import math
 import os
 import sys
+import OpenGL.GL as gl
 import OpenGL.GLU as glu
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -21,8 +22,8 @@ class PreviewGcodeReceiver(gparser.TestGcodeReceiver):
 
 vertex_code = '''
 #version 330 core
-uniform mat4 projection, mapping;
 attribute vec4 position;
+uniform mat4 projection, mapping;
 out float depth;
 out float vertical;
 out float x, y;
@@ -139,18 +140,6 @@ class MainWidget(QOpenGLWidget):
         setattr(self, name, prototype(proc.__int__()))
     def initializeGL(self):
         QOpenGLWidget.initializeGL(self)
-        self.wrapGLFunction("glClear", [ctypes.c_int], None)
-        self.wrapGLFunction("glClearColor", [ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float], None)
-        self.wrapGLFunction("glClearDepth", [ctypes.c_double], None)
-        self.wrapGLFunction("glDepthFunc", [ctypes.c_int], None)
-        self.wrapGLFunction("glEnable", [ctypes.c_int], None)
-        self.wrapGLFunction("glDrawArrays", [ctypes.c_int, ctypes.c_int, ctypes.c_long], ctypes.c_int)
-        self.GL_LINE_STRIP = 3
-        self.GL_TRIANGLES = 4
-        self.GL_LEQUAL = 0x203
-        self.GL_DEPTH_TEST = 0xB71
-        self.GL_COLOR_BUFFER_BIT = 0x4000
-        self.GL_DEPTH_BUFFER_BIT = 0x100
 
         vertex = compileShader(QOpenGLShader.Vertex, vertex_code)
         fragment = compileShader(QOpenGLShader.Fragment, fragment_code)
@@ -190,7 +179,7 @@ class MainWidget(QOpenGLWidget):
         vertexLocation = self.program.attributeLocation("position")
         self.program.enableAttributeArray(vertexLocation)
         self.program.setAttributeArray(vertexLocation, self.coords + self.line_coords)
-        self.program.disableAttributeArray(vertexLocation)
+        self.program.release()
         
     def updateProjection(self):
         self.program.bind()
@@ -205,6 +194,7 @@ class MainWidget(QOpenGLWidget):
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
+        self.program.release()
     def wheelEvent(self, e):
         delta = e.angleDelta().y()
         if hasattr(e, 'position'):
@@ -241,17 +231,17 @@ class MainWidget(QOpenGLWidget):
     def paintGL(self):
         #QOpenGLWidget.paintGL(self)
         self.updateProjection()
-        self.glEnable(self.GL_DEPTH_TEST)
-        self.glDepthFunc(self.GL_LEQUAL)
-        self.glClearColor(0.9, 0.9, 0.9, 1)
-        self.glClearDepth(1)
-        self.glClear(self.GL_COLOR_BUFFER_BIT | self.GL_DEPTH_BUFFER_BIT)
         self.program.bind()
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LEQUAL)
+        gl.glClearColor(0.9, 0.9, 0.9, 1)
+        gl.glClearDepth(1)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         vertexLocation = self.program.attributeLocation("position")
         self.program.enableAttributeArray(vertexLocation)
-        self.glDrawArrays(self.GL_TRIANGLES, 0, len(self.coords))
-        self.glDrawArrays(self.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
-        self.program.disableAttributeArray(vertexLocation)
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, len(self.coords))
+        gl.glDrawArrays(gl.GL_LINE_STRIP, len(self.coords), len(self.line_coords))
+        self.program.release()
 
 class MainWin(QMainWindow):
     def initUI(self):
