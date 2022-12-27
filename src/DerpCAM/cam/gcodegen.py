@@ -185,32 +185,54 @@ class Gcode(object):
         self.linear(z=new_z)
         self.feed(tool.hfeed)
 
-    def apply_vcarve_subpath(self, subpath, lastpt, tool, base_z, target_z):
-        self.section_info("Start vcarve subpath")
-        first = True
+    def apply_vcarve_subpath(self, graph, tool, props, parent):
+        self.section_info("Start v-carve subpath")
         visited = set()
-        for lastpt, pt in PathSegmentIterator(subpath):
-            assert isinstance(pt.speed_hint, toolpath.DesiredDiameter)
-            assert isinstance(lastpt.speed_hint, toolpath.DesiredDiameter)
-            assert not pt.is_arc()
-            assert base_z is not None
-            if first:
-                start_z = max(target_z, base_z + tool.dia2depth(lastpt.speed_hint.diameter))
-                self.linear(z=start_z, f=tool.vfeed)
-                first = False
-            end_z = max(target_z, base_z + tool.dia2depth(pt.speed_hint.diameter))
-            if (pt.x, pt.y) in visited:
-                # This has been cut before, go fast.
-                self.linear(x=pt.x, y=pt.y, z=end_z, f=tool.hfeed)
-            else:
-                slope = min(1, max(0, start_z - end_z) / max(0.00001, pt.dist(lastpt)))
-                # Interpolate geometrically between vfeed and hfeed depending on the slope. May be
-                # changed in future based on testing with real materials.
-                self.linear(x=pt.x, y=pt.y, z=end_z, f=round(tool.hfeed * ((tool.vfeed / tool.hfeed) ** slope), 2))
-            start_z = end_z
-            visited.add((pt.x, pt.y))
-        lastpt = pt.seg_end()
-        self.section_info("End vcarve subpath")
+        base_z = props.start_depth
+        bottom_z = props.depth
+        npass = 0
+        lastpt = None
+        while True:
+            diam = tool.depth2dia(-npass * tool.maxdoc)
+            #print (f"Depth {-npass * tool.maxdoc} diameter {diam} lastpt {lastpt}")
+            subpath = graph.to_path(diam, lastpt)
+            if subpath.is_empty():
+                break
+            start = subpath.seg_start()
+            if lastpt is None or lastpt.dist(start) > 0.001:
+                if lastpt is not None:
+                    self.rapid(z=parent.machine_params.safe_z)
+                self.rapid(x=start.x, y=start.y)
+                self.rapid(z=parent.machine_params.semi_safe_z)
+            target_z = base_z - (npass + 1) * tool.maxdoc
+            first = True
+            for lastpt, pt in PathSegmentIterator(subpath):
+                assert isinstance(pt.speed_hint, toolpath.DesiredDiameter)
+                assert isinstance(lastpt.speed_hint, toolpath.DesiredDiameter)
+                assert not pt.is_arc()
+                assert base_z is not None
+                if first:
+                    start_z = max(bottom_z, target_z, base_z + tool.dia2depth(lastpt.speed_hint.diameter))
+                    self.linear(z=start_z, f=tool.vfeed)
+                    first = False
+                final_end_z = base_z + tool.dia2depth(pt.speed_hint.diameter)
+                end_z = max(bottom_z, target_z, final_end_z)
+                if (pt.x, pt.y) in visited:
+                    # This has been cut before, go fast.
+                    self.linear(x=pt.x, y=pt.y, z=end_z, f=tool.hfeed)
+                else:
+                    slope = min(1, max(0, start_z - end_z) / max(0.00001, pt.dist(lastpt)))
+                    # Interpolate geometrically between vfeed and hfeed depending on the slope. May be
+                    # changed in future based on testing with real materials.
+                    self.linear(x=pt.x, y=pt.y, z=end_z, f=round(tool.hfeed * ((tool.vfeed / tool.hfeed) ** slope), 2))
+                start_z = end_z
+                if end_z == final_end_z:
+                    visited.add((pt.x, pt.y))
+            if target_z <= bottom_z + 0.001 or diam > graph.overall_maxdia:
+                break
+            npass += 1
+            lastpt = pt.seg_end()
+        self.section_info("End v-carve subpath")
         return lastpt
 
     def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None, subject=None):
@@ -736,6 +758,27 @@ class BaseCut(object):
         self.machine_params = machine_params
         self.props = props
         self.tool = tool
+    def go_to_safe_z(self, gcode):
+        gcode.rapid(z=self.machine_params.safe_z)
+        self.curz = self.machine_params.safe_z
+
+class VCarveCut(BaseCut):
+    def __init__(self, machine_params, props, tool, graphs):
+        BaseCut.__init__(self, machine_params, props, tool)
+        self.graphs = graphs
+
+    def build(self, gcode):
+        self.curz = self.machine_params.safe_z
+        self.lastpt = None
+        gcode.section_info(f"Start v-carve cutpath")
+        for graph in self.graphs:
+            gcode.apply_vcarve_subpath(graph, tool=self.tool, props=self.props, parent=self)
+            self.go_to_safe_z(gcode)
+        gcode.section_info(f"End v-carve cutpath")
+
+    def build_subpath(self, gcode, cutpath, layers, subpath):
+        if subpath.path.length() < 0.001:
+            return
 
 class BaseCutLayered(BaseCut):
     def __init__(self, machine_params, props, tool, cutpaths):
@@ -755,79 +798,6 @@ class BaseCutLayered(BaseCut):
 
     def layers_for_cutpath(self, cutpath):
         return cutpath.cut_layers
-
-    def go_to_safe_z(self, gcode):
-        gcode.rapid(z=self.machine_params.safe_z)
-        self.curz = self.machine_params.safe_z
-
-class VCarveCut(BaseCutLayered):
-    def build_cutpath(self, gcode, cutpath):
-        gcode.section_info(f"Start v-carve cutpath")
-        layers = self.layers_for_cutpath(cutpath)
-        self.lastpt = None
-        for subpath in cutpath.subpaths_full:
-            self.build_subpath(gcode, cutpath, layers, subpath)
-        gcode.section_info(f"End v-carve cutpath")
-        self.go_to_safe_z(gcode)
-
-    def optimize_subpath(self, subpath, base_z, prev_depth, reversed):
-        valid = [False] * len(subpath.path.nodes)
-        loops = {}
-        deletes = []
-        for i, node in enumerate(subpath.path.nodes):
-            end_z = base_z + subpath.tool.dia2depth(node.speed_hint.diameter)
-            valid[i] = end_z <= prev_depth
-            if node.is_point():
-                if (node.x, node.y) in loops:
-                    start = loops[(node.x, node.y)]
-                    if not any(valid[start:i]):
-                        deletes.append((start, i))
-                loops[(node.x, node.y)] = i
-        if deletes:
-            nodes = list(subpath.path.nodes)
-            for start, end in deletes[::-1]:
-                del nodes[start:end]
-            subpath = subpath.with_new_nodes(Path(nodes, subpath.path.closed))
-        pos2 = len(valid)
-        while not reversed and pos2 > 0 and not valid[pos2 - 1]:
-            pos2 -= 1
-        pos = 0
-        while reversed and pos < pos2 and not valid[pos]:
-            pos += 1
-        if pos == 0 and pos2 == len(valid):
-            return subpath
-        return subpath.subpath(pos, pos2 - pos)
-
-    def build_subpath(self, gcode, cutpath, layers, subpath):
-        if subpath.path.length() < 0.001:
-            return
-        reversed = False
-        if self.lastpt is None or self.lastpt.dist(subpath.path.seg_start()) > 0.001:
-            self.lastpt = subpath.path.seg_start()
-            gcode.rapid(x=self.lastpt.x, y=self.lastpt.y)
-            gcode.rapid(z=self.machine_params.semi_safe_z)
-        gcode.feed(subpath.tool.vfeed)
-        for layer in layers:
-            if self.is_redundant_pass(subpath, base_z=self.props.start_depth, target_z=layer.depth, prev_z=layer.prev_depth):
-                break
-            assert isinstance(self.lastpt, PathPoint)
-            subpath = self.optimize_subpath(subpath, base_z=self.props.start_depth, prev_depth=layer.prev_depth, reversed=reversed)
-            if subpath is None:
-                break
-            if reversed:
-                self.lastpt = gcode.apply_vcarve_subpath(Path(list(subpath.path.nodes[::-1]), False), self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
-            else:
-                self.lastpt = gcode.apply_vcarve_subpath(subpath.path, self.lastpt, tool=subpath.tool, base_z=self.props.start_depth, target_z=layer.depth)
-            assert isinstance(self.lastpt, PathPoint)
-            if not subpath.path.closed:
-                reversed = not reversed
-
-    def is_redundant_pass(self, subpath, base_z, target_z, prev_z):
-        lowest_z = base_z
-        for pt in subpath.path.nodes:
-            lowest_z = min(lowest_z, base_z + subpath.tool.dia2depth(pt.speed_hint.diameter))
-        lowest_z = max(lowest_z, target_z)
-        return lowest_z >= prev_z
 
 # Simple tabbed 2D toolpath
 class BaseCut2D(BaseCutLayered):

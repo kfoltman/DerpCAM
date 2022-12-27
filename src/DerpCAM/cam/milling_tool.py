@@ -50,6 +50,10 @@ class Tool(object):
         slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
         eff_dia = max(0, min(dia, self.diameter) - self.tip_diameter)
         return slope * eff_dia
+    def depth2dia(self, depth):
+        # depth is negative here
+        slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
+        return min(self.diameter, self.tip_diameter + depth / slope)
     def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, tip_angle=None, tip_diameter=None):
         def ovr(v1, v2):
             return v1 if v1 is not None else v2
