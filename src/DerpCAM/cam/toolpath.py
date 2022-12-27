@@ -316,15 +316,17 @@ class Toolpath(object):
     def render_vcarve_as_outlines(self):
         def ring2points(ring):
             return [PathPoint(p[0], p[1]) for p in ring.coords]
+        def polygon2points(polygon):
+            return [ring2points(polygon.exterior)] + [ring2points(hole) for hole in polygon.interiors]
         preview = MultiPolygon()
         for s, e in PathSegmentIterator(self.path):
-            sp = Point(s.x, s.y).buffer(s.speed_hint.diameter / 2)
-            ep = Point(e.x, e.y).buffer(e.speed_hint.diameter / 2)
+            sp = Point(s.x, s.y).buffer(s.speed_hint.diameter / 2 + 0.001)
+            ep = Point(e.x, e.y).buffer(e.speed_hint.diameter / 2 + 0.001)
             sausage = sp.union(ep).convex_hull
             preview = preview.union(sausage)
         if isinstance(preview, Polygon):
-            return [ring2points(preview.exterior)]
-        return [ring2points(p.exterior) for p in preview.geoms]
+            return polygon2points(preview)
+        return sum([polygon2points(p) for p in preview.geoms], [])
 
     def render_as_outlines(self):
         if self.is_vcarve():
