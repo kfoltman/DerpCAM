@@ -23,8 +23,9 @@ class CanvasEditor(object):
         self.createControls()
         self.connectSignals()
     def cancel(self):
-        while self.item.document.undoStack.index() > self.cancel_index:
-            self.item.document.undoStack.undo()
+        if self.cancel_index is not None:
+            while self.item.document.undoStack.index() > self.cancel_index:
+                self.item.document.undoStack.undo()
         if self.canvas.editor:
             self.canvas.exitEditMode(False)
     def createControls(self):
@@ -347,27 +348,65 @@ Click on a drawing to create a text object.
     def snapInfo(self):
         return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
 
+class TempRenderer:
+    def __init__(self):
+        self.drawingOps = []
+    def addLines(self, pen, points, closed):
+        if closed:
+            points = points + points[0:1]
+        path = QPainterPath()
+        view.addPolylineToPath(path, points)
+        self.drawingOps.append((pen, path))
+    def paint(self, qp, canvas):
+        oldPen = qp.pen()
+        for pen, path in self.drawingOps:
+            qp.drawPath(path)
+        qp.setPen(oldPen)
+
 class CanvasNewTextEditor(CanvasDrawingItemEditor):
+    def __init__(self, document):
+        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
+        item = model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
+        CanvasDrawingItemEditor.__init__(self, item)
+    def initUI(self, parent, canvas):
+        CanvasDrawingItemEditor.initUI(self, parent, canvas)
+        eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
+        pos = self.canvas.unproject(eLocalPos)
+        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+        self.canvas.repaint()
     def mouseMoveEvent(self, e):
         pos = self.canvas.unproject(e.localPos())
         newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
-        if self.last_pos is not None and self.last_pos != newPos:
+        if self.last_pos is None or self.last_pos != newPos:
+            self.last_pos = newPos
             self.canvas.repaint()
-        self.last_pos = newPos
         return False
+    def textObject(self, newPos):
+        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
+        return model.DrawingTextTreeItem(self.item, newPos, 0, style, "Text")
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             pos = self.canvas.unproject(e.localPos())
             newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
-            style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
-            text = model.DrawingTextTreeItem(self.item, newPos, 0, style, "Text")
-            self.item.opAddDrawingItems([text])
+            self.item.origin = newPos
+            self.item.document.opAddDrawingItems([self.item])
             self.apply()
             return True
     def paint(self, e, qp):
         if self.last_pos is not None:
             qp.setPen(QColor(0, 0, 0, 128))
             self.paintPoint(qp, self.last_pos, as_arc=False)
+
+            self.item.origin = self.last_pos
+            self.item.createPaths()
+            oldTransform = qp.transform()
+            transform = self.canvas.drawingTransform()
+            qp.setTransform(transform)
+            qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
+            tempRenderer = TempRenderer()
+            self.item.renderTo(tempRenderer, None)
+            tempRenderer.paint(qp, self.canvas)
+            qp.setTransform(oldTransform)
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
