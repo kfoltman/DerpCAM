@@ -451,13 +451,16 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         return tti
     def toShape(self):
         res = []
+        last_bounds = None
         if self.paths:
-            first_orientation = self.paths[0].orientation()
-            for i, path in enumerate(self.paths):
-                if path.orientation() != first_orientation:
+            for i, path in enumerate(sorted(self.paths, key=lambda path: path.bounds()[0])):
+                path_bounds = path.bounds()
+                if len(res) and geom.inside_bounds(path_bounds, last_bounds):
                     res[-1].add_island(path.nodes)
                 else:
-                    res.append(shapes.Shape(path.nodes, path.closed))
+                    shape = shapes.Shape(path.nodes, path.closed)
+                    last_bounds = path_bounds
+                    res.append(shape)
         res = list(sorted(res, key=lambda item: item.bounds[0]))
         return res
     def renderTo(self, path, editor):
@@ -483,8 +486,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         return f"{self.label()}: {self.text}"
     def createPaths(self):
         scale = geom.GeometrySettings.RESOLUTION
-        if self.style.height * scale > 1000:
-            scale = 1000 / self.style.height
+        if self.style.height * scale > 100:
+            scale = 100 / self.style.height
         if not isinstance(QCoreApplication.instance(), QGuiApplication):
             raise Exception("Use --allow-text for converting files using text objects")
         font = QFont(self.style.font_name, 1, 400, False)
@@ -521,10 +524,9 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         ppath = QPainterPath()
         ppath.addText(0, 0, font, self.text)
         transform = QTransform().rotate(angle).scale(width, 1)
-        polygons = ppath.toSubpathPolygons(transform)
         self.paths = []
-        for i in polygons:
-            self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y) for p in i], True))
+        for polygon in ppath.toSubpathPolygons(transform):
+            self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y) for p in polygon], True))
         self.calcBounds()
     def startEndPos(self):
         if self.paths:
