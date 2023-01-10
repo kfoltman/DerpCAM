@@ -104,12 +104,14 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
     if len(tps) == 0:
         return toolpath.Toolpaths([])
     tps = list(reversed(tps))
+    if roughing_offset:
+        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace, 0)
+        tps_finish = []
+        finish_contour(tps_finish, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour)
+        toolpath.mergeToolpaths(tps, toolpath.Toolpaths(tps_finish), tool.diameter)
     tps = toolpath.joinClosePaths(tps_islands + tps)
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
-    if roughing_offset:
-        boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace, 0)
-        finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour)
     return toolpath.Toolpaths(tps)
 
 class AxisParallelRow(object):
