@@ -291,10 +291,13 @@ class CAMMainWindow(QMainWindow):
             self.document.opAddDrawingItems([dlg.result])
             self.scheduleMajorRedraw(True)
     def drawRectangle(self):
-        dlg = draw.DrawRectangleDialog(self, self.document)
-        if dlg.exec():
-            self.document.opAddDrawingItems([dlg.result])
-            self.scheduleMajorRedraw(True)
+        if True:
+            self.switchToEditor(editors.CanvasNewRectangleEditor(self.document))
+        else:
+            dlg = draw.DrawRectangleDialog(self, self.document)
+            if dlg.exec():
+                self.document.opAddDrawingItems([dlg.result])
+                self.scheduleMajorRedraw(True)
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
         cancel_index = self.document.undoStack.index()

@@ -23,7 +23,7 @@ class CanvasEditor(object):
         self.createControls()
         self.connectSignals()
     def cancel(self):
-        if self.cancel_index is not None:
+        if self.cancel_index is not None and self.item is not None:
             while self.item.document.undoStack.index() > self.cancel_index:
                 self.item.document.undoStack.undo()
         if self.canvas.editor:
@@ -66,7 +66,7 @@ class CanvasEditor(object):
         if e.key() == Qt.Key_Escape and self.can_cancel:
             self.cancel()
     def onExit(self):
-        if isinstance(self.item, model.DrawingItemTreeItem):
+        if self.item is not None and isinstance(self.item, model.DrawingItemTreeItem):
             self.item.emitPropertyChanged()
     def mousePressEvent(self, e):
         return False
@@ -325,7 +325,7 @@ Click on a drawing to create a text object.
 {self.snapInfo()}"""
         self.descriptionLabel.setText(modeText)
     def penForPath(self, item, path):
-        if isinstance(self.item, model.DrawingItemTreeItem) and self.item.shape_id == item.shape_id:
+        if self.item is not None and isinstance(self.item, model.DrawingItemTreeItem) and self.item.shape_id == item.shape_id:
             return None
         return item.defaultGrayPen
     def onShapesDeleted(self, shapes):
@@ -365,8 +365,8 @@ class TempRenderer:
 
 class CanvasNewItemEditor(CanvasDrawingItemEditor):
     def __init__(self, document):
-        item = self.createItem(document)
-        CanvasDrawingItemEditor.__init__(self, item)
+        CanvasDrawingItemEditor.__init__(self, self.createItem(document))
+        self.document = document
     def initUI(self, parent, canvas):
         CanvasDrawingItemEditor.initUI(self, parent, canvas)
         eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
@@ -375,9 +375,6 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
     def ptFromPos(self, eLocalPos):
         pos = self.canvas.unproject(eLocalPos)
         return self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
-    def drawCursorPoint(self, qp):
-        qp.setPen(QColor(0, 0, 0, 128))
-        self.paintPoint(qp, self.item.origin, as_arc=False)
     def drawPreview(self, qp):
         self.item.createPaths()
         oldTransform = qp.transform()
@@ -400,6 +397,9 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
     def createItem(self, document):
         style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
         return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
+    def drawCursorPoint(self, qp):
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.item.origin, as_arc=False)
     def initState(self, pos):
         self.item.origin = pos
     def mouseMoveEventPos(self, e, newPos):
@@ -410,8 +410,53 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
             self.item.origin = newPos
-            self.item.document.opAddDrawingItems([self.item])
+            self.document.opAddDrawingItems([self.item])
             self.apply()
+            return True
+        return True
+
+class CanvasNewRectangleEditor(CanvasNewItemEditor):
+    def createItem(self, document):
+        return None
+    def initState(self, pos):
+        self.first_point = pos
+        self.second_point = None
+    def drawCursorPoint(self, qp):
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+    def polylinePath(self):
+        x1, y1 = self.first_point.x, self.first_point.y
+        x2, y2 = self.second_point.x, self.second_point.y
+        return [geom.PathPoint(x1, y1), geom.PathPoint(x2, y1), geom.PathPoint(x2, y2), geom.PathPoint(x1, y2)]
+    def drawPreview(self, qp):
+        if self.second_point is None:
+            return
+        path = geom.Path(self.polylinePath(), True)
+        for start, end in geom.PathSegmentIterator(path):
+            qs = self.canvas.project(QPointF(start.x, start.y))
+            qe = self.canvas.project(QPointF(end.x, end.y))
+            qp.drawLine(qs, qe)
+    def mouseMoveEventPos(self, e, newPos):
+        if self.second_point is None:
+            changed = self.first_point != newPos
+            self.first_point = newPos
+        else:
+            changed = self.second_point != newPos
+            self.second_point = newPos
+        if changed:
+            self.canvas.repaint()
+        return False
+    def mousePressEventPos(self, e, newPos):
+        if e.button() == Qt.LeftButton:
+            if self.second_point is None:
+                # First click
+                self.first_point = newPos
+                self.second_point = newPos
+            else:
+                # Second click
+                self.item = model.DrawingPolylineTreeItem(self.document, self.polylinePath(), True)
+                self.document.opAddDrawingItems([self.item])
+                self.apply()
             return True
         return True
 
