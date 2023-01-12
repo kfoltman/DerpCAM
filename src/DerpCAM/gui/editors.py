@@ -363,10 +363,9 @@ class TempRenderer:
             qp.drawPath(path)
         qp.setPen(oldPen)
 
-class CanvasNewTextEditor(CanvasDrawingItemEditor):
+class CanvasNewItemEditor(CanvasDrawingItemEditor):
     def __init__(self, document):
-        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
-        item = model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
+        item = self.createItem(document)
         CanvasDrawingItemEditor.__init__(self, item)
     def initUI(self, parent, canvas):
         CanvasDrawingItemEditor.initUI(self, parent, canvas)
@@ -374,6 +373,30 @@ class CanvasNewTextEditor(CanvasDrawingItemEditor):
         pos = self.canvas.unproject(eLocalPos)
         self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
         self.canvas.repaint()
+    def drawCursorPoint(self, qp):
+        if self.last_pos is not None:
+            qp.setPen(QColor(0, 0, 0, 128))
+            self.paintPoint(qp, self.last_pos, as_arc=False)
+    def drawPreview(self, qp):
+        self.item.origin = self.last_pos
+        self.item.createPaths()
+        oldTransform = qp.transform()
+        transform = self.canvas.drawingTransform()
+        qp.setTransform(transform)
+        qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
+        tempRenderer = TempRenderer()
+        self.item.renderTo(tempRenderer, None)
+        tempRenderer.paint(qp, self.canvas)
+        qp.setTransform(oldTransform)
+    def paint(self, e, qp):
+        if self.last_pos is not None:
+            self.drawCursorPoint(qp)
+            self.drawPreview(qp)
+
+class CanvasNewTextEditor(CanvasNewItemEditor):
+    def createItem(self, document):
+        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
+        return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
     def mouseMoveEvent(self, e):
         pos = self.canvas.unproject(e.localPos())
         newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
@@ -381,9 +404,6 @@ class CanvasNewTextEditor(CanvasDrawingItemEditor):
             self.last_pos = newPos
             self.canvas.repaint()
         return False
-    def textObject(self, newPos):
-        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
-        return model.DrawingTextTreeItem(self.item, newPos, 0, style, "Text")
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             pos = self.canvas.unproject(e.localPos())
@@ -392,21 +412,6 @@ class CanvasNewTextEditor(CanvasDrawingItemEditor):
             self.item.document.opAddDrawingItems([self.item])
             self.apply()
             return True
-    def paint(self, e, qp):
-        if self.last_pos is not None:
-            qp.setPen(QColor(0, 0, 0, 128))
-            self.paintPoint(qp, self.last_pos, as_arc=False)
-
-            self.item.origin = self.last_pos
-            self.item.createPaths()
-            oldTransform = qp.transform()
-            transform = self.canvas.drawingTransform()
-            qp.setTransform(transform)
-            qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
-            tempRenderer = TempRenderer()
-            self.item.renderTo(tempRenderer, None)
-            tempRenderer.paint(qp, self.canvas)
-            qp.setTransform(oldTransform)
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
