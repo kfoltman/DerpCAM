@@ -370,15 +370,15 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
     def initUI(self, parent, canvas):
         CanvasDrawingItemEditor.initUI(self, parent, canvas)
         eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
-        pos = self.canvas.unproject(eLocalPos)
-        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+        self.initState(self.ptFromPos(eLocalPos))
         self.canvas.repaint()
+    def ptFromPos(self, eLocalPos):
+        pos = self.canvas.unproject(eLocalPos)
+        return self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
     def drawCursorPoint(self, qp):
-        if self.last_pos is not None:
-            qp.setPen(QColor(0, 0, 0, 128))
-            self.paintPoint(qp, self.last_pos, as_arc=False)
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.item.origin, as_arc=False)
     def drawPreview(self, qp):
-        self.item.origin = self.last_pos
         self.item.createPaths()
         oldTransform = qp.transform()
         transform = self.canvas.drawingTransform()
@@ -388,30 +388,32 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         self.item.renderTo(tempRenderer, None)
         tempRenderer.paint(qp, self.canvas)
         qp.setTransform(oldTransform)
+    def mousePressEvent(self, e):
+        return self.mousePressEventPos(e, self.ptFromPos(e.localPos()))
+    def mouseMoveEvent(self, e):
+        return self.mouseMoveEventPos(e, self.ptFromPos(e.localPos()))
     def paint(self, e, qp):
-        if self.last_pos is not None:
-            self.drawCursorPoint(qp)
-            self.drawPreview(qp)
+        self.drawCursorPoint(qp)
+        self.drawPreview(qp)
 
 class CanvasNewTextEditor(CanvasNewItemEditor):
     def createItem(self, document):
         style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
         return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
-    def mouseMoveEvent(self, e):
-        pos = self.canvas.unproject(e.localPos())
-        newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
-        if self.last_pos is None or self.last_pos != newPos:
-            self.last_pos = newPos
+    def initState(self, pos):
+        self.item.origin = pos
+    def mouseMoveEventPos(self, e, newPos):
+        if self.item.origin != newPos:
+            self.item.origin = newPos
             self.canvas.repaint()
         return False
-    def mousePressEvent(self, e):
+    def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            pos = self.canvas.unproject(e.localPos())
-            newPos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
             self.item.origin = newPos
             self.item.document.opAddDrawingItems([self.item])
             self.apply()
             return True
+        return True
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
