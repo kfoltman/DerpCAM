@@ -421,6 +421,8 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
     def initState(self, pos):
         self.first_point = pos
         self.second_point = None
+    def setTitle(self):
+        self.parent.setWindowTitle("Create a rectangle polyline object")
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
@@ -455,6 +457,100 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
             else:
                 # Second click
                 self.item = model.DrawingPolylineTreeItem(self.document, self.polylinePath(), True)
+                self.document.opAddDrawingItems([self.item])
+                self.apply()
+            return True
+        return True
+
+class CanvasNewCircleEditor(CanvasNewItemEditor):
+    drawMode = 0
+    lastRadius = ""
+    def createItem(self, document):
+        return None
+    def initState(self, pos):
+        self.first_point = pos
+        self.second_point = None
+    def setTitle(self):
+        self.parent.setWindowTitle("Create a circle object")
+    def createExtraControls(self):
+        self.pointsButton = QPushButton("2 Points")
+        self.radiusButton = QPushButton("Radius")
+        self.diameterButton = QPushButton("Diameter")
+        self.modeButtons = [ self.pointsButton, self.radiusButton, self.diameterButton ]
+        self.modeLayout = QHBoxLayout()
+        self.modeLayout.addWidget(QLabel("Mode:"))
+        def buttonHandler(index):
+            return lambda: self.onModeButtonClicked(index)
+        for i, button in enumerate(self.modeButtons):
+            self.modeLayout.addWidget(button)
+            button.clicked.connect(buttonHandler(i))
+        self.valueEdit = QLineEdit()
+        self.valueEdit.setText(CanvasNewCircleEditor.lastRadius)
+        self.valueEdit.setValidator(QDoubleValidator(0, 1000, 3))
+        self.valueEdit.textChanged.connect(self.updateModeButtons)
+        self.modeLayout.addWidget(self.valueEdit)
+        self.modeLayout.addStretch(1)
+        self.layout.addRow(self.modeLayout)
+        self.updateModeButtons()
+    def updateModeButtons(self):
+        mode = CanvasNewCircleEditor.drawMode
+        for i, button in enumerate(self.modeButtons):
+            button.setDown(i == mode)
+        self.valueEdit.setEnabled(mode != 0)
+        if mode == 0:
+            self.radius = None
+        else:
+            self.radius = None
+            try:
+                self.radius = float(self.valueEdit.text())
+                if mode == 2:
+                    self.radius /= 2
+                CanvasNewCircleEditor.lastRadius = self.valueEdit.text()
+            except ValueError as e:
+                pass
+    def onModeButtonClicked(self, mode):
+        CanvasNewCircleEditor.drawMode = mode
+        self.updateModeButtons()
+    def drawCursorPoint(self, qp):
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+    def polylinePath(self):
+        endp = geom.PathPoint(xc + r, yc)
+        return [endp, geom.PathArc.xyra(xc, yc, r, 0, 2 * math.pi, steps = int(max(20, 10 * r)))]
+    def drawPreview(self, qp):
+        if self.second_point is None and self.radius is None:
+            return
+        xc, yc = self.first_point.x, self.first_point.y
+        if self.radius is None:
+            r = self.first_point.dist(self.second_point)
+        else:
+            r = self.radius
+        r *= self.canvas.scalingFactor()
+        qp.drawEllipse(self.canvas.project(QPointF(xc, yc)), r, r)
+    def mouseMoveEventPos(self, e, newPos):
+        if self.second_point is None:
+            changed = self.first_point != newPos
+            self.first_point = newPos
+        else:
+            changed = self.second_point != newPos
+            self.second_point = newPos
+        if changed:
+            self.canvas.repaint()
+        return False
+    def mousePressEventPos(self, e, newPos):
+        if e.button() == Qt.LeftButton:
+            if self.second_point is None and self.radius is None:
+                # First click
+                self.first_point = newPos
+                self.second_point = newPos
+            else:
+                # Second click (or first for polyline)
+                xc, yc = self.first_point.x, self.first_point.y
+                if self.radius is not None:
+                    r = self.radius
+                else:
+                    r = self.first_point.dist(self.second_point)
+                self.item = model.DrawingCircleTreeItem(self.document, self.first_point, r)
                 self.document.opAddDrawingItems([self.item])
                 self.apply()
             return True

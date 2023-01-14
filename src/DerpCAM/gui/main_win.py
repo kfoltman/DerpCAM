@@ -286,10 +286,13 @@ class CAMMainWindow(QMainWindow):
             #self.viewer.majorUpdate()
             self.configSettings.save()
     def drawCircle(self):
-        dlg = draw.DrawCircleDialog(self, self.document)
-        if dlg.exec():
-            self.document.opAddDrawingItems([dlg.result])
-            self.scheduleMajorRedraw(True)
+        if True:
+            self.switchToEditor(editors.CanvasNewCircleEditor(self.document))
+        else:
+            dlg = draw.DrawCircleDialog(self, self.document)
+            if dlg.exec():
+                self.document.opAddDrawingItems([dlg.result])
+                self.scheduleMajorRedraw(True)
     def drawRectangle(self):
         if True:
             self.switchToEditor(editors.CanvasNewRectangleEditor(self.document))
