@@ -242,8 +242,8 @@ class Gcode(object):
         tdist = 0
         for lastpt, pt in PathSegmentIterator(subpath):
             if new_z is not None:
-                tdist += pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
-                ramp_end = tdist / tlength
+                end_tdist = tdist + pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
+                ramp_end = end_tdist / tlength
             else:
                 ramp_end = 1
             if pt.is_arc() and pt.length() > 1 / GeometrySettings.RESOLUTION and pt.c.r > 1 / GeometrySettings.RESOLUTION:
@@ -270,6 +270,8 @@ class Gcode(object):
                     self.rapid(x=pt.x, y=pt.y)
                 else:
                     self.linear(x=pt.x, y=pt.y)
+                if new_z is not None:
+                    tdist = end_tdist
         lastpt = pt.seg_end()
         self.section_info("End subpath" if not subject else f"End {subject} subpath")
         return lastpt
