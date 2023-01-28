@@ -242,7 +242,7 @@ class Gcode(object):
         tdist = 0
         for lastpt, pt in PathSegmentIterator(subpath):
             if new_z is not None:
-                end_tdist = tdist + pt.length() if pt.is_arc() else dist(lastpt, pt) # Need to use arc length even if the arc was replaced with a line segment
+                end_tdist = tdist + (pt.length() if pt.is_arc() else dist(lastpt, pt)) # Need to use arc length even if the arc was replaced with a line segment
                 ramp_end = end_tdist / tlength
             else:
                 ramp_end = 1
