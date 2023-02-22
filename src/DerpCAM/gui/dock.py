@@ -108,8 +108,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             item = items[0]
             if hasattr(item, 'returnKeyPressed'):
                 item.returnKeyPressed()
+            else:
+                self.shapeEdit(item)
             return
-        print (selection)
     def customContextMenu(self, point):
         mode, items = self.activeSelection()
         if mode == 's':

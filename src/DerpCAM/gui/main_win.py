@@ -50,6 +50,7 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.editorChangeRequest.connect(self.switchToEditor)
         self.projectDW.operationTouched.connect(self.operationTouched)
         self.projectDW.noOperationTouched.connect(self.noOperationTouched)
+        self.projectDW.shapeTree.doubleClicked.connect(self.onInputDoubleClicked)
         self.addDockWidget(Qt.RightDockWidgetArea, self.projectDW)
 
         self.document.undoStack.cleanChanged.connect(self.cleanFlagChanged)
@@ -206,6 +207,11 @@ class CAMMainWindow(QMainWindow):
         return True
     def onEditorApplyClicked(self):
         self.viewer.applyClicked()
+    def onInputDoubleClicked(self, itemModel):
+        selType, items = self.projectDW.activeSelection()
+        if selType == 's' and len(items) == 1:
+            if isinstance(items[0], model.DrawingPolylineTreeItem):
+                self.projectDW.shapeEdit(items[0])
     def onShapesCreated(self, shapes):
         self.projectDW.updateShapeSelection(shapes)
         self.projectDW.selectTab(0)
