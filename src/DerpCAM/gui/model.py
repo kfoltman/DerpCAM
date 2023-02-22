@@ -2392,6 +2392,7 @@ class DocumentModel(QObject):
     polylineEditRequested = pyqtSignal([DrawingPolylineTreeItem])
     toolListRefreshed = pyqtSignal([])
     operationsUpdated = pyqtSignal([])
+    shapesCreated = pyqtSignal([list])
     shapesDeleted = pyqtSignal([list])
     shapesUpdated = pyqtSignal([])
     projectCleared = pyqtSignal([])
@@ -2814,6 +2815,9 @@ class DocumentModel(QObject):
     def exportGcode(self, fn):
         with Spinner():
             OpExporter(self).write(fn)
+    def addShapesFromEditor(self, items):
+        self.opAddDrawingItems(items)
+        self.shapesCreated.emit(items)
     def opAddCutter(self, cutter: inventory.CutterBase):
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))

@@ -410,7 +410,7 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
             self.item.origin = newPos
-            self.document.opAddDrawingItems([self.item])
+            self.document.addShapesFromEditor([self.item])
             self.apply()
             return True
         return True
@@ -457,7 +457,7 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
             else:
                 # Second click
                 self.item = model.DrawingPolylineTreeItem(self.document, self.polylinePath(), True)
-                self.document.opAddDrawingItems([self.item])
+                self.document.addShapesFromEditor([self.item])
                 self.apply()
             return True
         return True
@@ -551,7 +551,7 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
                 else:
                     r = self.first_point.dist(self.second_point)
                 self.item = model.DrawingCircleTreeItem(self.document, self.first_point, r)
-                self.document.opAddDrawingItems([self.item])
+                self.document.addShapesFromEditor([self.item])
                 self.apply()
             return True
         return True

@@ -56,6 +56,7 @@ class CAMMainWindow(QMainWindow):
         self.document.propertyChanged.connect(self.itemPropertyChanged)
         self.document.operModel.rowsInserted.connect(self.operInserted)
         self.document.operModel.rowsRemoved.connect(self.operRemoved)
+        self.document.shapesCreated.connect(self.onShapesCreated)
         self.document.shapesUpdated.connect(self.onShapesUpdated)
         self.document.shapesDeleted.connect(self.onShapesDeleted)
         self.document.operationsUpdated.connect(self.onOperationsUpdated)
@@ -205,6 +206,9 @@ class CAMMainWindow(QMainWindow):
         return True
     def onEditorApplyClicked(self):
         self.viewer.applyClicked()
+    def onShapesCreated(self, shapes):
+        self.projectDW.updateShapeSelection(shapes)
+        self.projectDW.selectTab(0)
     def onShapesDeleted(self, shapes):
         if self.viewer.editor is not None:
             self.viewer.editor.onShapesDeleted(shapes)
@@ -304,7 +308,7 @@ class CAMMainWindow(QMainWindow):
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
         cancel_index = self.document.undoStack.index()
-        self.document.opAddDrawingItems([polyline])
+        self.document.addShapesFromEditor([polyline])
         self.switchToEditor(editors.CanvasNewPolylineEditor(polyline, cancel_index))
     def drawText(self):
         self.switchToEditor(editors.CanvasNewTextEditor(self.document))
