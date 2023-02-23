@@ -43,6 +43,7 @@ class CAMMainWindow(QMainWindow):
         self.viewer = canvas.DrawingViewer(self.document, self.configSettings)
         self.viewer.initUI()
         self.viewer.editorChangeRequest.connect(self.switchToEditor)
+        self.viewer.itemEditRequest.connect(self.onDrawingItemDoubleClicked)
         self.setCentralWidget(self.viewer)
 
         self.projectDW = dock.CAMObjectTreeDockWidget(self.document)
@@ -207,11 +208,13 @@ class CAMMainWindow(QMainWindow):
         return True
     def onEditorApplyClicked(self):
         self.viewer.applyClicked()
+    def onDrawingItemDoubleClicked(self, item):
+        if isinstance(item, model.DrawingPolylineTreeItem):
+            self.projectDW.shapeEdit(item)
     def onInputDoubleClicked(self, itemModel):
         selType, items = self.projectDW.activeSelection()
         if selType == 's' and len(items) == 1:
-            if isinstance(items[0], model.DrawingPolylineTreeItem):
-                self.projectDW.shapeEdit(items[0])
+            self.onDrawingItemDoubleClicked(items[0])
     def onShapesCreated(self, shapes):
         self.projectDW.updateShapeSelection(shapes)
         self.projectDW.selectTab(0)

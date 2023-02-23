@@ -96,6 +96,7 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
 class DrawingViewer(view.PathViewer):
     selectionChanged = pyqtSignal()
     editorChangeRequest = pyqtSignal(object)
+    itemEditRequest = pyqtSignal(object)
     def __init__(self, document, configSettings):
         self.document = document
         self.configSettings = configSettings
@@ -193,6 +194,11 @@ class DrawingViewer(view.PathViewer):
     def mouseDoubleClickEvent(self, e):
         if self.editor:
             return self.editor.mouseDoubleClickEvent(e)
+        elif e.button() == Qt.LeftButton:
+            pos = self.unproject(e.localPos())
+            objs = self.document.drawing.objectsNear(pos, 24 / self.scalingFactor())
+            if len(objs) == 1:
+                self.itemEditRequest.emit(objs[0])
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.rubberband_rect = None
