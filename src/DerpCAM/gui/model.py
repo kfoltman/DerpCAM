@@ -693,7 +693,7 @@ class DrawingTreeItem(CAMListTreeItem):
             selection, warnings = pickObjects(lambda i: isinstance(i, DrawingCircleTreeItem) or "%s is not a circle")
         elif operType != OperationType.ENGRAVE:
             selection, warnings = pickObjects(lambda i: isinstance(i, DrawingTextTreeItem) or i.toShape().closed or "%s is not a closed shape")
-        if operType != OperationType.POCKET and operType != OperationType.OUTSIDE_PEEL:
+        if not OperationType.has_islands(operType):
             return {i.shape_id: set() for i in selection}, selection, warnings
         nonzeros = set()
         zeros = set()
@@ -1060,6 +1060,7 @@ class OperationType(EnumClass):
     REFINE = 8
     FACE = 9
     V_CARVE = 10
+    PATTERN_FILL = 11
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -1071,7 +1072,14 @@ class OperationType(EnumClass):
         (REFINE, "Refine"),
         (FACE, "Face mill"),
         (V_CARVE, "V-Carve"),
+        (PATTERN_FILL, "Pattern fill"),
     ]
+    @staticmethod
+    def has_islands(value):
+        return value in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL)
+    @staticmethod
+    def has_stepover(value):
+        return value in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE, OperationType.FACE)
 
 class CutterAdapter(object):
     def getLookupData(self, items):
@@ -1279,7 +1287,7 @@ class PresetDerivedAttributes(object):
             elif self.hfeed < 0.1 or self.hfeed > 10000:
                 errors.append("Feed rate is out of range (0.1-10000)")
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
-                if self.operation.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE, OperationType.FACE):
+                if OperationType.has_stepover(self.operation.operation):
                     if self.stepover is None:
                         errors.append("Horizontal stepover is not set")
                     else:
@@ -1465,7 +1473,7 @@ class OperationTreeItem(CAMTreeItem):
     def editEntryExit(self):
         self.document.entryExitEditRequested.emit(self)
     def areIslandsEditable(self):
-        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE):
+        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
     def usesShape(self, shape_id):
@@ -1479,7 +1487,7 @@ class OperationTreeItem(CAMTreeItem):
         return OperationType.toString(self.operation)
     def isPropertyValid(self, name):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
-        has_islands = self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE, OperationType.FACE)
+        has_islands = OperationType.has_islands(self.operation)
         has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
         if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'entry_exit']:
             return False
@@ -1505,10 +1513,10 @@ class OperationTreeItem(CAMTreeItem):
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
-                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE]
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE, OperationType.PATTERN_FILL]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
-                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE, OperationType.V_CARVE]
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL]
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
@@ -1733,6 +1741,8 @@ class OperationTreeItem(CAMTreeItem):
             return lambda: parent_cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         elif self.operation == OperationType.V_CARVE:
             return lambda: parent_cam.vcarve(shape)
+        elif self.operation == OperationType.PATTERN_FILL:
+            return lambda: parent_cam.pattern_fill(shape)
         raise ValueError("Unsupported operation")
     def shapeToRefine(self, shape, previous, is_external):
         if is_external:
@@ -1747,7 +1757,7 @@ class OperationTreeItem(CAMTreeItem):
     def createShapeObject(self):
         translation = self.document.drawing.translation()
         self.shape = self.orig_shape.translated(*translation).toShape()
-        if not isinstance(self.shape, list) and self.operation in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE):
+        if not isinstance(self.shape, list) and OperationType.has_islands(self.operation):
             extra_shapes = []
             for island in self.islands:
                 item = self.document.drawing.itemById(island).translated(*translation).toShape()
@@ -1819,7 +1829,7 @@ class OperationTreeItem(CAMTreeItem):
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.OUTSIDE_PEEL):
                 is_outside = self.operation == OperationType.OUTSIDE_CONTOUR
                 is_refine = self.operation == OperationType.REFINE
-                is_pocket = self.operation == OperationType.POCKET
+                is_pocket = self.operation == OperationType.POCKET or self.operation == OperationType.PATTERN_FILL or self.operation == OperationType.V_CARVE
                 if isinstance(self.shape, list):
                     res = []
                     for i in self.shape:

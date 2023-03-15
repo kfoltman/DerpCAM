@@ -4,3 +4,4 @@ PyQt5 >= 5.15.6
 pyvoronoi >= 1.0.7
 pyclipper >= 1.3.0.post2
 HSM_nibble >= 0.1.0
+sortedcontainers >= 2.4.0
