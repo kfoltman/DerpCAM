@@ -303,10 +303,12 @@ def objects_to_polygons(polygon):
                 inputs += i.geoms
     return inputs
 
-def shape_to_polygons(shape, tool, displace=0, from_outside=False):
-    tdist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
+def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter_override=None):
+    if tool_diameter_override is None:
+        tool_diameter_override = tool.diameter
+    tdist = (0.5 * tool_diameter_override + displace) * geom.GeometrySettings.RESOLUTION
     if from_outside:
-        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool.diameter * geom.GeometrySettings.RESOLUTION)
+        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool_diameter_override * geom.GeometrySettings.RESOLUTION)
     else:
         subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
     all_inputs = []
