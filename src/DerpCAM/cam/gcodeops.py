@@ -139,7 +139,7 @@ class PatternFill(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pattern fill cuts are not supported for open shapes")
-        self.graphs = cam.vcarve.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth)
+        self.graphs = cam.vcarve.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_type, self.pattern_angle, self.pattern_scale, self.offset_x, self.offset_y)
         toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
         return PathOutput(toolpaths, None, {})
 
@@ -583,8 +583,11 @@ class Operations(object):
         self.add(Pocket(shape, self.tool, self.machine_params, props or self.props))
     def vcarve(self, shape, props=None):
         self.add(VCarve(shape, self.tool, self.machine_params, props or self.props))
-    def pattern_fill(self, shape, props=None):
-        self.add(PatternFill(shape, self.tool, self.machine_params, props or self.props))
+    def pattern_fill(self, shape, pattern_type, pattern_angle, pattern_scale, offset_x, offset_y, props=None):
+        self.add(PatternFill(shape, self.tool, self.machine_params, props or self.props, {
+            'pattern_type' : pattern_type, 'pattern_angle' : pattern_angle, 'pattern_scale' : pattern_scale,
+            'offset_x' : offset_x, 'offset_y' : offset_y
+        }))
     def pocket_axis_parallel(self, shape, props=None):
         self.add(AxisParallelPocket(shape, self.tool, self.machine_params, props or self.props))
     def face_mill(self, shape, props=None):

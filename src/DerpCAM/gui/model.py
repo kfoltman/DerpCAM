@@ -1081,6 +1081,22 @@ class OperationType(EnumClass):
     def has_stepover(value):
         return value in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE, OperationType.FACE)
 
+class FillType(EnumClass):
+    LINES = 1
+    CROSS = 2
+    DIAMOND = 3
+    HEX = 4
+    TEETH = 5
+    BRICK = 6
+    descriptions = [
+        (LINES, "Parallel lines", "lines"),
+        (CROSS, "Cross hatch", "cross"),
+        (DIAMOND, "Diamond hatch", "diamond"),
+        (HEX, "Hex/honeycomb", "hex"),
+        (TEETH, "Teeth/steps", "teeth"),
+        (BRICK, "Bricks", "brick"),
+    ]
+
 class CutterAdapter(object):
     def getLookupData(self, items):
         assert items
@@ -1425,6 +1441,9 @@ class OperationTreeItem(CAMTreeItem):
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatDistEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
+    prop_pattern_type = EnumEditableProperty("Pattern type", "pattern_type", FillType, allow_none=False)
+    prop_pattern_angle = FloatDistEditableProperty("Pattern angle", "pattern_angle", Format.angle, unit='\u00b0', min=0, max=360, allow_none=False)
+    prop_pattern_scale = FloatDistEditableProperty("Pattern scale", "pattern_scale", Format.percent, unit='%', min=10, max=10000, allow_none=False)
     prop_rpm = FloatDistEditableProperty("RPM", "rpm", Format.rpm, unit="rpm", min=0.1, max=100000, allow_none=True)
 
     def __init__(self, document):
@@ -1456,6 +1475,9 @@ class OperationTreeItem(CAMTreeItem):
         self.tab_count = None
         self.offset = 0
         self.roughing_offset = 0
+        self.pattern_type = FillType.CROSS
+        self.pattern_angle = 45
+        self.pattern_scale = 100
         self.islands = set()
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
@@ -1505,6 +1527,8 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
+        if self.operation != OperationType.PATTERN_FILL and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
+            return False
         return True
     def getValidEnumValues(self, name):
         if name == 'pocket_strategy' and self.operation == OperationType.OUTSIDE_PEEL:
@@ -1553,7 +1577,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
             self.prop_stepover, self.prop_eh_diameter, self.prop_entry_mode,
-            self.prop_trc_rate, self.prop_rpm]
+            self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
@@ -1742,7 +1766,7 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.V_CARVE:
             return lambda: parent_cam.vcarve(shape)
         elif self.operation == OperationType.PATTERN_FILL:
-            return lambda: parent_cam.pattern_fill(shape)
+            return lambda: parent_cam.pattern_fill(shape, FillType.toItem(self.pattern_type, 2), self.pattern_angle, self.pattern_scale / 100.0, 0, 0)
         raise ValueError("Unsupported operation")
     def shapeToRefine(self, shape, previous, is_external):
         if is_external:

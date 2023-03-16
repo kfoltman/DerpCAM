@@ -145,45 +145,6 @@ def vcarve(shape, tool, thickness):
     max_diameter = min(tool.diameter, thickness / slope + tool.tip_diameter)
     return [CarveGraph(polygon) for polygon in sort_polygons(all_inputs)]
 
-def simple_line_maker(p1, p2, phase):
-    return LineString([p1, p2])
-
-def single_hatch_pattern(polygon, angle, spacing, ofx, ofy, line_maker, *line_maker_args):
-    minx, miny, maxx, maxy = polygon.bounds
-    i = 0
-    angle_rad = math.pi * angle / 180
-    angle2_rad = angle_rad + math.pi / 2
-    # Maximum line length
-    dx, dy = maxx - minx, maxy - miny
-    maxlen = max(dx, dy, math.sqrt(dx ** 2 + dy ** 2))
-    lines = []
-    dx2 = maxlen * math.cos(angle_rad)
-    dy2 = maxlen * math.sin(angle_rad)
-    dx3 = math.cos(angle2_rad)
-    dy3 = math.sin(angle2_rad)
-    bounds_poly = Polygon(LinearRing([Point(minx, miny), Point(maxx, miny), Point(maxx, maxy), Point(minx, maxy)]))
-    # XXXKF this is definitely wrong
-    #minx += ofx - minx % spacing
-    #miny += ofy - miny % spacing
-    midx = (minx + maxx) / 2 + ofx
-    midy = (miny + maxy) / 2 + ofy
-    nlines = int(math.ceil(maxlen / spacing) + 2)
-    for i in range(-nlines - 1, nlines):
-        x = midx + i * spacing * dx3
-        y = midy + i * spacing * dy3
-        ls = line_maker(Point(x - dx2, y - dy2), Point(x + dx2, y + dy2), i, *line_maker_args)
-        ls = ls.intersection(bounds_poly).intersection(polygon)
-        if ls is None or ls.is_empty or isinstance(ls, (Point, MultiPoint)):
-            pass
-        elif isinstance(ls, LineString):
-            lines.append(ls)
-        elif isinstance(ls, MultiLineString):
-            for geom in ls.geoms:
-                lines.append(geom)
-        else:
-            assert False, f"Unexpected geometry: {type(ls)}"
-    return lines
-
 class PatternFillSegment:
     def __init__(self, fill, line):
         self.line = line
@@ -329,51 +290,92 @@ class PatternFillPath:
     def to_path(self, min_width, last_point=None):
         return self.path
 
-def repeat_line_maker(p1, p2, single, period):
-    d = p1.distance(p2)
-    angle = geom.PathPoint(p2.x, p2.y).angle_to(geom.PathPoint(p1.x, p1.y))
-    coords = []
-    for i in range(int(d // period + 1)):
-        sp = i * period
-        coords += shapely.affinity.translate(single, period * i, 0).coords
-    return shapely.affinity.translate(shapely.affinity.rotate(LineString(coords), angle, use_radians=True, origin=(0, 0)), p2.x, p2.y)
+def single_hatch_pattern(polygon, angle, spacing, ofx, ofy, line_maker, *line_maker_args):
+    minx, miny, maxx, maxy = polygon.bounds
+    i = 0
+    angle_rad = math.pi * angle / 180
+    angle2_rad = angle_rad + math.pi / 2
+    # Maximum line length
+    dx, dy = maxx - minx, maxy - miny
+    maxlen = max(dx, dy, math.sqrt(dx ** 2 + dy ** 2))
+    lines = []
+    dx2 = maxlen * math.cos(angle_rad)
+    dy2 = maxlen * math.sin(angle_rad)
+    dx3 = math.cos(angle2_rad)
+    dy3 = math.sin(angle2_rad)
+    bounds_poly = Polygon(LinearRing([Point(minx, miny), Point(maxx, miny), Point(maxx, maxy), Point(minx, maxy)]))
+    # XXXKF this is definitely wrong
+    #minx += ofx - minx % spacing
+    #miny += ofy - miny % spacing
+    midx = (minx + maxx) / 2
+    midy = (miny + maxy) / 2
+    nlines = int(math.ceil(maxlen / spacing) + 2)
+    coords, period = line_maker(2 * maxlen, *line_maker_args)
+    for i in range(-nlines - 1, nlines):
+        x = midx + i * spacing * dx3
+        y = midy + i * spacing * dy3
+        p1 = Point(x - dx2, y - dy2)
+        p2 = Point(x + dx2, y + dy2)
+        ls = shapely.affinity.translate(LineString(coords[i % len(coords)]), ofx % period, ofy % (spacing * len(coords)))
+        ls = shapely.affinity.translate(shapely.affinity.rotate(ls, angle_rad, use_radians=True, origin=(0, 0)), p1.x, p1.y)
+        ls = ls.intersection(bounds_poly).intersection(polygon)
+        if ls is None or ls.is_empty or isinstance(ls, (Point, MultiPoint)):
+            pass
+        elif isinstance(ls, LineString):
+            lines.append(ls)
+        elif isinstance(ls, MultiLineString):
+            for geom in ls.geoms:
+                lines.append(geom)
+        else:
+            assert False, f"Unexpected geometry: {type(ls)}"
+    return lines
 
-def hex_line_maker(p1, p2, phase, side):
+def simple_line_maker(d):
+    return [[Point(0, 0), Point(d, 0)]], d
+
+def repeat_line_maker(d, singles, period):
+    res = []
+    for single in singles:
+        coords = []
+        for i in range(int(d // period + 1)):
+            sp = i * period
+            coords += shapely.affinity.translate(single, period * i, 0).coords
+        res.append(coords)
+    return res, period
+
+def hex_line_maker(d, side):
     c60 = side * math.cos(math.pi / 3)
     s60 = side * math.sin(math.pi / 3)
     period = 2 * (side + c60)
-    if phase & 1:
-        single = LineString([Point(0, 0), Point(c60, s60), Point(side + c60, s60), Point(side + 2 * c60, 0), Point(period, 0)])
-    else:
-        single = LineString([Point(0, s60), Point(c60, 0), Point(side + c60, 0), Point(side + 2 * c60, s60), Point(period, s60)])
-    return repeat_line_maker(p1, p2, single, period)
+    singles = [
+        LineString([Point(0, 0), Point(c60, s60), Point(side + c60, s60), Point(side + 2 * c60, 0), Point(period, 0)]),
+        LineString([Point(0, s60), Point(c60, 0), Point(side + c60, 0), Point(side + 2 * c60, s60), Point(period, s60)]),
+    ]
+    return repeat_line_maker(d, singles, period)
 
-def teeth_line_maker(p1, p2, phase, side):
-    d = p1.distance(p2)
+def teeth_line_maker(d, side):
     cs45 = side * math.cos(math.pi / 4)
     period = 2 * cs45
     single = LineString([Point(0, 0), Point(cs45, cs45), Point(period, 0)])
-    return repeat_line_maker(p1, p2, single, period)
+    return repeat_line_maker(d, [single], period)
 
-def brick_line_maker(p1, p2, phase, side):
-    d = p1.distance(p2)
+def brick_line_maker(d, side):
     period = 2 * side
-    if phase & 1:
-        single = LineString([Point(0, 0), Point(0, side), Point(side, side), Point(side, 0), Point(period, 0)])
-    else:
-        single = LineString([Point(0, side), Point(0, 0), Point(side, 0), Point(side, side), Point(period, side)])
-    return repeat_line_maker(p1, p2, single, period)
+    singles = [
+        LineString([Point(0, 0), Point(0, side), Point(side, side), Point(side, 0), Point(period, 0)]),
+        LineString([Point(0, side), Point(0, 0), Point(side, 0), Point(side, side), Point(period, side)]),
+    ]
+    return repeat_line_maker(d, singles, period)
 
 # This is mostly unusable due to line2arc algo making a mess of things
-def wave_line_maker(p1, p2, phase, side):
-    d = p1.distance(p2)
+def wave_line_maker(d, phase, side):
     period = side
     npoints = 32
     s = 2 * math.pi / npoints
     single = LineString([Point(i * period / npoints, 0.25 * side * math.sin(i * s)) for i in range(npoints)])
-    return repeat_line_maker(p1, p2, single, period)
+    return repeat_line_maker(d, [single], period)
 
-def pattern_fill(shape, tool, thickness):
+def pattern_fill(shape, tool, thickness, pattern_type, pattern_angle, pattern_scale, ofx, ofy):
     if not shape.closed:
         raise ValueError("Cannot pattern fill open polylines")
     if tool.tip_angle >= 1 and tool.tip_angle <= 179:
@@ -383,27 +385,22 @@ def pattern_fill(shape, tool, thickness):
     else:
         all_inputs = shape_to_polygons(shape, tool, 0, False)
     paths = []
-    pattern_angle = 0
-    pattern_scale = 1
-    pattern_type = 'brick'
     for polygon in sort_polygons(all_inputs):
-        #hatch = single_hatch_pattern(polygon, 30, 2, 0, 0) + single_hatch_pattern(polygon, -30, 2, 0, 0)
         if pattern_type == 'lines':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, 0, 0, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, simple_line_maker)
         elif pattern_type == 'cross':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, 0, 0, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, 0, 0, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, ofx, ofy, simple_line_maker)
         elif pattern_type == 'diamond':
-            hatch = single_hatch_pattern(polygon, pattern_angle - 30, pattern_scale, 0, 0, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 30, pattern_scale, 0, 0, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_angle - 30, pattern_scale, ofx, ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 30, pattern_scale, ofx, ofy, simple_line_maker)
         elif pattern_type == 'hex':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), 0, 0, hex_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), ofx, ofy, hex_line_maker, pattern_scale)
         elif pattern_type == 'teeth':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), 0, 0, teeth_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), ofx, ofy, teeth_line_maker, pattern_scale)
         elif pattern_type == 'brick':
-            hatch = single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, 0, 0, brick_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, ofx, ofy, brick_line_maker, pattern_scale)
         elif pattern_type == 'wave':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, 0, 0, wave_line_maker, pattern_scale)
-        #hatch = single_hatch_pattern(polygon, 0, 2 * math.sin(math.pi / 3), 0, 0, hex_line_maker) + single_hatch_pattern(polygon, 0, 2 * math.sin(math.pi / 3), 2, 0, hex_line_maker)
-        #hatch += single_hatch_pattern(polygon, 60, 2 * math.sin(math.pi / 3), 0, 0)
-        #hatch = single_hatch_pattern(polygon, 180, 2, 0, 0)
+            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, wave_line_maker, pattern_scale)
+        else:
+            raise ValueError(f"Invalid pattern: {pattern_type}")
         paths += PatternFillGenerator(polygon, hatch).to_paths()
     return [PatternFillPath(path) for path in paths]

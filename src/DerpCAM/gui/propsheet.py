@@ -73,9 +73,12 @@ class SetEditableProperty(EditableProperty):
 class EnumClass(object):
     @classmethod
     def toString(classInst, value):
+        return classInst.toItem(value, 1)
+    @classmethod
+    def toItem(classInst, value, loc):
         for data in classInst.descriptions:
             if value == data[0]:
-                return data[1]
+                return data[loc]
         return None
     @classmethod
     def toTuple(classInst, value):
