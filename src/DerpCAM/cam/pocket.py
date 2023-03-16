@@ -301,6 +301,7 @@ def objects_to_polygons(polygon):
                 inputs.append(i)
             elif isinstance(i, MultiPolygon):
                 inputs += i.geoms
+    inputs = [i for i in inputs if not i.is_empty]
     return inputs
 
 def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter_override=None):
@@ -329,10 +330,11 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter
                     polygon = polygon.difference(Polygon(ii))
                 else:
                     holes.append(Polygon(ii))
-        if from_outside:
-            all_inputs.append((polygon, holes))
-        else:
-            all_inputs += objects_to_polygons(polygon)
+        if not polygon.is_empty:
+            if from_outside:
+                all_inputs.append((polygon, holes))
+            else:
+                all_inputs += objects_to_polygons(polygon)
     return all_inputs
 
 # only works for closed linestrings
