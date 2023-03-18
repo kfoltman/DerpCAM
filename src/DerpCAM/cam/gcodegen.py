@@ -567,7 +567,7 @@ class BaseCutPath(object):
         for subpath in subpaths:
             if is_calculation_cancelled():
                 return
-            subpath.rendered_outlines = subpath.render_as_outlines()
+            subpath.rendered_outlines = subpath.render_as_outlines(self.props)
     def to_layers(self):
         layer_schedule = LayerSchedule(self.machine_params, self.props, self.tool, True).major_layer_list()
         layer_tree = CutLayerTree()

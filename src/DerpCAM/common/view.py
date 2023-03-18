@@ -46,18 +46,22 @@ class OperationsRenderer(object):
         def c2w(v):
             return int(255 + (v - 255) * a / 255)
         return QPen(QColor(c2w(r), c2w(g), c2w(b)), diameter)
-    def toolPen(self, path, alpha=255, isHighlighted=False):
-        if isinstance(isHighlighted, tuple):
-            pen = self.penColInt(*isHighlighted, alpha, path.tool.diameter)
-        elif isHighlighted:
-            pen = self.penColInt(0, 128, 192, alpha, path.tool.diameter)
+    def toolPen(self, path, alpha=255, isHighlighted=False, depth=None):
+        if depth is not None:
+            diameter = path.tool.depth2dia(-depth)
         else:
-            pen = self.penColInt(192, 192, 192, alpha, path.tool.diameter)
+            diameter = path.tool.diameter
+        if isinstance(isHighlighted, tuple):
+            pen = self.penColInt(*isHighlighted, alpha, diameter)
+        elif isHighlighted:
+            pen = self.penColInt(0, 128, 192, alpha, diameter)
+        else:
+            pen = self.penColInt(192, 192, 192, alpha, diameter)
         pen.setCapStyle(Qt.RoundCap)
         pen.setJoinStyle(Qt.RoundJoin)
         return pen
-    def toolPenFunc(self, toolpath, alpha, op):
-        return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted = self.isHighlighted(op)), False)
+    def toolPenFunc(self, toolpath, alpha, op, depth):
+        return lambda path, scale: (self.toolPen(toolpath, alpha=alpha, isHighlighted=self.isHighlighted(op), depth=depth), False)
     def depth2intensity(self, z, thickness):
         if z >= -0.001:
             return 0.1
@@ -77,7 +81,7 @@ class OperationsRenderer(object):
                         else:
                             alpha = int(255 * alpha_scale * (op.props.start_depth - depth) / (op.props.start_depth - op.props.depth))
                         if stage == 1:
-                            pen = self.toolPenFunc(toolpath, alpha, op)
+                            pen = self.toolPenFunc(toolpath, alpha, op, op.props.start_depth - depth)
                         if stage == 2:
                             pen = self.penColInt(0, 0, 0, alpha, 0)
                         self.addToolpaths(owner, pen, toolpath, stage, op)
@@ -111,7 +115,7 @@ class OperationsRenderer(object):
             if path.helical_entry:
                 he = path.helical_entry
                 if isinstance(he, toolpath.HelicalEntry):
-                    pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op)), False)
+                    pen2 = lambda path, owner: (self.toolPen(path, alpha=255, isHighlighted=self.isHighlighted(op), depth=None), False)
                     owner.addPolygons(lambda: self.pen2brush(owner, path, pen2), [circle2(he.point.x, he.point.y, he.r + path.tool.diameter / 2, None, 0, 0 + 2 * pi)], False, darken=True)
                     owner.addLines(pen, circle2(he.point.x, he.point.y, he.r, None, he.angle, he.angle + 2 * pi) + path.path.nodes[0:1], False, darken=False)
                 elif isinstance(he, toolpath.PlungeEntry):
@@ -153,7 +157,7 @@ class OperationsRenderer(object):
             #print ("->", len(outlines))
             outlines = getattr(path, 'rendered_outlines', None)
             if outlines is None:
-                path.rendered_outlines = outlines = path.render_as_outlines()
+                path.rendered_outlines = outlines = path.render_as_outlines(operation.props)
             owner.addPolygons(lambda: self.pen2brush(owner, path, pen), outlines, GeometrySettings.simplify_arcs)
             # print ("After buffer", time.time() - t)
             return

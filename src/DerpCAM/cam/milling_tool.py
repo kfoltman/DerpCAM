@@ -52,6 +52,8 @@ class Tool(object):
         return slope * eff_dia
     def depth2dia(self, depth):
         # depth is negative here
+        if not self.tip_angle:
+            return self.diameter
         slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
         return min(self.diameter, self.tip_diameter + depth / slope)
     def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, tip_angle=None, tip_diameter=None):

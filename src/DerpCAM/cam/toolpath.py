@@ -328,15 +328,19 @@ class Toolpath(object):
             return polygon2points(preview)
         return sum([polygon2points(p) for p in preview.geoms], [])
 
-    def render_as_outlines(self):
+    def render_as_outlines(self, props):
         if self.is_vcarve():
             return self.render_vcarve_as_outlines()
         points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
         resolution = GeometrySettings.RESOLUTION
-        offset = resolution * self.tool.diameter / 2
-        if offset > 200:
+        diameter = self.tool.depth2dia(props.depth - props.start_depth)
+        offset = resolution * diameter / 2
+        if offset < 20:
+            resolution *= 20 / offset
+            offset = resolution * diameter / 2
+        elif offset > 200:
             resolution *= 200 / offset
-            offset = resolution * self.tool.diameter / 2
+            offset = resolution * diameter / 2
         intsFull = PtsToInts(points, resolution)
         if self.path.closed:
             intsFull += [intsFull[0]]
