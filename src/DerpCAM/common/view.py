@@ -154,8 +154,7 @@ class OperationsRenderer(object):
             outlines = getattr(path, 'rendered_outlines', None)
             if outlines is None:
                 path.rendered_outlines = outlines = path.render_as_outlines()
-            for o in outlines:
-                owner.addPolygons(lambda: self.pen2brush(owner, path, pen), outlines, GeometrySettings.simplify_arcs)
+            owner.addPolygons(lambda: self.pen2brush(owner, path, pen), outlines, GeometrySettings.simplify_arcs)
             # print ("After buffer", time.time() - t)
             return
         if GeometrySettings.simplify_arcs:
