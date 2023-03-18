@@ -309,7 +309,7 @@ class Gcode(object):
         self.section_info(f"End helical move")
         return helical_entry.start
 
-    def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt):
+    def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt, dfeed):
         self.section_info(f"Start ramped move from {old_z:0.3f} to {new_z:0.3f}")
         if new_z >= old_z:
             self.rapid(z=new_z)
@@ -366,7 +366,11 @@ class Gcode(object):
                 # This is one of the possible strategies: ramp at an angle, then
                 # come back straight. This is not ideal, especially for the non-centre
                 # cutting tools.
+                # Use slower feed for the diagonal part
+                self.feed(dfeed)
                 lastpt = self.apply_subpath(subpath, lastpt, next_z, cur_z, tlengths[-1], subject="ramp-in")
+                # Use normal horizontal feed for the flat part, because it's no worse than normal horizontal milling
+                self.feed(tool.hfeed)
                 cur_z = next_z
                 lastpt = self.apply_subpath(subpath_reverse, lastpt, subject="ramp-back")
         self.section_info(f"End ramped move - upward direction detected")
@@ -906,17 +910,17 @@ class BaseCut2D(BaseCutLayered):
             # a 3D move, so some of the programmed feed rate goes into the vertical
             # component instead.
             speed_ratio *= subpath.tool.diagonal_factor()
-            gcode.feed(subpath.tool.hfeed * speed_ratio)
             if isinstance(subpath.helical_entry, toolpath.HelicalEntry):
                 # Descend helically to the indicated helical entry point
                 # If first layer with tabs, do all helical ramps for post-tab
                 # reentry from the very top, because they haven't been cut yet
+                gcode.feed(subpath.tool.hfeed * speed_ratio)
                 curz = self.curz
                 self.lastpt = gcode.helical_move_z(newz, curz, subpath.helical_entry, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, 
                     from_top = subpath.helical_from_top and curz < self.props.start_depth, top_z=self.props.start_depth)
             else:
                 if newz < self.curz:
-                    self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None)
+                    self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None, dfeed=subpath.tool.hfeed * speed_ratio)
                 assert self.lastpt is not None
             gcode.feed(subpath.tool.hfeed)
         if self.lastpt != subpath.path.seg_start():
