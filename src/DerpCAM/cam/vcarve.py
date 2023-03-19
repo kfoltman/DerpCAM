@@ -270,7 +270,7 @@ class PatternFillGenerator:
                 mindist = dist
                 best = i
         if best is None or mindist >= eps:
-            assert False
+            assert False, f"Clipped lines don't reach the outline, check the pattern coverage, dist={mindist}"
             return None, None
         outline = self.outlines[best]
         return best, outline.ring.project(point)
@@ -340,7 +340,7 @@ def repeat_line_maker(d, singles, period):
         for i in range(int(d // period + 1)):
             sp = i * period
             coords += shapely.affinity.translate(single, period * i, 0).coords
-        res.append(coords)
+        res.append(LineString(coords).simplify(1.0 / geom.GeometrySettings.RESOLUTION).coords)
     return res, period
 
 def hex_line_maker(d, side):
