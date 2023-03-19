@@ -256,6 +256,8 @@ class CAMMainWindow(QMainWindow):
         oldEnabled = self.propsDW.isEnabled()
         self.projectDW.setVisible(editor is None)
         self.propsDW.setVisible(editor is None)
+        if editor is None:
+            self.propsDW.updateProperties()
         self.editorDW.setEditor(editor, self.viewer)
         self.viewer.setEditor(editor)
         if editor is None and not oldEnabled:
