@@ -1377,8 +1377,9 @@ class WorkerThread(threading.Thread):
             traceback.print_exc()
 
 class WorkerThreadPack(object):
-    def __init__(self, parentOp, threadDataList):
+    def __init__(self, parentOp, threadDataList, parentCAM):
         self.parent_operation = parentOp
+        self.parent_operation_cam = parentCAM
         self.threads = [WorkerThread(parentOp, workerFunc, cam) for cam, workerFunc in threadDataList]
         self.exception = None
         self.exception_text = None
@@ -1398,7 +1399,7 @@ class WorkerThreadPack(object):
     def join(self):
         for thread in self.threads:
             thread.join()
-            self.parent_operation.cam.add_all(thread.cam.operations)
+            self.parent_operation_cam.add_all(thread.cam.operations)
         exceptions = ""
         for thread in self.threads:
             if thread.exception is not None:
@@ -1913,7 +1914,7 @@ class OperationTreeItem(CAMTreeItem):
                         if func is not None:
                             threadDataList.append((subcam, func))
                     if threadDataList:
-                        self.worker = WorkerThreadPack(self, threadDataList)
+                        self.worker = WorkerThreadPack(self, threadDataList, self.cam)
                         self.worker.start()
                 else:
                     threadFunc = self.operationFunc(self.shape, pda, self.cam)
