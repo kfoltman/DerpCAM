@@ -131,6 +131,7 @@ class VCarve(UntabbedOperation):
             raise ValueError("V-carving cuts are not supported for open shapes")
         self.graphs = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
         toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
+        self.flattened = toolpaths
         return PathOutput(toolpaths, None, {})
     def to_gcode(self, gcode):
         VCarveCut(self.machine_params, self.props, self.tool, self.graphs).build(gcode)
