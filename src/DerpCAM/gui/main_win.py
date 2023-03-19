@@ -119,7 +119,7 @@ class CAMMainWindow(QMainWindow):
             ("&Side mill", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling from the outer edges of the part, leaving islands as the final shape"),
             ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
             ("&V-carve", self.millVCarve, QKeySequence("Shift+Ctrl+R"), "Use a v-bit at a variable depth of cut to engrave a contour"),
-            ("Pa&ttern fill", self.millPatternFill, QKeySequence("Shift+Ctrl+K"), "Engrave a pattern in a closed shape"),
+            ("Pa&ttern fill", self.millPatternFill, QKeySequence("Shift+Ctrl+T"), "Engrave a pattern in a closed shape"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
             ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
