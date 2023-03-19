@@ -461,9 +461,14 @@ class CAMMainWindow(QMainWindow):
         dlg = QFileDialog(self, "Save a project", filter="DerpCAM project (*.dcp);;All files (*)")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
+        dlg.setDefaultSuffix(".dcp")
         if self.document.drawing_filename is not None:
             path = os.path.splitext(self.document.drawing_filename)[0] + ".dcp"
             dlg.selectFile(path)
+        else:
+            input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
+            if input_dir:
+                dlg.setDirectory(input_dir)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
             self.document.filename = fn
