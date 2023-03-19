@@ -142,6 +142,7 @@ class PatternFill(UntabbedOperation):
             raise ValueError("Pattern fill cuts are not supported for open shapes")
         self.graphs = cam.vcarve.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_type, self.pattern_angle, self.pattern_scale, self.offset_x, self.offset_y)
         toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
+        self.flattened = toolpaths
         return PathOutput(toolpaths, None, {})
 
 class Pocket(UntabbedOperation):
