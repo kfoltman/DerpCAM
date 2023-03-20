@@ -2,6 +2,7 @@ import threading
 from DerpCAM.common.geom import *
 from DerpCAM import cam
 import DerpCAM.cam.contour
+import DerpCAM.cam.milling_tool
 import DerpCAM.cam.peel
 import DerpCAM.cam.pocket
 import DerpCAM.cam.vcarve
@@ -481,7 +482,7 @@ class HelicalDrill(UntabbedOperation):
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
         for d in self.diameters():
-            self.to_gcode_ring(gcode, d, (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
+            self.to_gcode_ring(gcode, d, self.tool.hfeed * (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
             first = False
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
@@ -490,14 +491,14 @@ class HelicalDrill(UntabbedOperation):
         gcode.rapid(x=self.x, y=self.y, z=self.machine_params.safe_z)
         gcode.section_info(f"End helical drill")
 
-    def to_gcode_ring(self, gcode, d, rate_factor, machine_params, first):
+    def to_gcode_ring(self, gcode, d, feed, machine_params, first):
         r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
         gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
         curz = machine_params.semi_safe_z + self.props.start_depth
         gcode.rapid(z=machine_params.safe_z if first else curz)
         gcode.rapid(x=self.x + r, y=self.y)
         gcode.rapid(z=curz)
-        gcode.feed(self.tool.hfeed * rate_factor)
+        gcode.feed(feed)
         dist = 2 * pi * r
         doc = min(self.tool.maxdoc, dist / self.tool.slope())
         while curz > self.props.depth:
@@ -514,11 +515,11 @@ class HelicalDrillFullDepth(HelicalDrill):
         # Do the first pass at a slower rate because of full radial engagement downwards
         rate_factor = self.tool.full_plunge_feed_ratio
         if self.d < self.min_dia:
-            self.to_gcode_ring(gcode, self.d, rate_factor, self.machine_params, True)
+            self.to_gcode_ring(gcode, self.d, self.tool.hfeed * rate_factor, self.machine_params, True)
         else:
             # Mill initial hole by helical descent into desired depth
             d = self.min_dia
-            self.to_gcode_ring(gcode, d, rate_factor, self.machine_params, True)
+            self.to_gcode_ring(gcode, d, self.tool.hfeed * rate_factor, self.machine_params, True)
             gcode.feed(self.tool.hfeed)
             # Bore it out at full depth to the final diameter
             while d < self.d:
@@ -529,6 +530,70 @@ class HelicalDrillFullDepth(HelicalDrill):
             r = max(0, (self.d - self.tool.diameter) / 2)
             gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
         gcode.rapid(z=self.machine_params.safe_z)
+
+class ThreadMill(UntabbedOperation):
+    def __init__(self, x, y, d, pitch, tool, machine_params, props):
+        if not isinstance(tool, DerpCAM.cam.milling_tool.ThreadCutter):
+            raise ValueError("Thread cutter required")
+        if not (tool.min_pitch <= pitch <= tool.max_pitch):
+            raise ValueError(f"Thread pitch {pitch} out of allowed range for the cutter ({tool.min_pitch}, {tool.max_pitch})")
+        self.x = x
+        self.y = y
+        self.d = d
+        self.pitch = pitch
+        self.minor_dia = (d - pitch) - tool.relief_diameter
+        if self.minor_dia <= 0:
+            raise ValueError(f"Thread minor diameter ({d - pitch:0.2f} mm) smaller than the cutter relief diameter ({tool.relief_diameter:0.2f} mm)")
+        shape = shapes.Shape.circle(x, y, r=0.5*d)
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props)
+    def diameters(self):
+        res = []
+        thread_depth = self.d - self.minor_dia
+        d = 0
+        while d < thread_depth:
+            d = min(thread_depth, d + self.pitch * self.tool.stepover)
+            res.append(d)
+        return res
+    def build_paths(self, margin):
+        paths = []
+        for cd in self.diameters():
+            paths.append(toolpath.Toolpath(Path(shapes.Shape.circle(self.x, self.y, r=0.5 * cd).boundary, False), self.tool))
+        return PathOutput(paths, None, {})
+    def to_gcode(self, gcode):
+        gcode.section_info(f"Start thread mill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} pitch {self.pitch:0.2f} depth {self.props.depth:0.2f}")
+        gcode.feed(self.tool.feed)
+        for i, d in enumerate(self.diameters()):
+            self.to_gcode_ring(gcode, d, self.tool.feed, self.machine_params, i == 0)
+        # Do not rub against the walls
+        gcode.section_info(f"Exit to centre/safe Z")
+        gcode.rapid(z=self.machine_params.safe_z)
+        gcode.section_info(f"End thread mill")
+    def to_gcode_ring(self, gcode, d, feed, machine_params, first):
+        # Using toolpath diameter here, not overall diameter like in HelicalDrill
+        r = d / 2
+        gcode.section_info("Start helix at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, d, d + self.tool.diameter))
+        startz = machine_params.semi_safe_z + self.props.start_depth
+        curz = startz
+        gcode.rapid(z=machine_params.safe_z if first else curz)
+        # Always start at an angle 0
+        gcode.rapid(x=self.x + r, y=self.y)
+        gcode.rapid(z=curz)
+        gcode.feed(feed)
+        # Going half circles at most in order to not confuse Grbl
+        doc = self.pitch / 2
+        end_angle = 0
+        while curz > self.props.depth:
+            istart = -r * cos(end_angle)
+            jstart = -r * sin(end_angle)
+            nextz = max(curz - doc, self.props.depth)
+            end_angle = 2 * pi * (startz - nextz)
+            iend = -r * cos(end_angle)
+            jend = -r * sin(end_angle)
+            # XXXKF allow left-handed threads here
+            gcode.arc_cw(x=self.x - iend, y=self.y - jend, i=istart, j=jstart, z=nextz)
+            curz = nextz
+        gcode.section_info("End helix")
+        gcode.rapid(x=self.x, y=self.y)
 
 def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
     draft = tan(draft_angle_deg * pi / 180)
@@ -608,6 +673,8 @@ class Operations(object):
         self.add(HelicalDrill(x, y, d, self.tool, self.machine_params, props or self.props))
     def helical_drill_full_depth(self, x, y, d, props=None):
         self.add(HelicalDrillFullDepth(x, y, d, self.tool, self.machine_params, props or self.props))
+    def thread_mill(self, x, y, d, pitch, props=None):
+        self.add(ThreadMill(x, y, d, pitch, self.tool, self.machine_params, props or self.props))
     def to_gcode(self):
         gcode = Gcode()
         gcode.reset()

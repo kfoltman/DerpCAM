@@ -1,4 +1,4 @@
-from math import *
+from math import tan, pi
 from ..common.geom import *
 
 class FakeTool(object):
@@ -88,6 +88,22 @@ class Tool(object):
             self.short_info = "%dF %0.1fmm %s/%s @S=%0.0f, F=%0.0f, D=%0.2f" % (self.flutes, self.diameter, self.coating.short_name, self.material.short_name, self.rpm, self.hfeed, self.maxdoc)
         else:
             self.short_info = "%dF %0.2fmm %s/%s @S=%0.0f, F=%0.0f, D=%0.2f" % (self.flutes, self.diameter, self.coating.short_name, self.material.short_name, self.rpm, self.hfeed, self.maxdoc)
+
+class ThreadCutter(object):
+    def __init__(self, diameter, min_pitch, max_pitch, flutes, flute_length, rpm, feed, stepover, tooth_angle=60):
+        self.diameter = diameter
+        self.relief_diameter = max_pitch / (2 * tan(tooth_angle * pi / 180))
+        self.min_pitch = min_pitch
+        self.max_pitch = max_pitch
+        self.maxdoc = max_pitch # hack
+        self.flutes = flutes
+        self.flute_length = flute_length
+        self.rpm = rpm
+        self.feed = feed
+        self.stepover = stepover
+        self.tooth_angle = tooth_angle
+    def depth2dia(self, depth):
+        return self.diameter
 
 class CutterMaterial:
     def __init__(self, name, short_name, sfm_multiplier):

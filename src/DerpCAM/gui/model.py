@@ -1520,7 +1520,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if not self.areIslandsEditable() and name == 'islands':
             return False
-        if not OperationType.has_stepover(self.operation) and name in ['stepover', 'eh_diameter']:
+        if not OperationType.has_stepover(self.operation) and name == 'stepover':
             return False
         if not OperationType.has_entry_helix(self.operation) and name == 'eh_diameter':
             return False
