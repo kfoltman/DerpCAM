@@ -1056,7 +1056,7 @@ class OperationType(EnumClass):
     ENGRAVE = 4
     INTERPOLATED_HOLE = 5
     DRILLED_HOLE = 6
-    OUTSIDE_PEEL = 7
+    SIDE_MILL = 7
     REFINE = 8
     FACE = 9
     V_CARVE = 10
@@ -1068,7 +1068,7 @@ class OperationType(EnumClass):
         (ENGRAVE, "Engrave"),
         (INTERPOLATED_HOLE, "H-Hole"),
         (DRILLED_HOLE, "Drill"),
-        (OUTSIDE_PEEL, "Side mill"),
+        (SIDE_MILL, "Side mill"),
         (REFINE, "Refine"),
         (FACE, "Face mill"),
         (V_CARVE, "V-Carve"),
@@ -1076,10 +1076,13 @@ class OperationType(EnumClass):
     ]
     @staticmethod
     def has_islands(value):
-        return value in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL)
+        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL)
     @staticmethod
     def has_stepover(value):
-        return value in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.REFINE, OperationType.FACE)
+        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
+    @staticmethod
+    def has_entry_helix(value):
+        return value in (OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
 
 class FillType(EnumClass):
     LINES = 1
@@ -1496,7 +1499,7 @@ class OperationTreeItem(CAMTreeItem):
     def editEntryExit(self):
         self.document.entryExitEditRequested.emit(self)
     def areIslandsEditable(self):
-        if self.operation not in (OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL):
+        if self.operation not in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
     def usesShape(self, shape_id):
@@ -1511,14 +1514,15 @@ class OperationTreeItem(CAMTreeItem):
     def isPropertyValid(self, name):
         is_contour = self.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR)
         has_islands = OperationType.has_islands(self.operation)
-        has_stepover = has_islands or self.operation in (OperationType.INTERPOLATED_HOLE,)
         if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'entry_exit']:
             return False
         if not has_islands and name == 'pocket_strategy':
             return False
         if not self.areIslandsEditable() and name == 'islands':
             return False
-        if not has_stepover and name in ['stepover', 'eh_diameter']:
+        if not OperationType.has_stepover(self.operation) and name in ['stepover', 'eh_diameter']:
+            return False
+        if not OperationType.has_entry_helix(self.operation) and name == 'eh_diameter':
             return False
         if (not has_islands or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
@@ -1532,16 +1536,16 @@ class OperationTreeItem(CAMTreeItem):
             return False
         return True
     def getValidEnumValues(self, name):
-        if name == 'pocket_strategy' and self.operation == OperationType.OUTSIDE_PEEL:
-            return [inventory.PocketStrategy.CONTOUR_PARALLEL, inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG]
+        if name == 'pocket_strategy' and self.operation == OperationType.SIDE_MILL:
+            return [inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG]
         if name == 'operation':
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
-                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE, OperationType.PATTERN_FILL]
+                return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.SIDE_MILL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE, OperationType.PATTERN_FILL]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
                 if self.orig_shape.closed:
-                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.OUTSIDE_PEEL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL]
+                    return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.SIDE_MILL, OperationType.ENGRAVE, OperationType.REFINE, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL]
                 else:
                     return [OperationType.ENGRAVE]
     def getDefaultPropertyValue(self, name):
@@ -1751,7 +1755,7 @@ class OperationTreeItem(CAMTreeItem):
                 return lambda: parent_cam.face_mill_axis_parallel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
                 return lambda: parent_cam.outside_peel_hsm(shape)
-        elif self.operation == OperationType.OUTSIDE_PEEL:
+        elif self.operation == OperationType.SIDE_MILL:
             if pda.pocket_strategy == inventory.PocketStrategy.CONTOUR_PARALLEL:
                 return lambda: parent_cam.outside_peel(shape)
             elif pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL or pda.pocket_strategy == inventory.PocketStrategy.HSM_PEEL_ZIGZAG:
@@ -1849,9 +1853,9 @@ class OperationTreeItem(CAMTreeItem):
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
             self.gcode_props.rpm = pda.rpm
-            if self.dogbones and self.operation == OperationType.OUTSIDE_PEEL and not isinstance(self.shape, list):
+            if self.dogbones and self.operation == OperationType.SIDE_MILL and not isinstance(self.shape, list):
                 self.addDogbonesToIslands(self.shape, tool)
-            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.OUTSIDE_PEEL):
+            if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.SIDE_MILL):
                 is_outside = self.operation == OperationType.OUTSIDE_CONTOUR
                 is_refine = self.operation == OperationType.REFINE
                 is_pocket = self.operation == OperationType.POCKET or self.operation == OperationType.PATTERN_FILL or self.operation == OperationType.V_CARVE
@@ -1877,7 +1881,7 @@ class OperationTreeItem(CAMTreeItem):
                     else:
                         raise ValueError(f"No matching milling operation to refine with cutter diameter {Format.cutter_dia(self.cutter.diameter)}")
                 is_hsm = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL, inventory.PocketStrategy.HSM_PEEL_ZIGZAG)
-                if prev_operation.operation == OperationType.OUTSIDE_PEEL:
+                if prev_operation.operation == OperationType.SIDE_MILL:
                     # Make up a list of shapes from shape's islands?
                     raise ValueError("Refining side milling operations is not supported yet")
                 self.is_external = (prev_operation.operation == OperationType.OUTSIDE_CONTOUR)

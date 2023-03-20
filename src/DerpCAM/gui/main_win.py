@@ -372,7 +372,7 @@ class CAMMainWindow(QMainWindow):
     def millFace(self):
         self.millSelectedShapes(OperationType.FACE)
     def millOutsidePeel(self):
-        self.millSelectedShapes(OperationType.OUTSIDE_PEEL)
+        self.millSelectedShapes(OperationType.SIDE_MILL)
     def millEngrave(self):
         self.millSelectedShapes(OperationType.ENGRAVE)
     def millVCarve(self):

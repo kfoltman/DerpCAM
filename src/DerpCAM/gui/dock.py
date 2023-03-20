@@ -133,8 +133,6 @@ class CAMObjectTreeDockWidget(QDockWidget):
                     menu.addAction("Entry/exit points").triggered.connect(self.operationEntryExitPoints)
                 elif item.areIslandsEditable():
                     menu.addAction("Islands").triggered.connect(self.operationIslands)
-                elif item.operation == OperationType.OUTSIDE_PEEL:
-                    menu.addAction("Contours").triggered.connect(self.operationIslands)
             elif isinstance(item, model.CycleTreeItem):
                 menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
             elif isinstance(item, model.ToolPresetTreeItem):

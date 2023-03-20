@@ -475,7 +475,7 @@ class DrawingTest(unittest.TestCase):
         self.assertEqual(outsides, {2: set([1]), 5: set([6])})
         self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
         self.assertEqual(warnings, ["Line4 is not a closed shape"])
-        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_PEEL)
+        outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.SIDE_MILL)
         self.assertEqual(outsides, {2: set([1]), 5: set([6])})
         self.assertEqual(set([i.shape_id for i in actualSelection]), set([1, 2, 5, 6]))
         self.assertEqual(warnings, ["Line4 is not a closed shape"])
