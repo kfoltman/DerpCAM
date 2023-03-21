@@ -807,6 +807,9 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_shape = EnumEditableProperty("Shape", "shape", inventory.EndMillShape, allow_none=False)
     prop_angle = FloatDistEditableProperty("Tip angle", "angle", format=Format.angle, unit='\u00b0', min=1, max=179, allow_none=False)
     prop_tip_diameter = FloatDistEditableProperty("Tip diameter", "tip_diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
+    prop_min_pitch = FloatDistEditableProperty("Min. pitch", "min_pitch", Format.thread_pitch, unit="mm", min=0.1, max=10, allow_none=False)
+    prop_max_pitch = FloatDistEditableProperty("Max. pitch", "max_pitch", Format.thread_pitch, unit="mm", min=0.1, max=10, allow_none=True)
+    prop_thread_angle = FloatDistEditableProperty("Thread angle", "thread_angle", format=Format.angle, unit='\u00b0', min=1, max=179, allow_none=False)
     def __init__(self, document, inventory_tool, is_local):
         self.inventory_tool = inventory_tool
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
@@ -832,9 +835,13 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
             return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material, self.prop_shape, self.prop_angle, self.prop_tip_diameter]
         elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
             return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material]
+        elif isinstance(self.inventory_tool, inventory.ThreadMillCutter):
+            return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material, self.prop_min_pitch, self.prop_max_pitch, self.prop_thread_angle]
         return []
     def isPropertyValid(self, name):
-        if self.inventory_tool.shape != inventory.EndMillShape.TAPERED and name in ['angle', 'tip_diameter']:
+        if (not isinstance(self.inventory_tool, inventory.EndMillCutter) or self.inventory_tool.shape != inventory.EndMillShape.TAPERED) and name in ['angle', 'tip_diameter']:
+            return False
+        if not isinstance(self.inventory_tool, inventory.ThreadMillCutter) and name in ['min_pitch', 'max_pitch', 'thread_angle']:
             return False
         return True
     def resetProperties(self):
@@ -861,6 +868,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_rpm = FloatDistEditableProperty("RPM", "rpm", Format.rpm, unit="rpm", min=0.1, max=60000, allow_none=True)
     prop_surf_speed = FloatDistEditableProperty("Surface speed", "surf_speed", Format.surf_speed, unit="m/min", allow_none=True, computed=True)
     prop_chipload = FloatDistEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True, computed=True)
+    prop_feed = FloatDistEditableProperty("Feed rate", "feed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, default_value=0)
@@ -905,6 +913,8 @@ class ToolPresetTreeItem(CAMTreeItem):
             return klass.properties_endmill()
         elif cutter_type == inventory.DrillBitCutter:
             return klass.properties_drillbit()
+        elif cutter_type == inventory.ThreadMillCutter:
+            return klass.properties_threadmill()
         return []
     @classmethod
     def properties_endmill(klass):
@@ -912,6 +922,9 @@ class ToolPresetTreeItem(CAMTreeItem):
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
+    @classmethod
+    def properties_threadmill(klass):
+        return [klass.prop_name, klass.prop_feed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
@@ -1061,6 +1074,7 @@ class OperationType(EnumClass):
     FACE = 9
     V_CARVE = 10
     PATTERN_FILL = 11
+    INSIDE_THREAD = 12
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -1073,13 +1087,14 @@ class OperationType(EnumClass):
         (FACE, "Face mill"),
         (V_CARVE, "V-Carve"),
         (PATTERN_FILL, "Pattern fill"),
+        (INSIDE_THREAD, "Inside thread"),
     ]
     @staticmethod
     def has_islands(value):
         return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL)
     @staticmethod
     def has_stepover(value):
-        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
+        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE, OperationType.INSIDE_THREAD)
     @staticmethod
     def has_entry_helix(value):
         return value in (OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
@@ -1100,13 +1115,18 @@ class FillType(EnumClass):
         (BRICK, "Bricks", "brick"),
     ]
 
+def cutterTypesForOperationType(operationType):
+    if operationType == OperationType.INSIDE_THREAD:
+        return inventory.ThreadMillCutter
+    elif operationType == OperationType.DRILLED_HOLE:
+        return (inventory.DrillBitCutter, inventory.EndMillCutter)
+    else:
+        return inventory.EndMillCutter
+
 class CutterAdapter(object):
     def getLookupData(self, items):
         assert items
-        if items[0].operation == OperationType.DRILLED_HOLE:
-            return items[0].document.getToolbitList((inventory.DrillBitCutter, inventory.EndMillCutter))
-        else:
-            return items[0].document.getToolbitList(inventory.EndMillCutter)
+        return items[0].document.getToolbitList(cutterTypesForOperationType(items[0].operation))
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
@@ -1245,10 +1265,19 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('eh_diameter', preset_scale=100, def_value=50),
         PresetDerivedAttributeItem('entry_mode', def_value=inventory.EntryMode.PREFER_HELIX),
     ]
+    # only endmill+drill bit
     attrs_all = attrs_common + attrs_endmill
+    attrs_thread_only = [
+        PresetDerivedAttributeItem('feed'),
+    ]
+    attrs_thread = attrs_thread_only + [
+        PresetDerivedAttributeItem('rpm'),
+        PresetDerivedAttributeItem('stepover', preset_scale=100),
+    ]
     attrs = {
         inventory.EndMillCutter : {i.name : i for i in attrs_all},
         inventory.DrillBitCutter : {i.name : i for i in attrs_common},
+        inventory.ThreadMillCutter : {i.name : i for i in attrs_thread},
     }
     def __init__(self, operation, preset=None, addError=None):
         if preset is None:
@@ -1416,9 +1445,6 @@ class WorkerThreadPack(object):
     def is_alive(self):
         return any([thread.is_alive() for thread in self.threads])
 
-def cutterTypesForOperationType(operationType):
-    return (inventory.DrillBitCutter, inventory.EndMillCutter) if operationType == OperationType.DRILLED_HOLE else inventory.EndMillCutter
-
 class OperationTreeItem(CAMTreeItem):
     prop_operation = EnumEditableProperty("Operation", "operation", OperationType)
     prop_cutter = RefEditableProperty("Cutter", "cutter", CutterAdapter())
@@ -1541,6 +1567,8 @@ class OperationTreeItem(CAMTreeItem):
         if name == 'operation':
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
+            if self.cutter is not None and isinstance(self.cutter, inventory.ThreadMillCutter):
+                return [OperationType.INSIDE_THREAD] if isinstance(self.orig_shape, DrawingCircleTreeItem) else []
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.SIDE_MILL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE, OperationType.PATTERN_FILL]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):

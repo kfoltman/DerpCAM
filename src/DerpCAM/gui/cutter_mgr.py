@@ -340,6 +340,8 @@ class CreateEditCutterDialog(QDialog):
         hbox.addWidget(self.emRadio)
         self.drillRadio = QRadioButton("&Drill bit", self)
         hbox.addWidget(self.drillRadio)
+        self.tmRadio = QRadioButton("&Thread mill", self)
+        hbox.addWidget(self.tmRadio)
         self.form.addRow(hbox)
         self.materialCombo = QComboBox()
         for item in sorted(inventory.inventory.cutter_materials.keys()):
@@ -359,6 +361,12 @@ class CreateEditCutterDialog(QDialog):
             self.form.addRow("Tip angle", self.angleEdit)
             self.tipDiaEdit = QLineEdit()
             self.form.addRow("Tip diameter", self.tipDiaEdit)
+        if self.edit_cutter is None or isinstance(self.edit_cutter, inventory.ThreadMillCutter):
+            self.pitchRangeEdit = QLineEdit()
+            self.form.addRow("Thread pitch/range", self.pitchRangeEdit)
+            self.threadAngleEdit = QLineEdit()
+            self.form.addRow("Thread angle", self.threadAngleEdit)
+        if self.edit_cutter is None or isinstance(self.edit_cutter, inventory.EndMillCutter):
             for item in inventory.EndMillShape.descriptions:
                 self.shapeCombo.addItem(item[1], item[0])
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -378,19 +386,33 @@ class CreateEditCutterDialog(QDialog):
                 self.tipDiaEdit.setText(Format.cutter_dia(self.edit_cutter.tip_diameter))
             elif isinstance(self.edit_cutter, inventory.DrillBitCutter):
                 self.drillRadio.setChecked(True)
+            elif isinstance(self.edit_cutter, inventory.ThreadMillCutter):
+                self.tmRadio.setChecked(True)
+                if self.edit_cutter.min_pitch == self.edit_cutter.max_pitch:
+                    self.pitchRangeEdit.setText(Format.thread_pitch(self.edit_cutter.min_pitch))
+                else:
+                    self.pitchRangeEdit.setText(Format.thread_pitch(self.edit_cutter.min_pitch) + "-" + Format.thread_pitch(self.edit_cutter.max_pitch))
+                self.threadAngleEdit.setText(Format.angle(self.edit_cutter.thread_angle))
             self.emRadio.setEnabled(False)
             self.drillRadio.setEnabled(False)
+            self.tmRadio.setEnabled(False)
         else:
+            self.pitchRangeEdit.setText("")
+            self.threadAngleEdit.setText("60")
             self.flutesEdit.setText("2")
             self.emRadio.setChecked(True)
             self.drillRadio.clicked.connect(self.cutterShapeChanged)
             self.emRadio.clicked.connect(self.cutterShapeChanged)
+            self.tmRadio.clicked.connect(self.cutterShapeChanged)
             self.cutterShapeChanged()
     def cutterShapeChanged(self):
         self.shapeCombo.setEnabled(self.emRadio.isChecked())
         is_tapered = self.emRadio.isChecked() and self.shapeCombo.findData(self.shapeCombo.currentIndex()) == inventory.EndMillShape.TAPERED
         self.angleEdit.setEnabled(is_tapered)
         self.tipDiaEdit.setEnabled(is_tapered)
+        if self.edit_cutter is None:
+            self.pitchRangeEdit.setEnabled(self.tmRadio.isChecked())
+            self.threadAngleEdit.setEnabled(self.tmRadio.isChecked())
     def accept(self):
         name = self.nameEdit.text()
         if name == '':
@@ -468,6 +490,26 @@ class CreateEditCutterDialog(QDialog):
             self.cutter = inventory.EndMillCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes, shape, angle, tip_diameter)
         if self.drillRadio.isChecked():
             self.cutter = inventory.DrillBitCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes)
+        if self.tmRadio.isChecked():
+            try:
+                thread_angle, unit = propsheet.UnitConverter.parse(self.threadAngleEdit.text(), "\u00b0", as_float=True)
+            except ValueError as e:
+                QMessageBox.critical(self, None, str(e))
+                self.threadAngleEdit.setFocus()
+                return
+            try:
+                pitches = self.pitchRangeEdit.text()
+                if "-" in pitches:
+                    pitches = pitches.split("-", 2)
+                else:
+                    pitches = [pitches, pitches]
+                min_pitch, unit = propsheet.UnitConverter.parse(pitches[0], "mm", as_float=True)
+                max_pitch, unit = propsheet.UnitConverter.parse(pitches[1], "mm", as_float=True)
+            except ValueError as e:
+                QMessageBox.critical(self, None, str(e))
+                self.pitchRangeEdit.setFocus()
+                return
+            self.cutter = inventory.ThreadMillCutter.new(None, self.nameEdit.text(), material, diameter, self.length, flutes, min_pitch, max_pitch, thread_angle)
         QDialog.accept(self)
 
 class CreateEditPresetDialog(propsheet.BaseCreateEditDialog):

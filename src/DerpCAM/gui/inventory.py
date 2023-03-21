@@ -324,6 +324,44 @@ class DrillBitCutter(CutterBase):
     def description_only(self):
         return f"{Format.cutter_dia(self.diameter)} {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
     
+class ThreadMillPreset(PresetBase):
+    properties = [ 'rpm', 'feed', 'stepover', IdRefProperty('toolbit') ]
+    @classmethod
+    def new(klass, id, name, toolbit, rpm, feed, stepover):
+        res = klass(id, name)
+        res.toolbit = toolbit
+        res.rpm = rpm
+        res.feed = feed
+        res.stepover = stepover
+        return res
+    def description_only(self):
+        res = []
+        if self.feed:
+            res.append(f"f\u2194{Format.feed(self.feed, brief=True)}")
+        if self.stepover:
+            res.append(f"\u27f7{Format.as_percent(self.stepover, brief=True)}%")
+        if self.rpm:
+            res.append(f"\u27f3{Format.rpm(self.rpm, brief=True)}")
+        return " ".join(res)
+
+class ThreadMillCutter(CutterBase):
+    cutter_type_name = "Thread mill"
+    cutter_type_priority = 3
+    preset_type = ThreadMillPreset
+    properties = CutterBase.properties + ['min_pitch', 'max_pitch', 'thread_angle']
+    @classmethod
+    def new(klass, id, name, material, diameter, length, flutes, min_pitch, max_pitch, thread_angle=60):
+        res = klass.new_impl(id, name, material, diameter, length, flutes)
+        res.min_pitch = min_pitch
+        res.max_pitch = max_pitch
+        res.thread_angle = thread_angle or 60
+        return res
+    def description_only(self):
+        if self.min_pitch == self.max_pitch:
+            return f"{Format.cutter_dia(self.diameter)} {self.material.name} thread mill, P={Format.thread_pitch(self.min_pitch)}" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
+        else:
+            return f"{Format.cutter_dia(self.diameter)} {self.material.name} thread mill, P={Format.thread_pitch(self.min_pitch)}-{Format.thread_pitch(self.max_pitch)}" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
+
 class Inventory(object):
     def __init__(self):
         self.cutter_materials = {}

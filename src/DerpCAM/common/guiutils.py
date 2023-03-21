@@ -208,6 +208,7 @@ class Format(object):
     cutter_dia = mk_fmt(3)
     cutter_length = mk_fmt(2)
     depth_of_cut = mk_fmt(3)
+    thread_pitch = mk_fmt(2)
     feed = mk_fmt(1, unit="mm/min")
     rpm = mk_fmt(1, unit="rpm")
     surf_speed = mk_fmt(2, unit="m/min")
