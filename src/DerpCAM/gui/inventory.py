@@ -336,8 +336,8 @@ class ThreadMillPreset(PresetBase):
         return res
     def description_only(self):
         res = []
-        if self.feed:
-            res.append(f"f\u2194{Format.feed(self.feed, brief=True)}")
+        if self.vfeed:
+            res.append(f"f\u2193{Format.feed(self.vfeed, brief=True)}")
         if self.stepover:
             res.append(f"\u27f7{Format.as_percent(self.stepover, brief=True)}%")
         if self.rpm:
