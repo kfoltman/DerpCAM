@@ -121,6 +121,7 @@ class CAMMainWindow(QMainWindow):
             ("&V-carve", self.millVCarve, QKeySequence("Shift+Ctrl+R"), "Use a v-bit at a variable depth of cut to engrave a contour"),
             ("Pa&ttern fill", self.millPatternFill, QKeySequence("Shift+Ctrl+T"), "Engrave a pattern in a closed shape"),
             ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
+            ("Internal t&hread", self.millInternalThread, QKeySequence("Shift+Ctrl+H"), "Mill an internal thread in an existing hole using a thread cutter"),
             ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
             ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
@@ -381,6 +382,8 @@ class CAMMainWindow(QMainWindow):
         self.millSelectedShapes(OperationType.PATTERN_FILL)
     def millInterpolatedHole(self):
         self.millSelectedShapes(OperationType.INTERPOLATED_HOLE)
+    def millInternalThread(self):
+        self.millSelectedShapes(OperationType.INSIDE_THREAD)
     def millRefine(self):
         self.millSelectedShapes(OperationType.REFINE)
     def drillHole(self):

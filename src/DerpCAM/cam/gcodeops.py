@@ -541,18 +541,17 @@ class ThreadMill(UntabbedOperation):
         self.y = y
         self.d = d
         self.pitch = pitch
-        self.minor_dia = (d - pitch) - tool.relief_diameter
-        if self.minor_dia <= 0:
-            raise ValueError(f"Thread minor diameter ({d - pitch:0.2f} mm) smaller than the cutter relief diameter ({tool.relief_diameter:0.2f} mm)")
+        self.minor_dia = d - pitch
+        if self.minor_dia <= tool.relief_diameter:
+            raise ValueError(f"Thread minor diameter ({Format.coord(self.minor_dia)}) smaller than the cutter relief diameter ({Format.cutter_dia(tool.relief_diameter)})")
         shape = shapes.Shape.circle(x, y, r=0.5*d)
         UntabbedOperation.__init__(self, shape, tool, machine_params, props)
     def diameters(self):
         res = []
-        thread_depth = self.d - self.minor_dia
-        d = 0
-        while d < thread_depth:
-            d = min(thread_depth, d + self.pitch * self.tool.stepover)
-            res.append(d)
+        d = self.minor_dia
+        while d < self.d:
+            d = min(self.d, d + self.pitch * self.tool.stepover)
+            res.append(d - self.tool.diameter)
         return res
     def build_paths(self, margin):
         paths = []

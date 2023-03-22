@@ -689,7 +689,7 @@ class DrawingTreeItem(CAMListTreeItem):
                 else:
                     warnings.append(verdict % (i.label(),))
             return matched, warnings
-        if operType == OperationType.INTERPOLATED_HOLE or operType == OperationType.DRILLED_HOLE:
+        if operType in [OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.INSIDE_THREAD]:
             selection, warnings = pickObjects(lambda i: isinstance(i, DrawingCircleTreeItem) or "%s is not a circle")
         elif operType != OperationType.ENGRAVE:
             selection, warnings = pickObjects(lambda i: isinstance(i, DrawingTextTreeItem) or i.toShape().closed or "%s is not a closed shape")
@@ -868,9 +868,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_rpm = FloatDistEditableProperty("RPM", "rpm", Format.rpm, unit="rpm", min=0.1, max=60000, allow_none=True)
     prop_surf_speed = FloatDistEditableProperty("Surface speed", "surf_speed", Format.surf_speed, unit="m/min", allow_none=True, computed=True)
     prop_chipload = FloatDistEditableProperty("Chipload", "chipload", Format.chipload, unit="mm/tooth", allow_none=True, computed=True)
-    prop_feed = FloatDistEditableProperty("Feed rate", "feed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_hfeed = FloatDistEditableProperty("Horizontal feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatDistEditableProperty("Vertical feed rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, default_value=0)
     prop_roughing_offset = FloatDistEditableProperty("Roughing Offset", "roughing_offset", Format.coord, unit="mm", min=0, max=20, default_value=0)
     prop_stepover = FloatDistEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
@@ -924,7 +923,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
     @classmethod
     def properties_threadmill(klass):
-        return [klass.prop_name, klass.prop_feed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
+        return [klass.prop_name, klass.prop_vfeed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
@@ -1268,7 +1267,7 @@ class PresetDerivedAttributes(object):
     # only endmill+drill bit
     attrs_all = attrs_common + attrs_endmill
     attrs_thread_only = [
-        PresetDerivedAttributeItem('feed'),
+        PresetDerivedAttributeItem('vfeed'),
     ]
     attrs_thread = attrs_thread_only + [
         PresetDerivedAttributeItem('rpm'),
@@ -1325,15 +1324,20 @@ class PresetDerivedAttributes(object):
                     addError(str(e))
     def validate(self, errors):
         if self.vfeed is None:
-            errors.append("Plunge rate is not set")
-        if self.doc is None:
+            errors.append("Vertical feed rate is not set")
+        if not isinstance(self.operation.cutter, inventory.ThreadMillCutter) and self.doc is None:
             errors.append("Maximum depth of cut per pass is not set")
         if isinstance(self.operation.cutter, inventory.EndMillCutter):
             if self.hfeed is None:
                 if self.operation.operation != OperationType.DRILLED_HOLE:
-                    errors.append("Feed rate is not set")
+                    errors.append("Horizontal feed rate is not set")
             elif self.hfeed < 0.1 or self.hfeed > 10000:
-                errors.append("Feed rate is out of range (0.1-10000)")
+                errors.append("Horizontal feed rate is out of range (0.1-10000)")
+        if self.vfeed is not None and not (0.1 <= self.vfeed <= 10000):
+            errors.append("Vertical feed rate is out of range (0.1-10000)")
+        if isinstance(self.operation.cutter, inventory.ThreadMillCutter) and self.operation.threadPitch() is None:
+            errors.append(f"Cannot guess the thread pitch for diameter {Format.coord(2 * self.operation.orig_shape.r)}")
+        if isinstance(self.operation.cutter, (inventory.EndMillCutter, inventory.ThreadMillCutter)):
             if self.stepover is None or self.stepover < 0.1 or self.stepover > 100:
                 if OperationType.has_stepover(self.operation.operation):
                     if self.stepover is None:
@@ -1462,12 +1466,13 @@ class OperationTreeItem(CAMTreeItem):
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True, none_value="(use preset value)")
 
-    prop_hfeed = FloatDistEditableProperty("Feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
-    prop_vfeed = FloatDistEditableProperty("Plunge rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_hfeed = FloatDistEditableProperty("Horizontal feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
+    prop_vfeed = FloatDistEditableProperty("Vertical feed rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
     prop_offset = FloatDistEditableProperty("Offset", "offset", Format.coord, unit="mm", min=-20, max=20, allow_none=True)
     prop_roughing_offset = FloatDistEditableProperty("Roughing offset", "roughing_offset", Format.coord, unit="mm", min=0, max=20, allow_none=True)
     prop_stepover = FloatDistEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
+    prop_thread_pitch = FloatDistEditableProperty("Thread pitch", "thread_pitch", Format.thread_pitch, unit="mm", min=0.01, max=10, allow_none=True)
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatDistEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
@@ -1508,6 +1513,7 @@ class OperationTreeItem(CAMTreeItem):
         self.pattern_type = FillType.CROSS
         self.pattern_angle = 45
         self.pattern_scale = 100
+        self.thread_pitch = None
         self.islands = set()
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
@@ -1560,6 +1566,10 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.PATTERN_FILL and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
             return False
+        if self.operation == OperationType.INSIDE_THREAD and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode']:
+            return False
+        if self.operation != OperationType.INSIDE_THREAD and name in ['thread_pitch']:
+            return False
         return True
     def getValidEnumValues(self, name):
         if name == 'pocket_strategy' and self.operation == OperationType.SIDE_MILL:
@@ -1609,7 +1619,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
-            self.prop_stepover, self.prop_eh_diameter, self.prop_entry_mode,
+            self.prop_stepover, self.prop_thread_pitch, self.prop_eh_diameter, self.prop_entry_mode,
             self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
@@ -1673,6 +1683,10 @@ class OperationTreeItem(CAMTreeItem):
                 if self.orig_shape and self.cutter.diameter > 2 * self.orig_shape.r + 0.2:
                     return f"Oversize Drill {self.cutter.diameter:0.1f}mm" if self.cutter else ""
             return OperationType.toString(self.operation) + (f" {self.cutter.diameter:0.1f}mm" if self.cutter else "")
+        if self.operation == OperationType.INSIDE_THREAD:
+            pitch = self.thread_pitch or self.threadPitch()
+            pitch = "?" if pitch is None else Format.thread_pitch(pitch, brief=True)
+            return OperationType.toString(self.operation) + (f" {Format.coord(2 * self.orig_shape.r, brief=True)} x {pitch}" if self.cutter else "")
         return OperationType.toString(self.operation)
     def data(self, role):
         if role == Qt.DisplayRole:
@@ -1800,7 +1814,34 @@ class OperationTreeItem(CAMTreeItem):
             return lambda: parent_cam.vcarve(shape)
         elif self.operation == OperationType.PATTERN_FILL:
             return lambda: parent_cam.pattern_fill(shape, FillType.toItem(self.pattern_type, 2), self.pattern_angle, self.pattern_scale / 100.0, 0, 0)
+        elif self.operation == OperationType.INSIDE_THREAD:
+            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch())
         raise ValueError("Unsupported operation")
+    DEFAULT_METRIC_PITCHES = {
+        1.6 : 0.35,
+        2   : 0.4,
+        2.5 : 0.45,
+        3   : 0.5,
+        3.5 : 0.6,
+        4   : 0.7,
+        5   : 0.8,
+        6   : 1,
+        8   : 1.25,
+        10  : 1.5,
+        12  : 1.75,
+        14  : 2,
+        16  : 2,
+        18  : 2.5,
+        20  : 2.5
+    }
+    def threadPitch(self):
+        if self.thread_pitch:
+            return self.thread_pitch
+        d = self.orig_shape.r * 2
+        for diameter, pitch in self.DEFAULT_METRIC_PITCHES.items():
+            if abs(diameter - d) < 0.1:
+                return pitch
+        return None
     def shapeToRefine(self, shape, previous, is_external):
         if is_external:
             return cam.pocket.shape_to_refine_external(shape, previous)
@@ -1871,15 +1912,20 @@ class OperationTreeItem(CAMTreeItem):
                 if mp.max_rpm is not None and pda.rpm > mp.max_rpm:
                     self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
 
-            if isinstance(self.cutter, inventory.EndMillCutter):
+            if isinstance(self.cutter, inventory.ThreadMillCutter):
+                tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, pda.rpm, pda.vfeed, self.cutter.length, pda.stepover / 100.0, self.cutter.thread_angle)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+            elif isinstance(self.cutter, inventory.EndMillCutter):
                 is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
                     climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
                 zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, pda.entry_mode != inventory.EntryMode.PREFER_RAMP)
-            else:
+            elif isinstance(self.cutter, inventory.DrillBitCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+            else:
+                assert False, f"Unknown cutter type: {type(self.cutter)}"
             self.gcode_props.rpm = pda.rpm
             if self.dogbones and self.operation == OperationType.SIDE_MILL and not isinstance(self.shape, list):
                 self.addDogbonesToIslands(self.shape, tool)

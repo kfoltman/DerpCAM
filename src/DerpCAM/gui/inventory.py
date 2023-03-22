@@ -325,13 +325,13 @@ class DrillBitCutter(CutterBase):
         return f"{Format.cutter_dia(self.diameter)} {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
     
 class ThreadMillPreset(PresetBase):
-    properties = [ 'rpm', 'feed', 'stepover', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'vfeed', 'stepover', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, feed, stepover):
+    def new(klass, id, name, toolbit, rpm, vfeed, stepover):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
-        res.feed = feed
+        res.vfeed = vfeed
         res.stepover = stepover
         return res
     def description_only(self):
