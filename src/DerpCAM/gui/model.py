@@ -1319,6 +1319,15 @@ class PresetDerivedAttributes(object):
                             self.vfeed = st.vfeed
                         if self.doc is None:
                             self.doc = st.maxdoc
+                elif isinstance(operation.cutter, inventory.ThreadMillCutter):
+                    if not all([self.rpm, self.vfeed, self.stepover]):
+                        st = milling_tool.standard_tool(t.diameter, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
+                        if self.rpm is None:
+                            self.rpm = st.rpm
+                        if self.vfeed is None:
+                            self.vfeed = st.vfeed
+                        if self.stepover is None:
+                            self.stepover = st.stepover * 100
             except ValueError as e:
                 if addError:
                     addError(str(e))
@@ -1566,7 +1575,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.PATTERN_FILL and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
             return False
-        if self.operation == OperationType.INSIDE_THREAD and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode']:
+        if self.operation == OperationType.INSIDE_THREAD and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode', 'doc']:
             return False
         if self.operation != OperationType.INSIDE_THREAD and name in ['thread_pitch']:
             return False
