@@ -944,7 +944,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         elif name == 'chipload':
             if isinstance(self.inventory_preset.toolbit, inventory.EndMillCutter):
                 return self.inventory_preset.hfeed / (self.inventory_preset.rpm * (self.inventory_preset.toolbit.flutes or 2)) if self.inventory_preset.hfeed and self.inventory_preset.rpm else None
-            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+            elif isinstance(self.inventory_preset.toolbit, (inventory.DrillBitCutter, inventory.ThreadMillCutter)):
                 return self.inventory_preset.vfeed / self.inventory_preset.rpm if self.inventory_preset.vfeed and self.inventory_preset.rpm else None
         else:
             return getattr(self.inventory_preset, name)
