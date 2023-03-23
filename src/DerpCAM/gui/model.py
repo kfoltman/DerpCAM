@@ -980,7 +980,7 @@ class ToolPresetTreeItem(CAMTreeItem):
                         self.inventory_preset.hfeed = hfeed
                 else:
                     self.inventory_preset.hfeed = None
-            elif isinstance(self.inventory_preset.toolbit, inventory.DrillBitCutter):
+            elif isinstance(self.inventory_preset.toolbit, (inventory.DrillBitCutter, inventory.ThreadMillCutter)):
                 if value and self.inventory_preset.rpm:
                     vfeed = self.inventory_preset.rpm * value
                     if vfeed >= self.prop_vfeed.min and vfeed <= self.prop_vfeed.max:
