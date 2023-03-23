@@ -6,6 +6,7 @@ import DerpCAM.cam.milling_tool
 import DerpCAM.cam.peel
 import DerpCAM.cam.pocket
 import DerpCAM.cam.vcarve
+from DerpCAM.common.guiutils import Format
 from DerpCAM.cam.wall_profile import PlainWallProfile
 from DerpCAM.cam.gcodegen import Gcode, PathOutput, BaseCut2D, VCarveCut, CutPath2D, CutPathWallProfile
 
@@ -535,13 +536,21 @@ class ThreadMill(UntabbedOperation):
     def __init__(self, x, y, d, pitch, tool, machine_params, props):
         if not isinstance(tool, DerpCAM.cam.milling_tool.ThreadCutter):
             raise ValueError("Thread cutter required")
-        if not (tool.min_pitch <= pitch <= tool.max_pitch):
-            raise ValueError(f"Thread pitch {pitch} out of allowed range for the cutter ({tool.min_pitch}, {tool.max_pitch})")
+        if tool.min_pitch == tool.max_pitch:
+            max_pitch = tool.max_pitch
+            if tool.min_pitch != pitch:
+                raise ValueError(f"Thread pitch {pitch} not equal to tool pitch ({Format.thread_pitch(tool.min_pitch)})")
+        else:
+            max_pitch = d - tool.diameter
+            if not (tool.min_pitch <= pitch <= max_pitch):
+                raise ValueError(f"Thread pitch {pitch} out of allowed range ({Format.thread_pitch(tool.min_pitch)} - {Format.thread_pitch(max_pitch)})")
         self.x = x
         self.y = y
         self.d = d
         self.pitch = pitch
         self.minor_dia = d - pitch
+        # If pitch is greater than maximum, only pre-thread for further tapping etc. - only go as deep as the cutter allows, do not touch the full major dia
+        self.d_corr = min(self.d, self.minor_dia + tool.max_pitch)
         if self.minor_dia <= tool.relief_diameter:
             raise ValueError(f"Thread minor diameter ({Format.coord(self.minor_dia)}) smaller than the cutter relief diameter ({Format.cutter_dia(tool.relief_diameter)})")
         shape = shapes.Shape.circle(x, y, r=0.5*d)
@@ -549,8 +558,8 @@ class ThreadMill(UntabbedOperation):
     def diameters(self):
         res = []
         d = self.minor_dia
-        while d < self.d:
-            d = min(self.d, d + self.pitch * self.tool.stepover)
+        while d < self.d_corr:
+            d = min(self.d_corr, d + self.pitch * self.tool.stepover)
             res.append(d - self.tool.diameter)
         return res
     def build_paths(self, margin):
@@ -559,7 +568,7 @@ class ThreadMill(UntabbedOperation):
             paths.append(toolpath.Toolpath(Path(shapes.Shape.circle(self.x, self.y, r=0.5 * cd).boundary, False), self.tool))
         return PathOutput(paths, None, {})
     def to_gcode(self, gcode):
-        gcode.section_info(f"Start thread mill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} pitch {self.pitch:0.2f} depth {self.props.depth:0.2f}")
+        gcode.section_info(f"Start thread mill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d_corr:0.2f} pitch {self.pitch:0.2f} depth {self.props.depth:0.2f}")
         gcode.feed(self.tool.feed)
         for i, d in enumerate(self.diameters()):
             self.to_gcode_ring(gcode, d, self.machine_params, i == 0)

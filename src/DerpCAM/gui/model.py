@@ -1086,7 +1086,7 @@ class OperationType(EnumClass):
         (FACE, "Face mill"),
         (V_CARVE, "V-Carve"),
         (PATTERN_FILL, "Pattern fill"),
-        (INSIDE_THREAD, "Inside thread"),
+        (INSIDE_THREAD, "Internal thread"),
     ]
     @staticmethod
     def has_islands(value):
@@ -1694,8 +1694,11 @@ class OperationTreeItem(CAMTreeItem):
             return OperationType.toString(self.operation) + (f" {self.cutter.diameter:0.1f}mm" if self.cutter else "")
         if self.operation == OperationType.INSIDE_THREAD:
             pitch = self.thread_pitch or self.threadPitch()
+            opStr = OperationType.toString(self.operation)
+            if pitch is not None and pitch > self.cutter.max_pitch:
+                opStr = "Internal pre-thread"
             pitch = "?" if pitch is None else Format.thread_pitch(pitch, brief=True)
-            return OperationType.toString(self.operation) + (f" {Format.coord(2 * self.orig_shape.r, brief=True)} x {pitch}" if self.cutter else "")
+            return opStr + (f" {Format.coord(2 * self.orig_shape.r, brief=True)} x {pitch}" if self.cutter else "")
         return OperationType.toString(self.operation)
     def data(self, role):
         if role == Qt.DisplayRole:
