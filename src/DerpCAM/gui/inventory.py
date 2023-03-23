@@ -86,8 +86,10 @@ class Serializable(object):
     def load(klass, data, default_type=None):
         rtype = data.get('_type', default_type)
         if rtype is not None:
-            klass2 = getattr(sys.modules[__name__], rtype)
-            if issubclass(klass2, klass):
+            klass2 = getattr(sys.modules[__name__], rtype, None)
+            if klass2 is None:
+                return None
+            elif issubclass(klass2, klass):
                 res = klass2(None, data['name'])
             else:
                 raise ValueError(f"{rtype} is not a subclass of {klass.__name__}")
@@ -327,12 +329,14 @@ class Inventory(object):
         self.toolbits.clear()
         for i in data['tools']:
             tool = CutterBase.load(i)
-            cutter_map[tool.orig_id] = tool
-            self.toolbits.append(tool)
+            if tool:
+                cutter_map[tool.orig_id] = tool
+                self.toolbits.append(tool)
         for i in data['presets']:
             preset = PresetBase.load(i)
-            preset.toolbit = cutter_map[preset.toolbit]
-            preset.toolbit.presets.append(preset)
+            if preset:
+                preset.toolbit = cutter_map[preset.toolbit]
+                preset.toolbit.presets.append(preset)
         return True
     def createStdCutters(self):
         HSS = self.materialByName('HSS')
