@@ -456,7 +456,7 @@ class HelicalDrill(UntabbedOperation):
         gcode.section_info(f"End helical drill")
 
     def to_gcode_ring(self, gcode, d, rate_factor, machine_params, first):
-        r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
+        r = (d - self.tool.diameter) / 2
         gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
         curz = machine_params.semi_safe_z + self.props.start_depth
         gcode.rapid(z=machine_params.safe_z if first else curz)
