@@ -562,12 +562,12 @@ class ThreadMill(UntabbedOperation):
         gcode.section_info(f"Start thread mill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} pitch {self.pitch:0.2f} depth {self.props.depth:0.2f}")
         gcode.feed(self.tool.feed)
         for i, d in enumerate(self.diameters()):
-            self.to_gcode_ring(gcode, d, self.tool.feed, self.machine_params, i == 0)
+            self.to_gcode_ring(gcode, d, self.machine_params, i == 0)
         # Do not rub against the walls
         gcode.section_info(f"Exit to centre/safe Z")
         gcode.rapid(z=self.machine_params.safe_z)
         gcode.section_info(f"End thread mill")
-    def to_gcode_ring(self, gcode, d, feed, machine_params, first):
+    def to_gcode_ring(self, gcode, d, machine_params, first):
         # Using toolpath diameter here, not overall diameter like in HelicalDrill
         r = d / 2
         gcode.section_info("Start helix at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, d, d + self.tool.diameter))
@@ -577,7 +577,6 @@ class ThreadMill(UntabbedOperation):
         # Always start at an angle 0
         gcode.rapid(x=self.x + r, y=self.y)
         gcode.rapid(z=curz)
-        gcode.feed(feed)
         # Going half circles at most in order to not confuse Grbl
         doc = self.pitch / 2
         end_angle = 0

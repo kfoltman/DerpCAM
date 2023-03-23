@@ -1922,7 +1922,7 @@ class OperationTreeItem(CAMTreeItem):
                     self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
 
             if isinstance(self.cutter, inventory.ThreadMillCutter):
-                tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, pda.rpm, pda.vfeed, self.cutter.length, pda.stepover / 100.0, self.cutter.thread_angle)
+                tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, self.cutter.length, pda.rpm, pda.vfeed, pda.stepover / 100.0, self.cutter.thread_angle)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
             elif isinstance(self.cutter, inventory.EndMillCutter):
                 is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
