@@ -48,8 +48,8 @@ class EncodedProperty(object):
 class MaterialProperty(EncodedProperty):
     def encode(self, value):
         return value.name
-    def decode(self, value):
-        return getattr(CutterMaterial, value)
+    def decode(self, name):
+        return CutterMaterial.byName(name)
     def equals(self, v1, v2):
         return v1.name == v2.name
 
@@ -133,9 +133,16 @@ class Serializable(object):
 
 class CutterMaterial(Serializable):
     properties = []
+    values = {}
     @staticmethod
     def toString(value):
         return value.name
+    @staticmethod
+    def add(value):
+        CutterMaterial.values[value.name] = value
+    @staticmethod
+    def byName(name):
+        return CutterMaterial.values[name]
     def is_carbide(self):
         return 'carbide' in self.name
 
@@ -367,11 +374,12 @@ class Inventory(object):
         self.cutter_materials = {}
         for name in ("HSS", "HSS+TiN", "HSSCo5", "HSSCo8", "carbide", "carbide+TiN", "carbide+TiCN", "carbide+TiSiN", "carbide+AlTiN", "carbide+TiAlN", "carbide+DLC"):
             self.addMaterial(CutterMaterial(None, name))
+        for name in ("HSS", "carbide"):
+            setattr(CutterMaterial, name, CutterMaterial.byName(name))
         self.toolbits = []
     def addMaterial(self, material):
         name = material.name
-        if name == 'HSS' or name == 'carbide':
-            setattr(CutterMaterial, name, material)
+        CutterMaterial.add(material)
         self.cutter_materials[material.name] = material
     def materialByName(self, name):
         return self.cutter_materials[name]
