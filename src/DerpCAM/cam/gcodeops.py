@@ -574,21 +574,21 @@ class ThreadMill(UntabbedOperation):
         startz = machine_params.semi_safe_z + self.props.start_depth
         curz = startz
         gcode.rapid(z=machine_params.safe_z if first else curz)
-        # Always start at an angle 0
-        gcode.rapid(x=self.x + r, y=self.y)
+        start_angle = 0
+        angle = start_angle
+        gcode.rapid(x=self.x + r * cos(angle), y=self.y + r * sin(angle))
         gcode.rapid(z=curz)
         # Going half circles at most in order to not confuse Grbl
         doc = self.pitch / 2
-        end_angle = 0
         while curz > self.props.depth:
-            istart = -r * cos(end_angle)
-            jstart = -r * sin(end_angle)
+            istart = -r * cos(angle)
+            jstart = -r * sin(angle)
             nextz = max(curz - doc, self.props.depth)
-            end_angle = 2 * pi * (startz - nextz)
-            iend = -r * cos(end_angle)
-            jend = -r * sin(end_angle)
+            angle = start_angle + 2 * pi * (startz - nextz) / self.pitch
+            iend = r * cos(angle)
+            jend = r * sin(angle)
             # XXXKF allow left-handed threads here
-            gcode.arc_cw(x=self.x - iend, y=self.y - jend, i=istart, j=jstart, z=nextz)
+            gcode.arc_cw(x=self.x + iend, y=self.y + jend, i=istart, j=jstart, z=nextz)
             curz = nextz
         gcode.section_info("End helix")
         gcode.rapid(x=self.x, y=self.y)
