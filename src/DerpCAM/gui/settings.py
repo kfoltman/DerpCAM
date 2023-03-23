@@ -3,7 +3,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common.geom import GeometrySettings
-from DerpCAM.common.guiutils import GuiSettings
+from DerpCAM.common.guiutils import GuiSettings, intSpin, floatSpin
 
 import os.path
 
@@ -162,28 +162,6 @@ class PreferencesDialog(QDialog):
     def initUI(self):
         self.outerForm = QFormLayout(self)
         self.tabs = QTabWidget()
-
-        def floatSpin(vmin, vmax, decs, value, tooltip):
-            res = QDoubleSpinBox()
-            res.setRange(vmin, vmax)
-            res.setDecimals(decs)
-            res.setValue(value)
-            res.setToolTip(tooltip)
-            vlongest = max(len(str(vmin)), len(str(vmax)))
-            digits = vlongest + decs + (1 if decs else 0)
-            spinWidth = QFontMetrics(res.font()).size(Qt.TextSingleLine, "9999" + ("9" * digits)).width()
-            res.setMaximumWidth(spinWidth)
-            return res
-
-        def intSpin(vmin, vmax, value, tooltip):
-            res = QSpinBox()
-            res.setRange(vmin, vmax)
-            res.setValue(value)
-            res.setToolTip(tooltip)
-            digits = max(len(str(vmin)), len(str(vmax)))
-            spinWidth = QFontMetrics(res.font()).size(Qt.TextSingleLine, "9999" + ("9" * digits)).width()
-            res.setMaximumWidth(spinWidth)
-            return res
 
         self.widgetCAM = QWidget()
         self.formCAM = QFormLayout(self.widgetCAM)

@@ -345,10 +345,32 @@ def dataToBitmap(shape):
 def newCursor(shape):
     circleBitmap = dataToBitmap()
 
-
 def customCursor(name):
     res = cursor_cache.get(name, None)
     if not res:
         shape = cursor_shapes[name]
         res = cursor_cache[name] = QCursor(dataToBitmap(shape[2:]), shape[0], shape[1])
     return res
+
+def floatSpin(vmin, vmax, decs, value, tooltip):
+    res = QDoubleSpinBox()
+    res.setRange(vmin, vmax)
+    res.setDecimals(decs)
+    res.setValue(value)
+    res.setToolTip(tooltip)
+    vlongest = max(len(str(vmin)), len(str(vmax)))
+    digits = vlongest + decs + (1 if decs else 0)
+    spinWidth = QFontMetrics(res.font()).size(Qt.TextSingleLine, "9999" + ("9" * digits)).width()
+    res.setMaximumWidth(spinWidth)
+    return res
+
+def intSpin(vmin, vmax, value, tooltip):
+    res = QSpinBox()
+    res.setRange(vmin, vmax)
+    res.setValue(value)
+    res.setToolTip(tooltip)
+    digits = max(len(str(vmin)), len(str(vmax)))
+    spinWidth = QFontMetrics(res.font()).size(Qt.TextSingleLine, "9999" + ("9" * digits)).width()
+    res.setMaximumWidth(spinWidth)
+    return res
+

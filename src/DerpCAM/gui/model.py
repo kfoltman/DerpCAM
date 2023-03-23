@@ -362,7 +362,7 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_font = FontEditableProperty("Font face", "font")
     prop_height = FloatDistEditableProperty("Font size", "height", Format.coord, min=1, unit="mm", allow_none=False)
     prop_width = FloatDistEditableProperty("Stretch", "width", Format.percent, min=10, unit="%", allow_none=False)
-    prop_spacing = FloatDistEditableProperty("Letter spacing", "spacing", Format.coord, min=0, allow_none=False)
+    prop_spacing = FloatDistEditableProperty("Letter spacing", "spacing", Format.coord, min=0, max=100, allow_none=False)
     prop_angle = FloatDistEditableProperty("Angle", "angle", Format.angle, min=-360, max=360, unit='\u00b0', allow_none=False)
     prop_halign = EnumEditableProperty("Horizontal align", "halign", DrawingTextStyleHAlign, allow_none=False)
     prop_valign = EnumEditableProperty("Vertical align", "valign", DrawingTextStyleVAlign, allow_none=False)
