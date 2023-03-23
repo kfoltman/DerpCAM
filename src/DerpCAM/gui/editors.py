@@ -398,14 +398,23 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
         style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
         return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
     def createExtraControls(self):
-        self.valueLayout = QFormLayout()
+        self.controlsLayout = QFormLayout()
         self.valueEdit = QLineEdit()
         self.valueEdit.setText(self.item.text)
         self.valueEdit.textChanged.connect(self.onTextChanged)
-        self.valueLayout.addRow("Text", self.valueEdit)
-        self.layout.addRow(self.valueLayout)
+        self.controlsLayout.addRow("&Text", self.valueEdit)
+        self.sizeSpin = QDoubleSpinBox()
+        self.sizeSpin.setMinimum(1)
+        self.sizeSpin.setMaximum(100)
+        self.sizeSpin.setDecimals(1)
+        self.sizeSpin.setValue(self.item.getPropertyValue('height'))
+        self.sizeSpin.valueChanged.connect(self.onSizeChanged)
+        self.controlsLayout.addRow("&Size", self.sizeSpin)
+        self.layout.addRow(self.controlsLayout)
     def onTextChanged(self, newText):
         self.item.setPropertyValue('text', newText)
+    def onSizeChanged(self, newValue):
+        self.item.setPropertyValue('height', newValue)
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.item.origin, as_arc=False)
