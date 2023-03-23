@@ -394,9 +394,9 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         self.drawPreview(qp)
 
 class CanvasNewTextEditor(CanvasNewItemEditor):
+    last_style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
     def createItem(self, document):
-        style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
-        return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, style, "Text")
+        return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, self.last_style, "Text")
     def createExtraControls(self):
         self.controlsLayout = QFormLayout()
         self.valueEdit = QLineEdit()
@@ -427,6 +427,7 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
         return False
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
+            self.last_style = self.item.style
             self.item.origin = newPos
             self.document.addShapesFromEditor([self.item])
             self.apply()
