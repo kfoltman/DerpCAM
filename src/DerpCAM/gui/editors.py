@@ -415,11 +415,49 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
         self.spacingSpin = guiutils.floatSpin(0, 1000, 1, self.item.getPropertyValue('spacing'), "Letter spacing in degrees")
         self.spacingSpin.valueChanged.connect(lambda value: self.item.setPropertyValue('spacing', value))
         self.controlsLayout.addRow("&Letter spacing", self.spacingSpin)
-        self.layout.addRow(self.controlsLayout)
+        self.alignLayout = QGridLayout()
+        HAlign = model.DrawingTextStyleHAlign
+        VAlign = model.DrawingTextStyleVAlign
+        alignments = [
+            (HAlign.LEFT,   VAlign.TOP, "Top Left"),
+            (HAlign.CENTRE, VAlign.TOP, "Top Centre"),
+            (HAlign.RIGHT,  VAlign.TOP, "Top Right"),
+            (HAlign.LEFT,   VAlign.MIDDLE, "Mid Left"),
+            (HAlign.CENTRE, VAlign.MIDDLE, "Centre"),
+            (HAlign.RIGHT,  VAlign.MIDDLE, "Mid Right"),
+            (HAlign.LEFT,   VAlign.BASELINE, "Base Left"),
+            (HAlign.CENTRE, VAlign.BASELINE, "Base Centre"),
+            (HAlign.RIGHT,  VAlign.BASELINE, "Base Right"),
+            (HAlign.LEFT,   VAlign.BOTTOM, "Btm Left"),
+            (HAlign.CENTRE, VAlign.BOTTOM, "Btm Centre"),
+            (HAlign.RIGHT,  VAlign.BOTTOM, "Btm Right"),
+            (HAlign.ALIGNED,   VAlign.TOP, "Aligned"),
+            (HAlign.MIDDLE, VAlign.TOP, "Middle"),
+            (HAlign.FIT,  VAlign.TOP, "Fit"),
+        ]
+        def alignHandler(halign, valign):
+            return lambda: self.onAlignChanged(halign, valign)
+        for i, value in enumerate(alignments):
+            halign, valign, name = value
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.setAutoExclusive(True)
+            button.setChecked(self.item.style.halign == halign and self.item.style.valign == valign)
+            button.clicked.connect(alignHandler(halign, valign))
+            self.alignLayout.addWidget(button, int(i // 3), int(i % 3))
+        self.alignGroup = QGroupBox("Al&ignment")
+        self.alignGroup.setLayout(self.alignLayout)
+        self.overallLayout = QHBoxLayout()
+        self.overallLayout.addLayout(self.controlsLayout)
+        self.overallLayout.addWidget(self.alignGroup)
+        self.layout.addRow(self.overallLayout)
     def onTextChanged(self, newText):
         self.item.setPropertyValue('text', newText)
     def onSizeChanged(self, newValue):
         self.item.setPropertyValue('height', newValue)
+    def onAlignChanged(self, halign, valign):
+        self.item.setPropertyValue('halign', halign)
+        self.item.setPropertyValue('valign', valign)
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.item.origin, as_arc=False)
