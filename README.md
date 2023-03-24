@@ -24,9 +24,19 @@ The following features are available in the current version:
 
 * pocket milling with island support, multiple strategies available (including a HSM strategy via an external library by Duncan Law)
 
+* external (side) milling - produces a target shape by milling from the outside edges
+
+* face milling
+
 * basic engraving and drilling
 
 * helical milling of round holes of arbitrary diameter
+
+* single-point threading and pre-threading using single-tooth thread milling cutters
+
+* filling areas using a hatch pattern (a few built in patterns, no user pattern support yet)
+
+* 3d engraving of 2d shapes/text using v-bits
 
 * tabs placement either automatic or manual
 
@@ -47,13 +57,11 @@ The following features are available in the current version:
 The following features may have unexpected limitations or bugs, but also might work
 just fine in many cases.
 
-* external (side) milling - producing a target shape by milling from the outside edges
-
 * rest machining - refining a coarsely-milled pocket or outline using a finer tool
 
 * single-line text objects - no need to convert text to paths for most operations, it is based on system fonts like TrueType/OpenType etc.
 
-* basic CAD-like functions (rectangles, circles, polylines) for quick tasks that don't require full CAD
+* basic CAD-like functions (rectangles, circles, polylines, text) for quick tasks that don't require full CAD
 
 * inch support - works for all CAM functionality, but not for the new CAD-like facilities
 
