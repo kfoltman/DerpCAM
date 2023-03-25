@@ -329,6 +329,7 @@ class Gcode(object):
             self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
         subpath_reverse = subpath.reverse()
         lastpt = subpath.seg_start()
+        self.feed(tool.hfeed)
         self.linear(x=lastpt.x, y=lastpt.y)
         per_level = tlengths[-1] / tool.slope()
         cur_z = old_z
