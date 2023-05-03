@@ -69,8 +69,11 @@ def pts2path(pts, orientation):
 def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour):
     if finish_outer_contour:
         for b in boundary_transformed:
+            expected_orientation = pyclipper.Orientation(b.int_points)
             for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
-                tps.append(toolpath.Toolpath(pts2path(geom.PtsFromInts(d.int_points), tool.climb), tool))
+                pts = geom.PtsFromInts(d.int_points)
+                if pyclipper.Orientation(d.int_points) == expected_orientation:
+                    tps.append(toolpath.Toolpath(pts2path(pts, tool.climb), tool))
     for h in islands_transformed_nonoverlap:
         for pts in shapes.Shape._intersection(h, *boundary_transformed):
             tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
