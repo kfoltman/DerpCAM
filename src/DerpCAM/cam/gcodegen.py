@@ -418,6 +418,8 @@ class CutLayer2D(object):
                 lastpt = i.path.seg_end()
     def overlaps(self, another):
         return bounds_overlap(self.bounds, another.bounds)
+    def is_edge(self):
+        return self.segments[0].is_edge
 
 class OffsetRange(object):
     def __init__(self, start_offset, end_offset, increment):
@@ -520,7 +522,7 @@ class CutLayerTree(object):
         self.this_layer = []
     def add(self, cutlayer):
         for i in self.this_layer:
-            if i.overlaps(cutlayer):
+            if i.overlaps(cutlayer) and not cutlayer.is_edge():
                 i.linked.append(cutlayer)
                 i.bounds = max_bounds(i.bounds, cutlayer.bounds)
                 #cutlayer.force_join = True # XXXKF must at least verify the "inside shape" condition
@@ -632,6 +634,8 @@ class PreviewSubpath(object):
         self.bounds = toolpath.Toolpath.max_bounds(contour.segments)
         self.children = []
         self.linked = []
+    def is_edge(self):
+        return self.path[0].is_edge
     def overlaps(self, another):
         return bounds_overlap(self.bounds, another.bounds)
 
@@ -639,6 +643,8 @@ class CalculatedContours(object):
     def __init__(self, contours, max_depth):
         self.contours = contours
         self.max_depth = max_depth
+    def is_edge(self):
+        return self.path.edge
 
 # Single toolpath + variable margin, Z dependent
 class CutPathWallProfile(BaseCutPath):

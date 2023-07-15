@@ -73,10 +73,10 @@ def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands
             for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
                 pts = geom.PtsFromInts(d.int_points)
                 if pyclipper.Orientation(d.int_points) == expected_orientation:
-                    tps.append(toolpath.Toolpath(pts2path(pts, tool.climb), tool))
+                    tps.append(toolpath.Toolpath(pts2path(pts, tool.climb), tool, is_edge=True))
     for h in islands_transformed_nonoverlap:
         for pts in shapes.Shape._intersection(h, *boundary_transformed):
-            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool))
+            tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool, is_edge=True))
 
 def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_contour=True, outer_margin=0):
     if not shape.closed:

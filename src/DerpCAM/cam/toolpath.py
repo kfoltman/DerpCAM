@@ -121,13 +121,14 @@ class HelicalEntry(object):
         self.climb = climb
 
 class Toolpath(object):
-    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False, is_cleanup=False, helical_from_top=False, tab_maker=None):
+    def __init__(self, path, tool, transform=None, helical_entry=None, bounds=None, is_tab=False, segmentation=None, was_previously_cut=False, is_cleanup=False, helical_from_top=False, tab_maker=None, is_edge=False):
         assert isinstance(path, Path)
         assert path.nodes
         self.path = path
         self.tool = tool
         self.transform = transform if not is_tab else None
         self.is_tab = is_tab
+        self.is_edge = is_edge
         self.transformed_cache = None
         self.lines_to_arcs_cache = None
         self.optimize_lines_cache = None
@@ -161,12 +162,12 @@ class Toolpath(object):
 
     def lines_to_arcs(self):
         if self.lines_to_arcs_cache is None:
-            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker)
+            self.lines_to_arcs_cache = Toolpath(Path(CircleFitter.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker, is_edge=self.is_edge)
         return self.lines_to_arcs_cache
 
     def optimize_lines(self):
         if self.optimize_lines_cache is None:
-            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker)
+            self.optimize_lines_cache = Toolpath(Path(LineOptimizer.simplify(self.path.nodes), self.path.closed), self.tool, transform=self.transform, helical_entry=self.helical_entry, bounds=self.bounds, is_tab=self.is_tab, was_previously_cut=self.was_previously_cut, is_cleanup=self.is_cleanup, helical_from_top=self.helical_from_top, tab_maker=self.tab_maker, is_edge=self.is_edge)
         return self.optimize_lines_cache
 
     def optimize(self):
