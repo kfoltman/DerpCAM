@@ -27,7 +27,7 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     else:
         res = [geom.SameOrientation(i, outside ^ tool.climb) for i in res]
         tps = [toolpath.Toolpath(geom.Path(geom.PtsFromInts(path), shape.closed), tool) for path in res]
-    return toolpath.Toolpaths(tps)
+    return tps
 
 def calculate_tool_margin(shape, tool, displace, outer_margin):
     boundary = geom.IntPath(shape.boundary)
@@ -82,7 +82,6 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
     if not shape.closed:
         raise ValueError("Cannot mill pockets of open polylines")
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
-    tps = []
     tps_islands = []
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace + roughing_offset, outer_margin)
     for path in islands_transformed_nonoverlap:
@@ -91,10 +90,8 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
             tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
     displace_now = displace + roughing_offset
     stepover = tool.stepover * tool.diameter
-    # No idea why this was here given the joinClosePaths call later on is
-    # already merging the island paths.
-    #for island in tps_islands:
-    #    toolpath.mergeToolpaths(tps, island, tool.diameter)
+
+    levels = []
     while True:
         if geom.is_calculation_cancelled():
             return None
@@ -103,19 +100,21 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
         if not res:
             break
         displace_now += stepover
-        toolpath.mergeToolpaths(tps, res, tool.diameter)
-    if len(tps) == 0:
-        return toolpath.Toolpaths([])
-    tps = list(reversed(tps))
+        levels.append(res)
+    tps = []
+    for level in levels[::-1]:
+        tps += level
+    if not tps:
+        return []
+    tps = toolpath.joinClosePaths(tps_islands + tps)
     if roughing_offset:
         boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace, 0)
         tps_finish = []
         finish_contour(tps_finish, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour)
-        toolpath.mergeToolpaths(tps, toolpath.Toolpaths(tps_finish), tool.diameter)
-    tps = toolpath.joinClosePaths(tps_islands + tps)
+        tps += tps_finish
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
-    return toolpath.Toolpaths(tps)
+    return tps
 
 class AxisParallelRow(object):
     def __init__(self):
@@ -258,9 +257,6 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
             for path3 in pyclipper.OpenPathsFromPolyTree(tree):
                 row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
         rows.append(row)
-    #return toolpath.Toolpaths(get_slices(rows, tool))
-    #return toolpath.Toolpaths(get_areas(rows, tool))
-    #return toolpath.Toolpaths(get_connectors(rows, tool))
     tps = process_rows(rows, tool)
     if not tps:
         raise ValueError("Milled area is empty")
@@ -269,7 +265,7 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
         boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin, 0)
     # Add a final pass around the perimeter
     finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour)
-    return toolpath.Toolpaths(tps)
+    return tps
 
 pyvlock = threading.RLock()
 
@@ -442,7 +438,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
             tps = []
             for polygon in objects_to_polygons(already_cut):
                 tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
-            return toolpath.Toolpaths(tps)
+            return tps
     alltps = []
     all_inputs = shape_to_polygons(shape, tool, displace + roughing_offset, from_outside)
     if zigzag:
@@ -527,7 +523,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
                 add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
         alltps += tps
         outer_progress += 1000
-    return toolpath.Toolpaths(alltps)
+    return alltps
 
 def shape_to_object(shape, tool, displace=0, from_outside=False):
     inputs = shape_to_polygons(shape, tool, displace, from_outside)

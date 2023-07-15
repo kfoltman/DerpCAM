@@ -40,7 +40,7 @@ class Shape(object):
         tps = [toolpath.Toolpath(offset_path(self.boundary, self.closed, offset), tool)] + [
             toolpath.Toolpath(offset_path(island, True, offset), tool) for island in self.islands ]
         tps = [tp for tp in tps if not tp.is_empty()]
-        return toolpath.Toolpaths(tps)
+        return tps
     @staticmethod
     def _offset(points, closed, dist):
         if abs(dist) > 10 * GeometrySettings.RESOLUTION:

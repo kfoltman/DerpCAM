@@ -19,7 +19,7 @@ def outside_peel(shape, tool, displace=0):
         if not res:
             break
         displace_now += stepover
-        tps += res.toolpaths
+        tps += res
     if len(tps) == 0:
         raise ValueError("Empty contour")
     tps_islands = []
@@ -32,7 +32,7 @@ def outside_peel(shape, tool, displace=0):
     tps = toolpath.joinClosePathsWithCollisionCheck(tps, boundary_transformed, islands_transformed)
     tps_islands = toolpath.joinClosePathsWithCollisionCheck(tps_islands, boundary_transformed, islands_transformed)
     geom.set_calculation_progress(expected_size, expected_size)
-    return toolpath.Toolpaths(tps + tps_islands)
+    return tps + tps_islands
 
 def outside_peel_hsm(shape, tool, zigzag, displace=0, shape_to_refine=None, roughing_offset=0):
     return pocket.hsm_peel(shape, tool, zigzag=zigzag, displace=displace, from_outside=True, shape_to_refine=shape_to_refine, roughing_offset=roughing_offset)

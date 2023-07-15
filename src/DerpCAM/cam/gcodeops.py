@@ -53,11 +53,6 @@ class Operation(object):
         self.props = props
         self.rpm = props.rpm if props is not None else None
         self.cutpaths = []
-    def outline(self, margin):
-        contour_paths = cam.contour.plain(self.shape, self.tool.diameter, self.outside, margin, self.tool.climb)
-        if contour_paths is None:
-            raise ValueError("Empty contour")
-        return toolpath.Toolpaths([toolpath.Toolpath(tp, self.tool) for tp in contour_paths])
     def to_text(self):
         if self.props.start_depth != 0:
             return self.operation_name() + ", " + ("%0.2fmm deep at %0.2fmm" % (self.props.start_depth - self.props.depth, -self.props.start_depth))
@@ -113,19 +108,19 @@ class Engrave(UntabbedOperation):
     def build_paths(self, margin):
         if margin != 0:
             raise ValueError("Offset not supported for engraving")
-        return PathOutput(self.shape.engrave(self.tool, self.props.margin).flattened(), None, {})
+        return PathOutput(self.shape.engrave(self.tool, self.props.margin), None, {})
 
 class FaceMill(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Face milling cuts are not supported for open shapes")
-        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2).flattened(), None, {})
+        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2), None, {})
 
 class AxisParallelFaceMill(FaceMill):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Face milling cuts are not supported for open shapes")
-        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2).flattened(), None, {})
+        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2), None, {})
     
 class VCarve(UntabbedOperation):
     def build_paths(self, margin):
@@ -153,7 +148,7 @@ class Pocket(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pocket cuts are not supported for open shapes")
-        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset).flattened(), None, {})
+        return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset), None, {})
     def subpaths_for_margin(self, margin, is_sublayer):
         if is_sublayer:
             # Edges only (this is used for refining the wall profile after a roughing pass)
@@ -170,7 +165,7 @@ class AxisParallelPocket(Pocket):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pocket cuts are not supported for open shapes")
-        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset).flattened(), None, {})
+        return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset), None, {})
 
 class HSMOperation(UntabbedOperation):
     def __init__(self, shape, tool, machine_params, props, shape_to_refine):
@@ -180,31 +175,44 @@ class HSMPocket(HSMOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pocket cuts are not supported for open shapes")
-        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset).flattened(), None, {})
+        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {})
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
-        return PathOutput(cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin).flattened(), None, {})
+        return PathOutput(cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin), None, {})
 
 class OutsidePeelHSM(HSMOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Outside peel cuts are not supported for open shapes")
-        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset).flattened(), None, {})
+        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {})
 
-class TabbedOperation(Operation):
-    def __init__(self, shape, tool, machine_params, props, outside, tabs, extra_attribs):
+class Contour(Operation):
+    def __init__(self, shape, outside, tool, machine_params, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
+        if not shape.closed:
+            raise ValueError("Contours cuts are not supported for open shapes")
         Operation.__init__(self, shape, tool, machine_params, props)
         self.outside = outside
-        for key, value in extra_attribs.items():
-            setattr(self, key, value)
+        self.extra_width = extra_width
+        self.trc_rate = trc_rate
+        self.entry_exit = entry_exit
+
+        if trc_rate and extra_width:
+            tab_extend = 8 * pi / (tool.diameter * trc_rate)
+        else:
+            tab_extend = 1
+        if props.allow_helical_entry:
+            tab_extend += 0.5
+        self.tab_length = tab_extend
+
         if isinstance(tabs, int):
             contours_for_tabs = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin, tool.climb)
             newtabs = []
             for contour in contours_for_tabs:
-                newtabs += toolpath.Toolpath(contour, tool).autotabs(self.tool, tabs, width=self.tab_length())
-            tabs = newtabs
-        self.tabs = tabs
+                newtabs += toolpath.Toolpath(contour, tool).autotabs(self.tool, tabs, width=self.tab_length)
+            self.tabs = newtabs
+        else:
+            self.tabs = tabs
         self.cutpaths = self.build_cutpaths(0)
     def build_cutpaths(self, margin):
         path_output = self.build_paths(margin)
@@ -220,8 +228,6 @@ class TabbedOperation(Operation):
         if self.props.actual_tab_depth() < self.props.depth:
             raise ValueError("Tab Z=%0.2fmm below cut Z=%0.2fmm." % (tab_depth, self.props.depth))
         Operation.to_gcode(self, gcode)
-    def tab_length(self):
-        return 1.5 if self.props.allow_helical_entry else 1
     def add_tabs_if_close(self, contours, tabs_dict, tab_locations, maxd):
         for i in contours:
             if i not in tabs_dict:
@@ -241,18 +247,6 @@ class TabbedOperation(Operation):
             pt2 = path.offset_point(pos, (margin + self.tool.diameter / 2) * (1 if self.outside else -1))
             newtabs.append(pt2)
         return newtabs
-
-class Contour(TabbedOperation):
-    def __init__(self, shape, outside, tool, machine_params, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):
-        if not shape.closed:
-            raise ValueError("Contours cuts are not supported for open shapes")
-        if trc_rate and extra_width:
-            tab_extend = 8 * pi / (tool.diameter * trc_rate)
-        else:
-            tab_extend = 1
-        TabbedOperation.__init__(self, shape, tool, machine_params, props, outside, tabs, { 'extra_width' : extra_width, 'trc_rate' : trc_rate, 'entry_exit' : entry_exit, 'tab_extend' : tab_extend})
-    def tab_length(self):
-        return self.tab_extend
     def build_paths(self, margin):
         trc_rate = self.trc_rate
         extra_width = self.extra_width
@@ -260,8 +254,8 @@ class Contour(TabbedOperation):
         max_tab_distance = tool.diameter + abs(extra_width)
         paths_for_helical_entry = []
         if trc_rate and extra_width:
-            contour_paths = cam.contour.pseudotrochoidal(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
-            contours = toolpath.Toolpaths([toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths]).flattened() if contour_paths else []
+            contour_paths_with_segs = cam.contour.pseudotrochoidal(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb, trc_rate * extra_width, 0.5 * extra_width)
+            contours = [toolpath.Toolpath(tp, tool, segmentation=segmentation) for tp, segmentation in contour_paths_with_segs]
         else:
             toolpaths = []
             contour_paths = cam.contour.plain(self.shape, tool.diameter, self.outside, self.props.margin + margin, tool.climb)
@@ -273,7 +267,7 @@ class Contour(TabbedOperation):
                 res = cam.contour.plain(shapes.Shape(tp.nodes, True), tool.min_helix_diameter, self.outside, 0, tool.climb)
                 if res:
                     paths_for_helical_entry += res
-            contours = toolpath.Toolpaths(toolpaths).flattened() if contour_paths else []
+            contours = toolpaths
         if not contours:
             return None
         tab_locations = self.calc_tab_locations_on_contours(contours, margin)
@@ -295,10 +289,10 @@ class Contour(TabbedOperation):
         self.add_tabs_if_close(contours, tabs_dict, tab_locations, tool.diameter * sqrt(2))
         for i in contours:
             if i in tabs_dict:
-                i.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length())
+                i.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length)
                 ctwins = twins.get(i, [])
                 for j in ctwins:
-                    j.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length())
+                    j.tab_maker = toolpath.TabMaker(tabs_dict[i], 5 * max_tab_distance, self.tab_length)
         return PathOutput(contours, paths_for_helical_entry, twins)
     def operation_name(self):
         return "Contour/Outside" if self.outside else "Contour/Inside"
@@ -369,25 +363,6 @@ class Contour(TabbedOperation):
                     twins[contour] = [toolpath.Toolpath(i, tool) for i in offset]
             res.append(contour)
         return res
-
-class TrochoidalContour(TabbedOperation):
-    def __init__(self, shape, outside, tool, machine_params, props, nrad, nspeed, tabs):
-        if not shape.closed:
-            raise ValueError("Contours cuts are not supported for open shapes")
-        TabbedOperation.__init__(self, shape, tool, machine_params, props, outside, tabs, { 'nrad' : nrad * 0.5 * tool.diameter, 'nspeed' : nspeed})
-    def build_paths(self, margin):
-        nrad = self.nrad
-        nspeed = self.nspeed
-        contours = self.shape.contour(self.tool, outside=self.outside, displace=nrad + self.props.margin + margin)
-        if not self.outside:
-            nrad = -nrad
-        trochoidal_func = lambda contour: shapes.trochoidal_transform(contour, nrad, nspeed)
-        newtabs = self.calc_tab_locations_on_contours(contours, margin)
-        contours = toolpath.Toolpaths([toolpath.Toolpath(tp.path, tool, transform=trochoidal_func) for tp in contours.toolpaths])
-        return contours, self.nrad, {}
-    def tab_length(self):
-        # This needs tweaking
-        return 1 + self.nrad
 
 class RetractSchedule(object):
     pass

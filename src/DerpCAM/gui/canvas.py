@@ -69,10 +69,6 @@ class OperationsRendererWithSelection(view.OperationsRenderer):
             PathPoint(midpoint.x + d2 * cos(angle + da2), midpoint.y + d2 * sin(angle + da2)),
         ])
     def renderArrowsForPath(self, arrows, pen, path):
-        if isinstance(path, toolpath.Toolpaths):
-            for tp in path.toolpaths:
-                self.paintArrowsForPath(e, qp, tp)
-            return
         tlength = path.tlength
         i = 0
         pos = 0

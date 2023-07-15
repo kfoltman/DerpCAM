@@ -110,7 +110,6 @@ class OperationsRenderer(object):
         self.renderRapids(owner)
         self.renderShapes(owner)
     def addRapids(self, owner, pen, path, lastpt, op, is_descend):
-        assert not isinstance(path, toolpath.Toolpaths)
         if is_descend:
             if path.helical_entry:
                 he = path.helical_entry
@@ -140,17 +139,9 @@ class OperationsRenderer(object):
             pen2 = pen
         return QBrush(pen2.color())
     def addToolpaths(self, owner, pen, path, stage, operation):
-        if isinstance(path, toolpath.Toolpaths):
-            for tp in path.toolpaths:
-                self.addToolpaths(owner, pen, tp, stage, operation)
-            return
         path = path.transformed()
         self.addToolpathsTransformed(owner, pen, path, stage, operation)
     def addToolpathsTransformed(self, owner, pen, path, stage, operation):
-        if isinstance(path, toolpath.Toolpaths):
-            for tp in path.toolpaths:
-                self.addToolpathsTransformed(owner, pen, tp, stage, operation)
-            return
         if stage == 1:
             t = time.time()
             # print ("Before buffer")

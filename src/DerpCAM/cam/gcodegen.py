@@ -397,23 +397,23 @@ class Gcode(object):
 # CutLayer2D is a single uninterrupted toolpath instance (tabbed or not) at a
 # certain depth. It is produced by CutPath classes based on the shape
 # provided from outside, series of LayerInfo objects and optionally OffsetRange
-# when CutPathWallProfile is used. CalculatedSubpaths is the intermediate
+# when CutPathWallProfile is used. CalculatedContours is the intermediate
 # stage.
 
 class CutLayer2D(object):
-    def __init__(self, prev_depth, depth, subpaths, force_join=False, helical_from_top=False):
+    def __init__(self, prev_depth, depth, contour, force_join=False, helical_from_top=False):
         self.prev_depth = prev_depth
         self.depth = depth
-        self.subpaths = subpaths
+        self.segments = contour.segments
         self.force_join = force_join
         self.helical_from_top = helical_from_top
-        self.bounds = toolpath.Toolpaths(self.subpaths).bounds
+        self.bounds = toolpath.Toolpath.max_bounds(self.segments)
         self.parent = None
         self.children = []
         self.linked = []
-        if subpaths and subpaths[0]:
-            lastpt = subpaths[0].path.seg_start()
-            for i in subpaths:
+        if self.segments and self.segments[0]:
+            lastpt = self.segments[0].path.seg_start()
+            for i in self.segments:
                 assert i.path.seg_start().dist(lastpt) < 1e-6
                 lastpt = i.path.seg_end()
     def overlaps(self, another):
@@ -584,7 +584,7 @@ class BaseCutPath(object):
             layer_tree.finish_level()
         return layer_tree.flatten()
     def cutlayers_for_layer(self, layer):
-        return [CutLayer2D(layer.prev_depth, layer.depth, self.subpaths_for_layer(layer))]
+        return [CutLayer2D(layer.prev_depth, layer.depth, contour) for contour in self.contours_for_layer(layer)]
     def z_already_cut_here(self, layer, subpath):
         return max(self.props.actual_tab_depth(), layer.prev_depth) if subpath.is_tab else layer.prev_depth
     def z_to_be_cut(self, layer, subpath):
@@ -614,8 +614,8 @@ class CutPath2D(BaseCutPath):
         self.correct_helical_entry(self.subpaths_full)
         self.generate_preview(self.subpaths_full)
         self.cut_layers = self.to_layers()
-    def subpaths_for_layer(self, layer):
-        return self.subpaths_full
+    def contours_for_layer(self, layer):
+        return [PathContour([subpath]) for subpath in self.subpaths_full]
     def to_preview(self):
         preview = []
         for i in self.subpaths_full:
@@ -625,18 +625,19 @@ class CutPath2D(BaseCutPath):
 # A wrapper/adapter to allow using CutLayerTree for preview paths
 # Takes depth and Toolpath/Toolpaths and pretends to be a CutLayer.
 class PreviewSubpath(object):
-    def __init__(self, max_depth, path):
+    def __init__(self, max_depth, contour):
         self.max_depth = max_depth
-        self.path = path
-        self.bounds = path.bounds
+        self.contour = contour
+        self.path = contour.segments
+        self.bounds = toolpath.Toolpath.max_bounds(contour.segments)
         self.children = []
         self.linked = []
     def overlaps(self, another):
         return bounds_overlap(self.bounds, another.bounds)
 
-class CalculatedSubpaths(object):
-    def __init__(self, subpaths, max_depth):
-        self.subpaths = subpaths
+class CalculatedContours(object):
+    def __init__(self, contours, max_depth):
+        self.contours = contours
         self.max_depth = max_depth
 
 # Single toolpath + variable margin, Z dependent
@@ -655,68 +656,69 @@ class CutPathWallProfile(BaseCutPath):
             # Use pocket logic for the entire thing
             return self.cutlayers_for_margin(layer, layer.offsets.start_offset)
         else:
+            # Progressive cutting of profile edges
             cutlayers = []
             for offset in layer.offsets.values():
                 cutlayers += self.cutlayers_for_margin(layer, offset)
             return cutlayers
-    def cutlayers_for_margin(self, layer, margin):
+    def get_contours_for_layer_and_margin(self, layer, margin):
+        # Generates a list of contours at a given margin (offset)
+        # and layer status (sublayer, below/at/above tabs).
         key = (margin, layer.is_sublayer, layer.tab_status)
         layer_depth = layer.depth
-        csubpaths = self.calculated_layers.get(key)
-        if csubpaths is not None:
-            if layer_depth < csubpaths.max_depth:
-                csubpaths.max_depth = layer_depth
-            subpaths = csubpaths.subpaths
-        else:
-            # Continuous (non-tab) version first, need it for everything else
-            key2 = (margin, layer.is_sublayer, LayerInfo.TAB_ABOVE)
-            csubpaths = self.calculated_layers.get(key2)
-            if csubpaths is None:
-                path_output = self.build_layer_func(margin, layer.is_sublayer)
-                if path_output is None:
-                    subpaths = []
-                else:
-                    assert isinstance(path_output, PathOutput)
-                    subpaths = []
-                    for path in path_output.paths:
-                        subpaths.append(path.optimize())
-                        pbpaths = path_output.piggybacked_paths_dict.get(path, [])
-                        subpaths += [pbpath.optimize() for pbpath in pbpaths]
-                    self.correct_helical_entry(subpaths)
-                self.generate_preview(subpaths)
-                csubpaths = CalculatedSubpaths(subpaths, layer.depth)
-                self.calculated_layers[key2] = csubpaths
+        # First check for exact match (with tabs and trochoid status as requested)
+        ccontours = self.calculated_layers.get(key)
+        if ccontours is not None:
+            # Found it - great, nothing else to do!
+            return ccontours
+        # No exact match, but maybe we have at least a basic offset version.
+        key2 = (margin, layer.is_sublayer, LayerInfo.TAB_ABOVE)
+        ccontours = self.calculated_layers.get(key2)
+        if ccontours is None:
+            # Nope, need to build it.
+            path_output = self.build_layer_func(margin, layer.is_sublayer)
+            if path_output is None:
+                contours = []
             else:
-                subpaths = csubpaths.subpaths
-            if key2 != key:
-                # Split by tabs but without "untrochoidifying" yet
-                key3 = (margin, layer.is_sublayer, LayerInfo.TAB_FIRST)
-                csubpaths = self.calculated_layers.get(key3)
-                if csubpaths is None:
-                    subpaths = [subpath.tabify(self) for subpath in subpaths]
-                    csubpaths = CalculatedSubpaths(subpaths, layer.depth)
-                    self.calculated_layers[key3] = csubpaths
-                else:
-                    subpaths = csubpaths.subpaths
-                if key3 != key:
-                    # Untrochoidify and remove helical entry from top of stock if needed
-                    assert layer.tab_status == LayerInfo.TAB_BELOW
-                    subpaths = [subpath.for_tab_below() for subpath in subpaths]
-                    csubpaths = CalculatedSubpaths(subpaths, layer.depth)
-                    self.calculated_layers[key] = csubpaths
-        self.requested_layers.add(csubpaths)
-        res = []
-        if subpaths:
-            for subpath in subpaths:
-                if isinstance(subpath, toolpath.Toolpath):
-                    # Single contour
-                    res.append(CutLayer2D(layer.prev_depth, layer.depth, [subpath]))
-                elif isinstance(subpath, toolpath.Toolpaths):
-                    # Single contour but split into tabs
-                    res.append(CutLayer2D(layer.prev_depth, layer.depth, subpath.flattened()))
-                else:
-                    assert False
-        return res
+                assert isinstance(path_output, PathOutput)
+                contours = path_output.to_contours()
+                for contour in contours:
+                    self.correct_helical_entry(contour.segments)
+                    self.generate_preview(contour.segments)
+            # Store it for later
+            ccontours = CalculatedContours(contours, layer.depth)
+            self.calculated_layers[key2] = ccontours
+        if key == key2:
+            # Basic offset is what was requested, so just return it.
+            return ccontours
+        # At this point, it's either the TAB_FIRST (with tabs and maybe
+        # trochoids) or TAB_BELOW (with tabs but no trochoids). First
+        # add tabs then.
+        key3 = (margin, layer.is_sublayer, LayerInfo.TAB_FIRST)
+        contours_without_tabs = ccontours.contours
+        ccontours = self.calculated_layers.get(key3)
+        if ccontours is None:
+            ccontours = CalculatedContours([contour.tabify(self) for contour in contours_without_tabs], layer.depth)
+            self.calculated_layers[key3] = ccontours
+        if key == key3:
+            # Basic offset + tabs is what was requested, so just return it.
+            return ccontours
+        # Need to straighten the trochoids
+        contours_with_tabs = ccontours.contours
+        assert layer.tab_status == LayerInfo.TAB_BELOW
+        ccontours = CalculatedContours([contour.untrochoidify() for contour in contours_with_tabs], layer.depth)
+        self.calculated_layers[key] = ccontours
+        return ccontours
+    def cutlayers_for_margin(self, layer, margin):
+        # Generates a list of contours at a given margin (offset)
+        # and layer status (sublayer, below/at/above tabs).
+        key = (margin, layer.is_sublayer, layer.tab_status)
+        layer_depth = layer.depth
+        ccontours = self.get_contours_for_layer_and_margin(layer, margin)
+        if layer_depth < ccontours.max_depth:
+            ccontours.max_depth = layer_depth
+        self.requested_layers.add(ccontours)
+        return [CutLayer2D(layer.prev_depth, layer.depth, contour) for contour in ccontours.contours]
     def to_preview(self):
         # Sort cuts by areas
         layer_tree = CutLayerTree()
@@ -727,20 +729,14 @@ class CutPathWallProfile(BaseCutPath):
                 if last_depth is not None:
                     layer_tree.finish_level()
                 last_depth = cs.max_depth
-            for i in cs.subpaths:
-                layer_tree.add(PreviewSubpath(cs.max_depth, i))
+            for contour in cs.contours:
+                layer_tree.add(PreviewSubpath(cs.max_depth, contour))
         layer_tree.finish_level()
         flattened = layer_tree.flatten()
         preview = []
         for cs in flattened:
-            sp = cs.path
-            if isinstance(sp, toolpath.Toolpath):
-                preview.append((self.props.actual_tab_depth() if sp.is_tab else cs.max_depth, sp))
-            elif isinstance(sp, toolpath.Toolpaths):
-                for i in sp.toolpaths:
-                    preview.append((self.props.actual_tab_depth() if i.is_tab else cs.max_depth, i))
-            else:
-                assert False
+            for subpath in cs.path:
+                preview.append((self.props.actual_tab_depth() if subpath.is_tab else cs.max_depth, subpath))
         #self.dump_preview(preview)
         return preview
     def dump_preview(self, preview):
@@ -753,12 +749,31 @@ class CutPathWallProfile(BaseCutPath):
                 print (depth, f"({b[0]:0.3f}, {b[1]:0.3f}) - ({b[2]:0.3f}, {b[3]:0.3f})", path.helical_entry)
         print ("Dump preview end")
 
+# A continuous cut outline, consisting of one or more Toolpath objects. Can have multiple segments (for tabbed
+# outlines), but they need to form a continuous line (the next one must start where the previous one ends).
+class PathContour(object):
+    def __init__(self, segments):
+        assert isinstance(segments, list)
+        self.segments = segments
+    def tabify(self, cut):
+        assert len(self.segments) == 1
+        return PathContour(self.segments[0].tabify(cut))
+    def untrochoidify(self):
+        return PathContour([item.for_tab_below() for item in self.segments])
+
 class PathOutput(object):
     def __init__(self, paths, paths_for_helical_entry, piggybacked_paths_dict):
         self.paths = paths
         self.paths_for_helical_entry = paths_for_helical_entry
-        # Additional paths to cut before a given path, at each depth level (used for widened slots)
+        # Additional paths to cut after a given path, at each depth level (used for widened slots)
         self.piggybacked_paths_dict = piggybacked_paths_dict
+    def to_contours(self):
+        contours = []
+        for path in self.paths:
+            contours.append(PathContour([path.optimize()]))
+            for pbpath in self.piggybacked_paths_dict.get(path, []):
+                contours.append(PathContour([pbpath.optimize()]))
+        return contours
 
 class BaseCut(object):
     def __init__(self, machine_params, props, tool):
@@ -783,10 +798,6 @@ class VCarveCut(BaseCut):
             self.go_to_safe_z(gcode)
         gcode.section_info(f"End v-carve cutpath")
 
-    def build_subpath(self, gcode, cutpath, layers, subpath):
-        if subpath.path.length() < 0.001:
-            return
-
 class BaseCutLayered(BaseCut):
     def __init__(self, machine_params, props, tool, cutpaths):
         BaseCut.__init__(self, machine_params, props, tool)
@@ -808,24 +819,24 @@ class BaseCutLayered(BaseCut):
 
 # Simple tabbed 2D toolpath
 class BaseCut2D(BaseCutLayered):
-    def build_layer(self, gcode, cutpath, layer):
-        subpaths = layer.subpaths
-        assert subpaths
-        self.start_layer(gcode, layer)
-        for subpath in subpaths:
-            self.build_subpath(gcode, cutpath, layer, subpath)
+    def build_layer(self, gcode, cutpath, cutlayer):
+        segments = cutlayer.segments
+        assert segments
+        self.start_layer(gcode, cutlayer)
+        for segment in segments:
+            self.build_segment(gcode, cutpath, cutlayer, segment)
 
     def start_layer(self, gcode, layer):
-        subpaths = layer.subpaths
+        segments = layer.segments
         # Not a continuous path, need to jump to a new place
-        firstpt = subpaths[0].path.seg_start()
+        firstpt = segments[0].path.seg_start()
         # Assuming <1% of tool diameter of a gap is harmless enough. The tolerance
         # needs to be low enough to avoid exceeding cutter engagement specified,
         # but high enough not to be tripped by rasterization errors from
         # pyclipper etc.
         tolerance = self.tool.diameter * 0.01
-        if subpaths[0].helical_entry:
-            firstpt = subpaths[0].helical_entry.start
+        if segments[0].helical_entry:
+            firstpt = segments[0].helical_entry.start
             # Allow up to stepover of discrepancy between the helical entry
             # and the starting point. This is to accommodate corners - the circle
             # cut by helical entry doesn't reach into corners, but it is allowed
@@ -845,24 +856,15 @@ class BaseCut2D(BaseCutLayered):
                 gcode.linear(x=firstpt.x, y=firstpt.y)
         self.lastpt = firstpt
 
-    def start_subpath(self, subpath):
-        pass
-
-    def end_subpath(self, subpath):
-        pass
-
-    def build_subpath(self, gcode, cutpath, layer, subpath):
+    def build_segment(self, gcode, cutpath, layer, subpath):
         if subpath.path.length() < 0.001:
             return
-        # This will always be false for subpaths_full.
         newz = cutpath.z_to_be_cut(layer, subpath)
-        self.start_subpath(subpath)
         self.enter_or_leave_cut(gcode, cutpath, layer, subpath, newz)
         assert self.lastpt is not None
         assert isinstance(self.lastpt, PathPoint)
         self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
         assert isinstance(self.lastpt, PathNode)
-        self.end_subpath(subpath)
 
     def enter_or_leave_cut(self, gcode, cutpath, layer, subpath, newz):
         if newz != self.curz:

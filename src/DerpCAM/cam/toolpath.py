@@ -310,8 +310,8 @@ class Toolpath(object):
 
     def tabify(self, cutpath):
         if not self.tab_maker:
-            return self
-        return Toolpaths(self.tab_maker.tabify(cutpath, self))
+            return [self]
+        return self.tab_maker.tabify(cutpath, self)
 
     def render_vcarve_as_outlines(self):
         def ring2points(ring):
@@ -379,42 +379,13 @@ class Toolpath(object):
         return self.path.is_empty()
     def is_vcarve(self):
         return all([isinstance(i.speed_hint, DesiredDiameter) for i in self.path.nodes])
-
-class Toolpaths(object):
-    def __init__(self, toolpaths):
-        self.set_toolpaths(toolpaths)
-    def set_toolpaths(self, toolpaths):
-        self.toolpaths = toolpaths
-        self.bounds = self.calc_bounds()
-        self.flattened_cache = self.calc_flattened()
-    def flattened(self):
-        return self.flattened_cache
-    def calc_flattened(self):
-        res = []
-        for path in self.toolpaths:
-            if isinstance(path, Toolpaths):
-                res += path.flattened()
-            elif isinstance(path, Toolpath):
-                res.append(path)
-            else:
-                assert False, f"Unexpected type: {type(path)}"
-        return res
-    def calc_bounds(self):
-        return max_bounds(*[tp.bounds for tp in self.toolpaths])
-    def lines_to_arcs(self):
-        return Toolpaths([tp.lines_to_arcs() for tp in self.toolpaths])
-    def optimize_lines(self):
-        return Toolpaths([tp.optimize_lines() for tp in self.toolpaths])
-    def optimize(self):
-        return Toolpaths([tp.optimize() for tp in self.toolpaths])
-    def is_empty(self):
-        return all([tp.is_empty() for tp in self.toolpaths])
-    def for_tab_below(self):
-        return Toolpaths([i.for_tab_below() for i in self.toolpaths])
+    @staticmethod
+    def max_bounds(toolpaths):
+        return max_bounds(*[tp.bounds for tp in toolpaths])
 
 def findPathNesting(tps):
     nestings = []
-    contours = Toolpaths(tps).flattened()
+    contours = tps
     contours = sorted(contours, key=lambda item: bounds_area(item.bounds))
     for subtp in contours:
         for children in nestings:
@@ -452,10 +423,6 @@ def joinClosePaths(tps):
     last = None
     res = []
     for tp in tps:
-        if isinstance(tp, Toolpaths):
-            res.append(tp)
-            last = None
-            continue
         if last is not None and last.tool is tp.tool:
             points = tp.path.nodes
             found = False
@@ -499,10 +466,6 @@ def joinClosePathsWithCollisionCheck(tps, boundary, islands):
     last = None
     res = []
     for tp in tps:
-        if isinstance(tp, Toolpaths):
-            res.append(tp)
-            last = None
-            continue
         if last is not None and last.tool is tp.tool:
             points = tp.path.nodes
             found = False
@@ -532,9 +495,6 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
     boundary_path = boundary_path.force_orientation(True)
     island_paths = [IntPath(i).force_orientation(True) for i in islands]
     for tp in toolpaths:
-        if type(tp) is Toolpaths:
-            findHelicalEntryPoints(tp.toolpaths, tool, boundary, islands, margin)
-            continue
         candidates = [tp.path.nodes[0]]
         if len(tp.path.nodes) > 1 and False:
             p1 = tp.path.nodes[0]
@@ -572,33 +532,3 @@ def startWithClosestPoint(path, pt, dia):
         path.path.nodes = path.path.nodes[mdpos:] + path.path.nodes[:mdpos + 1]
         return True
     return False
-
-def mergeToolpaths(tps, new, dia):
-    if type(new) is Toolpath:
-        new = [new]
-    else:
-        new = new.toolpaths
-    if not tps:
-        tps.insert(0, Toolpaths(new))
-        return
-    last = tps[-1]
-    new2 = []
-    for i in new:
-        assert i.path.closed
-        pt = i.path.seg_start()
-        found = False
-        new_toolpaths = []
-        for l in last.toolpaths:
-            if found:
-                new_toolpaths.append(l)
-                continue
-            if startWithClosestPoint(l, pt, dia):
-                new_toolpaths.append(i)
-                new_toolpaths.append(l)
-                found = True
-            else:
-                new_toolpaths.append(l)
-        if not found:
-            new_toolpaths.append(i)
-        last.set_toolpaths(new_toolpaths)
-
