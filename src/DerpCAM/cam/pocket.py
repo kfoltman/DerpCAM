@@ -87,7 +87,7 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
     for path in islands_transformed_nonoverlap:
         for ints in shapes.Shape._intersection(path, *boundary_transformed):
             # diff with other islands
-            tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool)]
+            tps_islands += [toolpath.Toolpath(geom.Path(ints, True), tool, is_edge=True)]
     displace_now = displace + roughing_offset
     stepover = tool.stepover * tool.diameter
 
