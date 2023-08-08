@@ -1,8 +1,13 @@
 from .common_model import *
 from .drawing_model import DrawingItemTreeItem, DrawingPolylineTreeItem, DrawingCircleTreeItem, \
-    DrawingTextTreeItem, DrawingTreeItem, DrawingTextStyleHAlign, DrawingTextStyleVAlign, DrawingTextStyle
-from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, PresetDerivedAttributes
+    DrawingTextTreeItem, DrawingTreeItem, DrawingTextStyleHAlign, DrawingTextStyleVAlign, DrawingTextStyle, \
+    JoinItemsUndoCommand, AddDrawingItemsUndoCommand, DeleteDrawingItemsUndoCommand, \
+    ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand
+from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, PresetDerivedAttributes, \
+    ModifyToolUndoCommand, RevertToolUndoCommand, \
+    AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand
 from .workpiece_model import MaterialType, WorkpieceTreeItem
+from .worker import WorkerThread, WorkerThreadPack
 
 debug_inventory_matching = False
 
@@ -110,77 +115,6 @@ def not_none(*args):
         if i is not None:
             return True
     return False
-
-class WorkerThread(threading.Thread):
-    def __init__(self, parentOp, workerFunc, cam):
-        self.worker_func = workerFunc
-        self.parent_operation = parentOp
-        self.cam = cam
-        self.exception = None
-        self.exception_text = None
-        self.progress = (0, 10000000)
-        self.cancelled = False
-        threading.Thread.__init__(self, target=self.threadMain)
-    def getProgress(self):
-        return self.progress
-    def cancel(self):
-        self.cancelled = True
-    def threadMain(self):
-        try:
-            self.worker_func()
-            if self.cam and self.cam.is_nothing():
-                self.parent_operation.addWarning("No cuts produced")
-            self.progress = (self.progress[1], self.progress[1])
-        except Exception as e:
-            import traceback
-            errorText = str(e)
-            if not errorText:
-                if isinstance(e, AssertionError):
-                    errorText = traceback.format_exc(limit=1)
-                else:
-                    errorText = type(e).__name__
-            self.exception = e
-            self.exception_text = errorText
-            if self.parent_operation and not self.parent_operation.error:
-                self.parent_operation.error = errorText
-            traceback.print_exc()
-
-class WorkerThreadPack(object):
-    def __init__(self, parentOp, threadDataList, parentCAM):
-        self.parent_operation = parentOp
-        self.parent_operation_cam = parentCAM
-        self.threads = [WorkerThread(parentOp, workerFunc, cam) for cam, workerFunc in threadDataList]
-        self.exception = None
-        self.exception_text = None
-    def getProgress(self):
-        num = denom = 0
-        for thread in self.threads:
-            progress = thread.getProgress()
-            num += progress[0]
-            denom += progress[1]
-        return (num, denom)
-    def start(self):
-        for thread in self.threads:
-            thread.start()
-    def cancel(self):
-        for thread in self.threads:
-            thread.cancel()
-    def join(self):
-        for thread in self.threads:
-            thread.join()
-            self.parent_operation_cam.add_all(thread.cam.operations)
-        exceptions = ""
-        for thread in self.threads:
-            if thread.exception is not None:
-                self.exception = thread.exception
-                break
-        for thread in self.threads:
-            if thread.exception is not None:
-                exceptions += thread.exception_text
-        if exceptions:
-            self.exception_text = exceptions
-    def is_alive(self):
-        return any([thread.is_alive() for thread in self.threads])
 
 @CAMTreeItem.register_class
 class OperationTreeItem(CAMTreeItem):
@@ -794,18 +728,6 @@ class OperationsModel(QStandardItemModel):
         self.takeRow(row)
         return row
 
-class MultipleItemUndoContext(object):
-    def __init__(self, document, items, title_func):
-        self.document = document
-        self.items = items
-        self.title_func = title_func
-    def __enter__(self):
-        if self.items and len(self.items) > 1:
-            self.document.undoStack.beginMacro(self.title_func(len(self.items)))
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        if self.items and len(self.items) > 1:
-            self.document.undoStack.endMacro()
-
 class AddOperationUndoCommand(QUndoCommand):
     def __init__(self, document, item, parent, row):
         if isinstance(item, OperationTreeItem):
@@ -828,24 +750,6 @@ class AddOperationUndoCommand(QUndoCommand):
         if isinstance(self.item, CycleTreeItem):
             self.document.project_toolbits[self.item.cutter.name] = self.item.cutter
             self.item.document.refreshToolList()
-
-class DeletePresetUndoCommand(QUndoCommand):
-    def __init__(self, document, preset):
-        QUndoCommand.__init__(self, "Delete preset: " + preset.name)
-        self.document = document
-        self.preset = preset
-        self.was_default = False
-    def undo(self):
-        self.preset.toolbit.undeletePreset(self.preset)
-        if self.was_default:
-            self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
-        self.document.refreshToolList()
-    def redo(self):
-        self.preset.toolbit.deletePreset(self.preset)
-        if self.document.default_preset_by_tool.get(self.preset.toolbit, None) is self.preset:
-            del self.document.default_preset_by_tool[self.preset.toolbit]
-            self.was_default = True
-        self.document.refreshToolList()
 
 class DeleteCycleUndoCommand(QUndoCommand):
     def __init__(self, document, cycle):
@@ -903,18 +807,6 @@ class DeleteOperationUndoCommand(QUndoCommand):
         else:
             self.item.cancelWorker()
 
-class PropertySetUndoCommand(QUndoCommand):
-    def __init__(self, property, subject, old_value, new_value):
-        QUndoCommand.__init__(self, "Set " + property.name)
-        self.property = property
-        self.subject = subject
-        self.old_value = old_value
-        self.new_value = new_value
-    def undo(self):
-        self.property.setData(self.subject, self.old_value)
-    def redo(self):
-        self.property.setData(self.subject, self.new_value)
-
 class ActiveSetUndoCommand(QUndoCommand):
     def __init__(self, changes):
         QUndoCommand.__init__(self, "Toggle active status")
@@ -952,290 +844,6 @@ class MoveItemUndoCommand(QUndoCommand):
         self.newParent.insertRow(self.newPos, self.child)
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
-
-class AddPresetUndoCommand(QUndoCommand):
-    def __init__(self, item, preset):
-        QUndoCommand.__init__(self, "Create preset")
-        self.item = item
-        self.preset = preset
-    def undo(self):
-        self.item.inventory_tool.deletePreset(self.preset)
-        self.item.document.refreshToolList()
-    def redo(self):
-        self.item.inventory_tool.presets.append(self.preset)
-        self.item.document.refreshToolList()
-
-class ModifyCutterUndoCommand(QUndoCommand):
-    def __init__(self, item, new_data):
-        QUndoCommand.__init__(self, "Modify cutter")
-        self.item = item
-        self.new_data = new_data
-        self.old_data = None
-    def updateTo(self, data):
-        cutter = self.item.inventory_tool
-        cutter.resetTo(data)
-        cutter.name = data.name
-        self.item.emitDataChanged()
-        self.item.document.refreshToolList()
-    def undo(self):
-        self.updateTo(self.old_data)
-    def redo(self):
-        cutter = self.item.inventory_tool
-        self.old_data = cutter.newInstance()
-        self.updateTo(self.new_data)
-
-class ModifyPresetUndoCommand(QUndoCommand):
-    def __init__(self, item, new_data):
-        QUndoCommand.__init__(self, "Modify preset")
-        self.item = item
-        self.new_data = new_data
-        self.old_data = None
-    def updateTo(self, data):
-        preset = self.item.inventory_preset
-        preset.resetTo(data)
-        preset.name = data.name
-        preset.toolbit = self.item.parent().inventory_tool
-        self.item.emitDataChanged()
-        self.item.document.refreshToolList()
-    def undo(self):
-        self.updateTo(self.old_data)
-    def redo(self):
-        preset = self.item.inventory_preset
-        self.old_data = preset.newInstance()
-        self.updateTo(self.new_data)
-
-class BaseRevertUndoCommand(QUndoCommand):
-    def __init__(self, item):
-        QUndoCommand.__init__(self, self.NAME)
-        self.item = item
-        self.old = None
-    def undo(self):
-        self.updateTo(self.old)
-
-class RevertPresetUndoCommand(BaseRevertUndoCommand):
-    NAME = "Revert preset"
-    def updateTo(self, data):
-        preset = self.item.inventory_preset
-        preset.resetTo(data)
-        preset.toolbit = self.item.parent().inventory_tool
-        self.item.emitDataChanged()
-        self.item.document.refreshToolList()
-    def redo(self):
-        preset = self.item.inventory_preset
-        self.old = preset.newInstance()
-        self.updateTo(preset.base_object)
-
-class RevertToolUndoCommand(BaseRevertUndoCommand):
-    NAME = "Revert tool"
-    def updateTo(self, data):
-        tool = self.item.inventory_tool
-        tool.resetTo(data)
-        self.item.emitDataChanged()
-        self.item.document.refreshToolList()
-    def redo(self):
-        tool = self.item.inventory_tool
-        self.old = tool.newInstance()
-        self.updateTo(tool.base_object)
-
-class BlockmapEntry(object):
-    def __init__(self):
-        self.starts = set()
-        self.ends = set()
-
-class Blockmap(dict):
-    def pt_to_index(self, pt):
-        res = geom.GeometrySettings.RESOLUTION
-        return (int(pt.x * res), int(pt.y * res))
-    def point(self, pt):
-        i = self.pt_to_index(pt)
-        res = self.get(i, None)
-        if res is None:
-            res = self[i] = BlockmapEntry()
-        return res
-    def start_point(self, points):
-        return self.point(points[0].seg_start())
-    def end_point(self, points):
-        return self.point(points[-1].seg_end())
-
-class DeleteDrawingItemsUndoCommand(QUndoCommand):
-    def __init__(self, document, items):
-        QUndoCommand.__init__(self, "Delete drawing items")
-        self.document = document
-        self.items = [(self.document.drawing, item.row(), item) for item in items]
-        self.items = sorted(self.items, key=lambda item: item[1])
-    def undo(self):
-        for parent, pos, item in self.items:
-            parent.insertRow(pos, item)
-        self.document.shapesUpdated.emit()
-    def redo(self):
-        deletedItems = []
-        for parent, pos, item in self.items[::-1]:
-            deletedItems.append(parent.takeRow(pos)[0])
-        self.document.shapesDeleted.emit(deletedItems)
-        self.document.shapesUpdated.emit()
-
-class AddDrawingItemsUndoCommand(QUndoCommand):
-    def __init__(self, document, items):
-        QUndoCommand.__init__(self, "Add drawing items")
-        self.document = document
-        self.items = items
-        self.pos = self.document.drawing.rowCount()
-    def undo(self):
-        deletedItems = []
-        for i in range(len(self.items)):
-            deletedItems.append(self.document.drawing.takeRow(self.pos)[0])
-        self.document.shapesDeleted.emit(deletedItems)
-        self.document.shapesUpdated.emit()
-    def redo(self):
-        self.document.drawing.insertRows(self.pos, self.items)
-        self.document.shapesUpdated.emit()
-
-class ModifyPolylineUndoCommand(QUndoCommand):
-    def __init__(self, document, polyline, new_points, new_closed):
-        QUndoCommand.__init__(self, "Modify polyline")
-        self.document = document
-        self.polyline = polyline
-        self.new_points = new_points
-        self.new_closed = new_closed
-        self.orig_points = polyline.points
-        self.orig_closed = polyline.closed
-    def undo(self):
-        self.polyline.points = self.orig_points
-        self.polyline.closed = self.orig_closed
-        self.polyline.calcBounds()
-        self.document.shapesUpdated.emit()
-    def redo(self):
-        self.polyline.points = self.new_points
-        self.polyline.closed = self.new_closed
-        self.polyline.calcBounds()
-        self.document.shapesUpdated.emit()
-
-class ModifyPolylinePointUndoCommand(QUndoCommand):
-    def __init__(self, document, polyline, position, location, mergeable):
-        QUndoCommand.__init__(self, "Move polyline point")
-        self.document = document
-        self.polyline = polyline
-        self.position = position
-        self.new_location = location
-        self.orig_location = self.polyline.points[self.position]
-        self.mergeable = mergeable
-    def undo(self):
-        self.polyline.points[self.position] = self.orig_location
-        if self.orig_location.is_arc():
-            assert self.position > 0
-            self.polyline.points[self.position - 1] = self.orig_location.p1
-        self.polyline.calcBounds()
-        self.document.shapesUpdated.emit()
-    def redo(self):
-        self.polyline.points[self.position] = self.new_location
-        if self.new_location.is_arc():
-            assert self.position > 0
-            self.polyline.points[self.position - 1] = self.new_location.p1
-        self.polyline.calcBounds()
-        self.document.shapesUpdated.emit()
-    def id(self):
-        return 1000
-    def mergeWith(self, other):
-        if not isinstance(other, ModifyPolylinePointUndoCommand):
-            return False
-        if not self.mergeable:
-            return False
-        self.new_location = other.new_location
-        return True
-
-class JoinItemsUndoCommand(QUndoCommand):
-    def __init__(self, document, items):
-        QUndoCommand.__init__(self, "Join items")
-        self.document = document
-        self.items = items
-        self.original_items = {}
-        self.removed_items = []
-    def undo(self):
-        root = self.document.shapeModel.invisibleRootItem()
-        pos = self.document.drawing.row()
-        root.takeRow(pos)
-        for item, points in self.original_items.items():
-            item.untransformed.points = points
-            item.closed = False
-        for row, item in self.removed_items:
-            self.document.drawing.insertRow(row, item)
-        root.insertRow(pos, self.document.drawing)
-        self.document.shapesUpdated.emit()
-    def redo(self):
-        def rev(pts):
-            return geom.Path(pts, False).reverse().nodes
-        def join(p1, p2):
-            if not p1[-1].is_arc():
-                assert not p2[0].is_arc()
-                return p1[:-1] + p2
-            else:
-                return p1 + p2
-        blockmap = Blockmap()
-        joined = set()
-        edges = set()
-        toRemove = set()
-        toRecalc = set()
-        originals = {}
-        for i in self.items:
-            points = i.untransformed.points
-            originals[i] = points
-            start = blockmap.pt_to_index(points[0].seg_start())
-            end = blockmap.pt_to_index(points[-1].seg_end())
-            # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
-            if len(points) == 2:
-                if ((end, start) in edges or (start, end) in edges):
-                    toRemove.add(i)
-                    continue
-                edges.add((start, end))
-            blockmap.start_point(points).starts.add(i)
-            blockmap.end_point(points).ends.add(i)
-        for bme in blockmap.values():
-            while len(bme.starts) >= 1 and len(bme.ends) >= 1:
-                i = bme.ends.pop()
-                j = bme.starts.pop()
-                if i is j:
-                    i.untransformed.closed = True
-                    del i.untransformed.points[-1:]
-                    continue
-                i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
-                p = blockmap.end_point(j.untransformed.points)
-                p.ends.remove(j)
-                p.ends.add(i)
-                toRecalc.add(i)
-                toRemove.add(j)
-            while len(bme.starts) >= 2:
-                i = bme.starts.pop()
-                j = bme.starts.pop()
-                if i is j:
-                    assert False
-                i.untransformed.points = join(rev(j.untransformed.points), i.untransformed.points)
-                p = blockmap.end_point(j.untransformed.points)
-                p.ends.remove(j)
-                p.starts.add(i)
-                toRecalc.add(i)
-                toRemove.add(j)
-            while len(bme.ends) >= 2:
-                i = bme.ends.pop()
-                j = bme.ends.pop()
-                i.untransformed.points = join(i.untransformed.points, rev(j.untransformed.points))
-                p = blockmap.start_point(j.untransformed.points)
-                p.starts.remove(j)
-                p.ends.add(i)
-                toRecalc.add(i)
-                toRemove.add(j)
-        for i in toRecalc:
-            i.untransformed.calcBounds()
-        root = self.document.shapeModel.invisibleRootItem()
-        pos = self.document.drawing.row()
-        root.takeRow(pos)
-        self.original_items = {k : v for k, v in originals.items() if k in toRecalc}
-        self.removed_items = []
-        for i in toRemove:
-            row = i.row()
-            self.removed_items.append((row, self.document.drawing.takeRow(row)))
-        self.removed_items = self.removed_items[::-1]
-        root.insertRow(pos, self.document.drawing)
-        self.document.shapesUpdated.emit()
 
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
@@ -1780,7 +1388,7 @@ class DocumentModel(QObject):
         self.undoStack.push(ModifyPresetUndoCommand(item, new_data))
     def opModifyCutter(self, cutter, new_data):
         item = self.itemForCutter(cutter)
-        self.undoStack.push(ModifyCutterUndoCommand(item, new_data))
+        self.undoStack.push(ModifyToolUndoCommand(item, new_data))
     def opJoin(self, items):
         self.undoStack.push(JoinItemsUndoCommand(self, items))
     def opModifyPolyline(self, polyline, new_points, new_closed):

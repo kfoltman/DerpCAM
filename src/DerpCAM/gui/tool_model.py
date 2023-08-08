@@ -372,3 +372,105 @@ class ToolPresetTreeItem(CAMTreeItem):
         # Need to refresh properties for any default or calculated values updated
         return set([self] + self.document.allOperationsPlusRefinements(lambda item: item.tool_preset is self.inventory_preset))
 
+class BaseRevertUndoCommand(QUndoCommand):
+    def __init__(self, item):
+        QUndoCommand.__init__(self, self.NAME)
+        self.item = item
+        self.old = None
+    def undo(self):
+        self.updateTo(self.old)
+
+class ModifyToolUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify tool")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        cutter = self.item.inventory_tool
+        cutter.resetTo(data)
+        cutter.name = data.name
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        cutter = self.item.inventory_tool
+        self.old_data = cutter.newInstance()
+        self.updateTo(self.new_data)
+
+class RevertToolUndoCommand(BaseRevertUndoCommand):
+    NAME = "Revert tool"
+    def updateTo(self, data):
+        tool = self.item.inventory_tool
+        tool.resetTo(data)
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def redo(self):
+        tool = self.item.inventory_tool
+        self.old = tool.newInstance()
+        self.updateTo(tool.base_object)
+
+class AddPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, preset):
+        QUndoCommand.__init__(self, "Create preset")
+        self.item = item
+        self.preset = preset
+    def undo(self):
+        self.item.inventory_tool.deletePreset(self.preset)
+        self.item.document.refreshToolList()
+    def redo(self):
+        self.item.inventory_tool.presets.append(self.preset)
+        self.item.document.refreshToolList()
+
+class ModifyPresetUndoCommand(QUndoCommand):
+    def __init__(self, item, new_data):
+        QUndoCommand.__init__(self, "Modify preset")
+        self.item = item
+        self.new_data = new_data
+        self.old_data = None
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.name = data.name
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def undo(self):
+        self.updateTo(self.old_data)
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old_data = preset.newInstance()
+        self.updateTo(self.new_data)
+
+class RevertPresetUndoCommand(BaseRevertUndoCommand):
+    NAME = "Revert preset"
+    def updateTo(self, data):
+        preset = self.item.inventory_preset
+        preset.resetTo(data)
+        preset.toolbit = self.item.parent().inventory_tool
+        self.item.emitDataChanged()
+        self.item.document.refreshToolList()
+    def redo(self):
+        preset = self.item.inventory_preset
+        self.old = preset.newInstance()
+        self.updateTo(preset.base_object)
+
+class DeletePresetUndoCommand(QUndoCommand):
+    def __init__(self, document, preset):
+        QUndoCommand.__init__(self, "Delete preset: " + preset.name)
+        self.document = document
+        self.preset = preset
+        self.was_default = False
+    def undo(self):
+        self.preset.toolbit.undeletePreset(self.preset)
+        if self.was_default:
+            self.document.default_preset_by_tool[self.preset.toolbit] = self.preset
+        self.document.refreshToolList()
+    def redo(self):
+        self.preset.toolbit.deletePreset(self.preset)
+        if self.document.default_preset_by_tool.get(self.preset.toolbit, None) is self.preset:
+            del self.document.default_preset_by_tool[self.preset.toolbit]
+            self.was_default = True
+        self.document.refreshToolList()
+

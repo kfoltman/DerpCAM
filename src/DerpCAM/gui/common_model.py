@@ -211,3 +211,28 @@ def cutterTypesForOperationType(operationType):
     else:
         return inventory.EndMillCutter
 
+
+class PropertySetUndoCommand(QUndoCommand):
+    def __init__(self, property, subject, old_value, new_value):
+        QUndoCommand.__init__(self, "Set " + property.name)
+        self.property = property
+        self.subject = subject
+        self.old_value = old_value
+        self.new_value = new_value
+    def undo(self):
+        self.property.setData(self.subject, self.old_value)
+    def redo(self):
+        self.property.setData(self.subject, self.new_value)
+
+class MultipleItemUndoContext(object):
+    def __init__(self, document, items, title_func):
+        self.document = document
+        self.items = items
+        self.title_func = title_func
+    def __enter__(self):
+        if self.items and len(self.items) > 1:
+            self.document.undoStack.beginMacro(self.title_func(len(self.items)))
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if self.items and len(self.items) > 1:
+            self.document.undoStack.endMacro()
+

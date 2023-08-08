@@ -632,3 +632,203 @@ class DrawingTreeItem(CAMListTreeItem):
         # Properties of operations are not affected
         return set([self])
         
+class BlockmapEntry(object):
+    def __init__(self):
+        self.starts = set()
+        self.ends = set()
+
+class Blockmap(dict):
+    def pt_to_index(self, pt):
+        res = geom.GeometrySettings.RESOLUTION
+        return (int(pt.x * res), int(pt.y * res))
+    def point(self, pt):
+        i = self.pt_to_index(pt)
+        res = self.get(i, None)
+        if res is None:
+            res = self[i] = BlockmapEntry()
+        return res
+    def start_point(self, points):
+        return self.point(points[0].seg_start())
+    def end_point(self, points):
+        return self.point(points[-1].seg_end())
+
+class JoinItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Join items")
+        self.document = document
+        self.items = items
+        self.original_items = {}
+        self.removed_items = []
+    def undo(self):
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        for item, points in self.original_items.items():
+            item.untransformed.points = points
+            item.closed = False
+        for row, item in self.removed_items:
+            self.document.drawing.insertRow(row, item)
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        def rev(pts):
+            return geom.Path(pts, False).reverse().nodes
+        def join(p1, p2):
+            if not p1[-1].is_arc():
+                assert not p2[0].is_arc()
+                return p1[:-1] + p2
+            else:
+                return p1 + p2
+        blockmap = Blockmap()
+        joined = set()
+        edges = set()
+        toRemove = set()
+        toRecalc = set()
+        originals = {}
+        for i in self.items:
+            points = i.untransformed.points
+            originals[i] = points
+            start = blockmap.pt_to_index(points[0].seg_start())
+            end = blockmap.pt_to_index(points[-1].seg_end())
+            # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
+            if len(points) == 2:
+                if ((end, start) in edges or (start, end) in edges):
+                    toRemove.add(i)
+                    continue
+                edges.add((start, end))
+            blockmap.start_point(points).starts.add(i)
+            blockmap.end_point(points).ends.add(i)
+        for bme in blockmap.values():
+            while len(bme.starts) >= 1 and len(bme.ends) >= 1:
+                i = bme.ends.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    i.untransformed.closed = True
+                    del i.untransformed.points[-1:]
+                    continue
+                i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.starts) >= 2:
+                i = bme.starts.pop()
+                j = bme.starts.pop()
+                if i is j:
+                    assert False
+                i.untransformed.points = join(rev(j.untransformed.points), i.untransformed.points)
+                p = blockmap.end_point(j.untransformed.points)
+                p.ends.remove(j)
+                p.starts.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+            while len(bme.ends) >= 2:
+                i = bme.ends.pop()
+                j = bme.ends.pop()
+                i.untransformed.points = join(i.untransformed.points, rev(j.untransformed.points))
+                p = blockmap.start_point(j.untransformed.points)
+                p.starts.remove(j)
+                p.ends.add(i)
+                toRecalc.add(i)
+                toRemove.add(j)
+        for i in toRecalc:
+            i.untransformed.calcBounds()
+        root = self.document.shapeModel.invisibleRootItem()
+        pos = self.document.drawing.row()
+        root.takeRow(pos)
+        self.original_items = {k : v for k, v in originals.items() if k in toRecalc}
+        self.removed_items = []
+        for i in toRemove:
+            row = i.row()
+            self.removed_items.append((row, self.document.drawing.takeRow(row)))
+        self.removed_items = self.removed_items[::-1]
+        root.insertRow(pos, self.document.drawing)
+        self.document.shapesUpdated.emit()
+
+class AddDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Add drawing items")
+        self.document = document
+        self.items = items
+        self.pos = self.document.drawing.rowCount()
+    def undo(self):
+        deletedItems = []
+        for i in range(len(self.items)):
+            deletedItems.append(self.document.drawing.takeRow(self.pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.document.drawing.insertRows(self.pos, self.items)
+        self.document.shapesUpdated.emit()
+
+class DeleteDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items):
+        QUndoCommand.__init__(self, "Delete drawing items")
+        self.document = document
+        self.items = [(self.document.drawing, item.row(), item) for item in items]
+        self.items = sorted(self.items, key=lambda item: item[1])
+    def undo(self):
+        for parent, pos, item in self.items:
+            parent.insertRow(pos, item)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        deletedItems = []
+        for parent, pos, item in self.items[::-1]:
+            deletedItems.append(parent.takeRow(pos)[0])
+        self.document.shapesDeleted.emit(deletedItems)
+        self.document.shapesUpdated.emit()
+
+class ModifyPolylineUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, new_points, new_closed):
+        QUndoCommand.__init__(self, "Modify polyline")
+        self.document = document
+        self.polyline = polyline
+        self.new_points = new_points
+        self.new_closed = new_closed
+        self.orig_points = polyline.points
+        self.orig_closed = polyline.closed
+    def undo(self):
+        self.polyline.points = self.orig_points
+        self.polyline.closed = self.orig_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points = self.new_points
+        self.polyline.closed = self.new_closed
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+
+class ModifyPolylinePointUndoCommand(QUndoCommand):
+    def __init__(self, document, polyline, position, location, mergeable):
+        QUndoCommand.__init__(self, "Move polyline point")
+        self.document = document
+        self.polyline = polyline
+        self.position = position
+        self.new_location = location
+        self.orig_location = self.polyline.points[self.position]
+        self.mergeable = mergeable
+    def undo(self):
+        self.polyline.points[self.position] = self.orig_location
+        if self.orig_location.is_arc():
+            assert self.position > 0
+            self.polyline.points[self.position - 1] = self.orig_location.p1
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.polyline.points[self.position] = self.new_location
+        if self.new_location.is_arc():
+            assert self.position > 0
+            self.polyline.points[self.position - 1] = self.new_location.p1
+        self.polyline.calcBounds()
+        self.document.shapesUpdated.emit()
+    def id(self):
+        return 1000
+    def mergeWith(self, other):
+        if not isinstance(other, ModifyPolylinePointUndoCommand):
+            return False
+        if not self.mergeable:
+            return False
+        self.new_location = other.new_location
+        return True
+
