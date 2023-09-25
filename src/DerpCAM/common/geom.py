@@ -958,7 +958,8 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
     for path in subject_paths:
         pc.AddPath(path.int_points, PT_SUBJECT, False)
     for path in clipper_polys:
-        pc.AddPath(path.int_points, PT_CLIP, True)
+        if Area(path.int_points) > 0:
+            pc.AddPath(path.int_points, PT_CLIP, True)
     tree = pc.Execute2(operation, fillMode, fillMode)
     return tree
 
