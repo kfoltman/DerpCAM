@@ -345,8 +345,8 @@ class PathViewer(QWidget):
     def paintEvent(self, e):
         qp = QPainter()
         qp.begin(self)
-        qp.setRenderHint(1, True)
-        qp.setRenderHint(8, True)
+        qp.setRenderHint(QPainter.Antialiasing, True)
+        qp.setRenderHint(QPainter.HighQualityAntialiasing, True)
 
         self.paintGrid(e, qp)
         self.paintDrawingOps(e, qp)
