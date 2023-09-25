@@ -332,7 +332,13 @@ class Toolpath(object):
     def render_as_outlines(self, props):
         if self.is_vcarve():
             return self.render_vcarve_as_outlines()
-        points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
+        optimize_trochoidals = True
+        if optimize_trochoidals:
+            points = CircleFitter.interpolate_arcs(self.path.without_circles().nodes, False, 2)
+            circles = self.path.only_circles()
+        else:
+            points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
+            circles = []
         resolution = GeometrySettings.RESOLUTION
         diameter = self.tool.depth2dia(props.depth - props.start_depth)
         offset = resolution * diameter / 2
@@ -374,6 +380,8 @@ class Toolpath(object):
         pc = Pyclipper()
         for o in outlines:
             pc.AddPath(o, PT_SUBJECT, True)
+        for c in circles:
+            pc.AddPath(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution), PT_SUBJECT, True)
         outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
         return [PtsFromInts(ints, resolution) for ints in outlines]
     def is_empty(self):

@@ -260,6 +260,8 @@ class Path(object):
         return res
     def without_circles(self):
         return Path([i for i in self.nodes if not i.is_circle()], self.closed)
+    def only_circles(self):
+        return [i.c for i in self.nodes if i.is_circle()]
     def subpath(self, start, end, hint=None):
         res = []
         if hint is None or hint is Ellipsis:
