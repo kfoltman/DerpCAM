@@ -6,6 +6,32 @@ class GuiSettings(object):
     inch_mode = False
     batch_text_hack = False
 
+class EnumClass(object):
+    @classmethod
+    def toString(classInst, value):
+        return classInst.toItem(value, 1)
+    @classmethod
+    def fromString(classInst, value):
+        return classInst.itemFromString(value, 0)
+    @classmethod
+    def itemFromString(classInst, value, def_value=None, loc=0):
+        for data in classInst.descriptions:
+            if value == data[1]:
+                return data[loc]
+        return def_value
+    @classmethod
+    def toItem(classInst, value, loc):
+        for data in classInst.descriptions:
+            if value == data[0]:
+                return data[loc]
+        return None
+    @classmethod
+    def toTuple(classInst, value):
+        for data in classInst.descriptions:
+            if value == data[0]:
+                return data
+        return None
+
 class UnitConverter(object):
     alt_units = {"in", "sfm", "ipm", "ipt"}
     @staticmethod
@@ -208,6 +234,7 @@ class Format(object):
     cutter_dia = mk_fmt(3)
     cutter_length = mk_fmt(2)
     depth_of_cut = mk_fmt(3)
+    width_of_cut = mk_fmt(2)
     thread_pitch = mk_fmt(2)
     feed = mk_fmt(1, unit="mm/min")
     rpm = mk_fmt(1, unit="rpm")

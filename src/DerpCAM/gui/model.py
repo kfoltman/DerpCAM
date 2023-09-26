@@ -8,6 +8,7 @@ from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, Pres
     AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand
 from .workpiece_model import MaterialType, WorkpieceTreeItem
 from .worker import WorkerThread, WorkerThreadPack
+from .wall_profile_mgr import WallProfileEditorDlg
 
 debug_inventory_matching = False
 
@@ -15,6 +16,8 @@ class CutterAdapter(object):
     def getLookupData(self, items):
         assert items
         return items[0].document.getToolbitList(cutterTypesForOperationType(items[0].operation))
+    def getDescription(self, item):
+        return item.description()
     def lookupById(self, id):
         return inventory.IdSequence.lookup(id)    
 
@@ -39,10 +42,30 @@ class ToolPresetAdapter(object):
                 res.append((preset.id, preset.description()))
             res.append((LoadPresetOption(), "<Load a preset>"))
         return res
+    def getDescription(self, item):
+        return item.description()
     def lookupById(self, id):
         if isinstance(id, AltComboOption):
             return id
         return inventory.IdSequence.lookup(id)    
+
+class NewProfileOption(AltComboOption):
+    pass
+
+class WallProfileAdapter(object):
+    def getLookupData(self, item):
+        item = item[0]
+        res = []
+        for profile in inventory.inventory.wall_profiles:
+            res.append((profile.id, profile.name))
+        res.append((NewProfileOption(), "<New wall profile>"))
+        return res
+    def lookupById(self, id):
+        if isinstance(id, AltComboOption):
+            return id
+        return inventory.IdSequence.lookup(id)
+    def getDescription(self, item):
+        return item.description
 
 class CycleTreeItem(CAMTreeItem):
     def __init__(self, document, cutter):
@@ -128,6 +151,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_user_tabs = SetEditableProperty("Tab Locations", "user_tabs", format_func=lambda value: ", ".join([f"({Format.coord(i.x)}, {Format.coord(i.y)})" for i in value]), edit_func=lambda item: item.editTabLocations())
     prop_entry_exit = SetEditableProperty("Entry/Exit points", "entry_exit", format_func=lambda value: ("Applied" if value else "Not applied") + " - double-click to edit", edit_func=lambda item: item.editEntryExit())
     prop_islands = SetEditableProperty("Islands", "islands", edit_func=lambda item: item.editIslands(), format_func=lambda value: f"{len(value)} items - double-click to edit")
+    prop_wall_profile = RefEditableProperty("Wall profile", "wall_profile", WallProfileAdapter(), allow_none=True, none_value="<none>")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
@@ -183,6 +207,7 @@ class OperationTreeItem(CAMTreeItem):
         self.pattern_scale = 100
         self.thread_pitch = None
         self.islands = set()
+        self.wall_profile = None
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
         self.user_tabs = set()
         self.entry_exit = []
@@ -271,6 +296,7 @@ class OperationTreeItem(CAMTreeItem):
         dump['entry_exit'] = [[(pts[0].x, pts[0].y), (pts[1].x, pts[1].y)] for pts in self.entry_exit]
         dump['cutter'] = self.cutter.id
         dump['tool_preset'] = self.tool_preset.id if self.tool_preset else None
+        dump['wall_profile'] = self.wall_profile.id if self.wall_profile is not None else None
         return dump
     def class_specific_load(self, dump):
         self.shape_id = dump.get('shape_id', None)
@@ -278,12 +304,15 @@ class OperationTreeItem(CAMTreeItem):
         self.user_tabs = set(geom.PathPoint(i[0], i[1]) for i in dump.get('user_tabs', []))
         self.entry_exit = [(geom.PathPoint(i[0][0], i[0][1]), geom.PathPoint(i[1][0], i[1][1])) for i in dump.get('entry_exit', [])]
         self.active = dump.get('active', True)
+        self.wall_profile = dump.get('wall_profile', None)
+        if self.wall_profile is not None:
+            self.wall_profile = inventory.IdSequence.lookup(self.wall_profile)
         self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
             self.prop_depth, self.prop_start_depth, 
             self.prop_tab_height, self.prop_tab_count, self.prop_user_tabs,
-            self.prop_entry_exit,
+            self.prop_entry_exit, self.prop_wall_profile,
             self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands,
@@ -319,6 +348,16 @@ class OperationTreeItem(CAMTreeItem):
                     self.startUpdateCAM()
                     self.document.refreshToolList()
                 return
+        if name == 'wall_profile':
+            if isinstance(value, NewProfileOption):
+                profile = inventory.InvWallProfile.new(None, "", "")
+                dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile)
+                if dlg.exec_():
+                    inventory.inventory.wall_profiles.append(profile)
+                    value = profile
+                else:
+                    profile.forget()
+                    return
         if name == 'direction' and self.entry_exit:
             pda = PresetDerivedAttributes(self)
             old_orientation = pda.direction
@@ -591,11 +630,13 @@ class OperationTreeItem(CAMTreeItem):
                 tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, self.cutter.length, pda.rpm, pda.vfeed, pda.stepover / 100.0, self.cutter.thread_angle)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
             elif isinstance(self.cutter, inventory.EndMillCutter):
+                wall_profile = self.wall_profile.shape if self.wall_profile else None
                 is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
                 tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
                     climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
-                zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, )
-                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, pda.entry_mode != inventory.EntryMode.PREFER_RAMP)
+                zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
+                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
+                    pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile)
             elif isinstance(self.cutter, inventory.DrillBitCutter):
                 tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
                 self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
@@ -919,6 +960,8 @@ class DocumentModel(QObject):
         data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items() if v is not None]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operation_cycles'] = [ { 'tool_id' : cycle.cutter.id, 'is_current' : (self.current_cutter_cycle is cycle), 'operations' : [op.store() for op in cycle.items()] } for cycle in self.allCycles() ]
+        wall_profiles_used = set([op.wall_profile.id for op in self.allOperations()])
+        data['wall_profiles'] = [profile.store() for profile in inventory.inventory.wall_profiles if profile.id in wall_profiles_used]
         #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
     def load(self, data):

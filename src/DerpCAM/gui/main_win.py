@@ -7,7 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import guiutils
-from DerpCAM.gui import propsheet, settings, canvas, model, inventory, dock, cutter_mgr, about, draw, editors
+from DerpCAM.gui import propsheet, settings, canvas, model, dock, cutter_mgr, about, draw, editors, wall_profile_mgr
 
 OperationType = model.OperationType
 
@@ -111,6 +111,7 @@ class CAMMainWindow(QMainWindow):
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
+            ("&Wall profiles...", lambda: self.millWallProfiles(), QKeySequence("Shift+Ctrl+W"), "Create, edit and delete wall profile shapes"),
             None,
             ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape as a slotting cut on the outside (part)"),
             ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape as a slotting cut the inside (cutout)"),
@@ -199,6 +200,9 @@ class CAMMainWindow(QMainWindow):
             self.viewer.flashHighlight(None)
     def millAddTool(self):
         self.millSelectTool(dlg_type=cutter_mgr.AddCutterDialog)
+    def millWallProfiles(self):
+        mgr = wall_profile_mgr.WallProfileManagerDlg(self)
+        mgr.exec_()
     def millSelectTool(self, cutter_type=None, dlg_type=cutter_mgr.SelectCutterDialog):
         if not cutter_mgr.selectCutter(self, dlg_type, self.document, cutter_type):
             return False

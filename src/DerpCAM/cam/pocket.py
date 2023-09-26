@@ -202,6 +202,8 @@ def process_rows(rows, tool):
 def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_outer_contour=True, outer_margin=0):
     offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin + roughing_offset, outer_margin)
+    border_paths = [geom.IntPath(path.int_points, True) for path in boundary_transformed_nonoverlap] + [geom.IntPath(pyclipper.ReversePath(path.int_points), True) for path in islands_transformed_nonoverlap]
+    border_paths = [path for path in border_paths if geom.Area(path.int_points) != 0]
 
     coords = sum([i.int_points for i in boundary_transformed], [])
     xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
@@ -251,15 +253,14 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
             for path3 in pyclipper.ClosedPathsFromPolyTree(tree2):
                 row.add_area(geom.Path(geom.PtsFromInts(path3), True))
         #tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed + islands_transformed_nonoverlap])
-        if zigzag:
-            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed_nonoverlap] +
-                [geom.IntPath(pyclipper.ReversePath(path.int_points + path.int_points[0:1]), True) for path in islands_transformed_nonoverlap])
+        if zigzag and border_paths:
+            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], border_paths)
             for path3 in pyclipper.OpenPathsFromPolyTree(tree):
                 row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
         rows.append(row)
     tps = process_rows(rows, tool)
-    if not tps:
-        raise ValueError("Milled area is empty")
+    #if not tps:
+    #    raise ValueError("Milled area is empty")
     if roughing_offset:
         # Recalculate final shapes without the roughing offset
         boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin, 0)

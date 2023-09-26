@@ -1,5 +1,5 @@
-from .propsheet import EnumClass
-from DerpCAM.common.guiutils import Format, UnitConverter
+from DerpCAM.common.guiutils import EnumClass, Format, UnitConverter
+from DerpCAM.cam.wall_profile import UserDefinedWallProfile, WallProfileItem, WallProfileItemType
 import os
 import json
 import sys
@@ -132,6 +132,8 @@ class Serializable(object):
                 setattr(res, i, getattr(self, i))
         res.update_defaults()
         return res
+    def forget(self):
+        IdSequence.unregister(self)
 
 class CutterMaterial(Serializable):
     properties = []
@@ -371,6 +373,23 @@ class ThreadMillCutter(CutterBase):
         else:
             return f"{Format.cutter_dia(self.diameter)} {self.material.name} thread mill, P={Format.thread_pitch(self.min_pitch)}-{Format.thread_pitch(self.max_pitch)}" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
 
+class WallProfileShapeProperty(EncodedProperty):
+    def encode(self, value):
+        return value.store()
+    def decode(self, value):
+        return UserDefinedWallProfile.load(value)
+    def equals(self, v1, v2):
+        return v1.top == v2.top and v1.bottom == v2.bottom
+
+class InvWallProfile(Serializable):
+    properties = [ WallProfileShapeProperty('shape'), "description" ]
+    @classmethod
+    def new(klass, id, name, description, top=None, bottom=None):
+        res = InvWallProfile(id, name)
+        res.description = description
+        res.shape = UserDefinedWallProfile(top, bottom)
+        return res
+
 class Inventory(object):
     def __init__(self):
         self.cutter_materials = {}
@@ -379,10 +398,13 @@ class Inventory(object):
         for name in ("HSS", "carbide"):
             setattr(CutterMaterial, name, CutterMaterial.byName(name))
         self.toolbits = []
+        self.wall_profiles = []
     def addMaterial(self, material):
         name = material.name
         CutterMaterial.add(material)
         self.cutter_materials[material.name] = material
+    def addWallProfile(self, wall_profile):
+        self.wall_profiles.append(wall_profile)
     def materialByName(self, name):
         return self.cutter_materials[name]
     def toolbitByName(self, name, klass=CutterBase):
@@ -411,6 +433,13 @@ class Inventory(object):
             if preset:
                 preset.toolbit = cutter_map[preset.toolbit]
                 preset.toolbit.presets.append(preset)
+        if 'wall_profiles' not in data:
+            self.createStdWallProfiles()
+        else:
+            self.wall_profiles = []
+            for i in data['wall_profiles']:
+                profile = InvWallProfile.load(i)
+                self.addWallProfile(profile)
         return True
     def createStdCutters(self):
         HSS = self.materialByName('HSS')
@@ -437,11 +466,22 @@ class Inventory(object):
             DrillBitCutter.new(54, "6mm HSS", HSS, 6, 70)
                 .addPreset(204, "Wood-untested", 3000, 100, 6),
         ]
+    def createStdWallProfiles(self):
+        self.wall_profiles = [
+            InvWallProfile.new(81, '3° draft', "3 degree draft angle - for casting etc.", [WallProfileItem(0, 30, WallProfileItemType.TAPER, 3)]),
+            InvWallProfile.new(82, '3° draft+r/o', "3 degree draft angle + roundover", [WallProfileItem(0, 2, WallProfileItemType.ROUND_H2V), WallProfileItem(-2, 30, WallProfileItemType.TAPER, 3)], [WallProfileItem(0, 2, WallProfileItemType.ROUND_V2H)]),
+            InvWallProfile.new(83, '1mm chamfer', "45° chamfer of 1mm depth", [WallProfileItem(0, 1, WallProfileItemType.TAPER, 45)]),
+            InvWallProfile.new(84, '2mm roundover', "2mm roundover top and bottom", [WallProfileItem(0, 2, WallProfileItemType.ROUND_H2V)], [WallProfileItem(0, 2, WallProfileItemType.ROUND_V2H)]),
+        ]
+    def deleteWallProfile(self, profile):
+        self.wall_profiles = [p for p in self.wall_profiles if p is not profile]
+        IdSequence.unregister(profile)
     def writeTo(self, dirname, filename):
         res = {
             'cutter_materials' : [ i.store() for i in self.cutter_materials.values() ],
             'tools' : [ i.store() for i in self.toolbits ],
-            'presets' : [ j.store() for i in self.toolbits for j in i.presets ]
+            'presets' : [ j.store() for i in self.toolbits for j in i.presets ],
+            'wall_profiles' : [ i.store() for i in self.wall_profiles ],
         }
         if not os.path.exists(dirname):
             os.makedirs(dirname)

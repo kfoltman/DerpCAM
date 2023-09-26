@@ -962,7 +962,13 @@ def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_
     for path in clipper_polys:
         if Area(path.int_points) > 0:
             pc.AddPath(path.int_points, PT_CLIP, True)
-    tree = pc.Execute2(operation, fillMode, fillMode)
+    try:
+        tree = pc.Execute2(operation, fillMode, fillMode)
+    except ClipperException as e:
+        print ("Subject polys", subject_polys)
+        print ("Subject paths", subject_paths)
+        print ("Clipper polys", clipper_polys)
+        return None
     return tree
 
 def run_clipper_checkpath(operation, subject_polys=[], clipper_polys=[], subject_paths=[], fillMode=None):

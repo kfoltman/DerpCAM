@@ -1,12 +1,10 @@
-import os.path
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import math
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.common.guiutils import Format
+from DerpCAM.common.guiutils import Format, UnitConverter
 from . import inventory, model, propsheet
 
 class CutterListWidget(QTreeWidget):
@@ -543,6 +541,7 @@ def loadInventory():
         inventory.inventory.readFrom(toolsFile)
     else:
         inventory.inventory.createStdCutters()
+        inventory.inventory.createStdWallProfiles()
 
 def saveInventory():
     inventory.inventory.writeTo(QStandardPaths.writableLocation(QStandardPaths.DataLocation), "tools.json")

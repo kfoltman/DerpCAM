@@ -1,9 +1,10 @@
 from DerpCAM.common import geom
+from DerpCAM.common.guiutils import EnumClass
 from DerpCAM.cam import shapes, toolpath
 from DerpCAM.gui import propsheet
 import math
 
-class DogboneMode(propsheet.EnumClass):
+class DogboneMode(EnumClass):
     DISABLED = 0
     CORNER = 1
     LONG_EDGE = 2

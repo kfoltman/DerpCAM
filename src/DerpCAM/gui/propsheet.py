@@ -70,23 +70,6 @@ class SetEditableProperty(EditableProperty):
                 self.edit_func(objects[0])
             return Ellipsis
 
-class EnumClass(object):
-    @classmethod
-    def toString(classInst, value):
-        return classInst.toItem(value, 1)
-    @classmethod
-    def toItem(classInst, value, loc):
-        for data in classInst.descriptions:
-            if value == data[0]:
-                return data[loc]
-        return None
-    @classmethod
-    def toTuple(classInst, value):
-        for data in classInst.descriptions:
-            if value == data[0]:
-                return data
-        return None
-
 class FontEditableProperty(EditableProperty):
     def createEditor(self, parent, item, objects):
         widget = QFontComboBox(parent)
@@ -144,7 +127,7 @@ class RefEditableProperty(ComboEditableProperty):
             return [(None, self.none_value)] + self.items_adapter.getLookupData(item)
         return self.items_adapter.getLookupData(item)
     def toEditString(self, value):
-        return value.description() if value is not None else self.none_value
+        return self.items_adapter.getDescription(value) if value is not None else self.none_value
     def getEditorData(self, editor):
         row = editor.currentRow()
         id = editor.rowToId[row] if row >= 0 else -1

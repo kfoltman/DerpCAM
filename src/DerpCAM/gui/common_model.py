@@ -13,12 +13,12 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import geom
-from DerpCAM.common.guiutils import Format, Spinner, is_gui_application
+from DerpCAM.common.guiutils import EnumClass, Format, Spinner, is_gui_application
 from DerpCAM import cam
 from DerpCAM.cam import dogbone, gcodegen, gcodeops, shapes, milling_tool
 
 from . import canvas, inventory
-from .propsheet import EnumClass, IntEditableProperty, \
+from .propsheet import IntEditableProperty, \
     FloatDistEditableProperty, EnumEditableProperty, SetEditableProperty, \
     RefEditableProperty, StringEditableProperty, FontEditableProperty
 
