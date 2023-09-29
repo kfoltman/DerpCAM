@@ -407,6 +407,11 @@ class Inventory(object):
         self.wall_profiles.append(wall_profile)
     def materialByName(self, name):
         return self.cutter_materials[name]
+    def wallProfileByName(self, name):
+        for i in self.wall_profiles:
+            if i.name == name:
+                return i
+        return None
     def toolbitByName(self, name, klass=CutterBase):
         for i in self.toolbits:
             if i.name == name and isinstance(i, klass):

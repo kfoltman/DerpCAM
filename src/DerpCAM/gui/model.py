@@ -873,6 +873,28 @@ class AddWallProfileUndoCommand(QUndoCommand):
         self.document.project_wall_profiles[self.profile.name] = self.profile
         self.document.refreshWallProfileList()
 
+class UpdateWallProfileUndoCommand(QUndoCommand):
+    def __init__(self, document, profile, new_data):
+        QUndoCommand.__init__(self, "Edit wall profile: " + profile.name)
+        self.document = document
+        self.profile = profile
+        self.new_data = new_data
+        self.old_data = None
+    def undo(self):
+        del self.document.project_wall_profiles[self.profile.name]
+        self.profile.name = self.old_data.name
+        self.profile.resetTo(self.old_data)
+        self.document.project_wall_profiles[self.profile.name] = self.profile
+        self.document.refreshWallProfileList()
+    def redo(self):
+        self.old_data = inventory.InvWallProfile.new(None, self.profile.name, "")
+        self.old_data.resetTo(self.profile)
+        del self.document.project_wall_profiles[self.profile.name]
+        self.profile.name = self.new_data.name
+        self.profile.resetTo(self.new_data)
+        self.document.project_wall_profiles[self.profile.name] = self.profile
+        self.document.refreshWallProfileList()
+
 class ActiveSetUndoCommand(QUndoCommand):
     def __init__(self, changes):
         QUndoCommand.__init__(self, "Toggle active status")
@@ -1507,7 +1529,10 @@ class DocumentModel(QObject):
         self.undoStack.push(AddWallProfileUndoCommand(self, new_profile))
     def opDeleteWallProfile(self, name):
         self.undoStack.push(DeleteWallProfileUndoCommand(self, self.project_wall_profiles[name]))
-
+    def opUpdateWallProfile(self, profile, new_data):
+        if new_data.name != profile.name and new_data.name in self.project_wall_profiles:
+            raise ValueError(f"The wall profile '{new_data.name}' already exists")
+        self.undoStack.push(UpdateWallProfileUndoCommand(self, profile, new_data))
     def undo(self):
         self.undoStack.undo()
     def redo(self):

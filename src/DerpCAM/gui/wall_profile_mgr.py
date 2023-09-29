@@ -302,11 +302,14 @@ def renderWallProfile(drawSurface, src, height, edge, size):
     qp.end()
 
 class WallProfileEditorDlg(QDialog):
-    def __init__(self, parent, title, profile):
+    def __init__(self, parent, title, profile, document, from_inventory):
         QDialog.__init__(self, parent)
         self.title = title
         self.profile = profile
         self.edit_shape = self.profile.shape.clone()
+        self.document = document
+        self.from_inventory = from_inventory
+        self.orig_name = profile.name
         self.initUI()
     def drawProfile(self):
         renderWallProfile(self.shapePicture, self.edit_shape, 24, 90, 120)
@@ -361,6 +364,16 @@ class WallProfileEditorDlg(QDialog):
             QMessageBox.critical(self, None, "Name is required")
             self.nameEdit.setFocus()
             return
+        if name != self.orig_name:
+            found = False
+            if self.from_inventory:
+                found = inventory.inventory.wallProfileByName(name) is not None
+            else:
+                found = name in self.document.project_wall_profiles
+            if found:
+                QMessageBox.critical(self, None, f"Wall profile named '{name}' already exists")
+                self.nameEdit.setFocus()
+                return
         self.profile.name = name
         self.profile.description = self.descEdit.text()
         self.profile.shape = self.edit_shape
@@ -473,7 +486,7 @@ class WallProfileManagerDlg(QDialog):
         self.onItemActivated()
     def addWallProfile(self):
         profile = inventory.InvWallProfile.new(None, "", "")
-        dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile)
+        dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile, document=self.document, from_inventory=self.currentProfileIsFromInventory(True))
         if dlg.exec_():
             if self.currentProfileIsFromInventory(True):
                 inventory.inventory.wall_profiles.append(profile)
@@ -487,13 +500,19 @@ class WallProfileManagerDlg(QDialog):
         profile = self.currentProfile()
         if not profile:
             return
-        workcopy = inventory.InvWallProfile.new(None, profile.name, "")
+        workcopy = inventory.InvWallProfile.new(None, profile.name, "", )
         workcopy.resetTo(profile)
-        dlg = WallProfileEditorDlg(self, "Edit a wall profile", workcopy)
+        dlg = WallProfileEditorDlg(self, "Edit a wall profile", workcopy, self.document, self.currentProfileIsFromInventory())
         if dlg.exec_():
-            profile.name = workcopy.name
-            profile.resetTo(workcopy)
-            self.populateList(profile)
+            try:
+                if self.currentProfileIsFromInventory():
+                    profile.name = workcopy.name
+                    profile.resetTo(workcopy)
+                else:
+                    self.document.opUpdateWallProfile(profile, workcopy)
+                self.populateList(profile)
+            except ValueError as e:
+                QMessageBox.critical(self, None, str(e))
     def deleteWallProfile(self):
         profile = self.currentProfile()
         isInv = self.currentProfileIsFromInventory()
