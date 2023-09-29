@@ -5,7 +5,8 @@ from .drawing_model import DrawingItemTreeItem, DrawingPolylineTreeItem, Drawing
     ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand
 from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, PresetDerivedAttributes, \
     ModifyToolUndoCommand, RevertToolUndoCommand, \
-    AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand
+    AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand, \
+    WallProfileListTreeItem, WallProfileTreeItem
 from .workpiece_model import MaterialType, WorkpieceTreeItem
 from .worker import WorkerThread, WorkerThreadPack
 from .wall_profile_mgr import WallProfileEditorDlg
@@ -848,6 +849,30 @@ class DeleteOperationUndoCommand(QUndoCommand):
         else:
             self.item.cancelWorker()
 
+class DeleteWallProfileUndoCommand(QUndoCommand):
+    def __init__(self, document, profile):
+        QUndoCommand.__init__(self, "Delete wall profile: " + profile.name)
+        self.document = document
+        self.profile = profile
+    def undo(self):
+        self.document.project_wall_profiles[self.profile.name] = self.profile
+        self.document.refreshWallProfileList()
+    def redo(self):
+        del self.document.project_wall_profiles[self.profile.name]
+        self.document.refreshWallProfileList()
+
+class AddWallProfileUndoCommand(QUndoCommand):
+    def __init__(self, document, new_profile):
+        QUndoCommand.__init__(self, "Add wall profile: " + new_profile.name)
+        self.document = document
+        self.profile = new_profile
+    def undo(self):
+        del self.document.project_wall_profiles[self.profile.name]
+        self.document.refreshWallProfileList()
+    def redo(self):
+        self.document.project_wall_profiles[self.profile.name] = self.profile
+        self.document.refreshWallProfileList()
+
 class ActiveSetUndoCommand(QUndoCommand):
     def __init__(self, changes):
         QUndoCommand.__init__(self, "Toggle active status")
@@ -912,17 +937,20 @@ class DocumentModel(QObject):
         self.drawing_filename = None
         self.current_cutter_cycle = None
         self.project_toolbits = {}
+        self.project_wall_profiles = {}
         self.default_preset_by_tool = {}
         self.shapes_to_revisit = set()
         self.progress_dialog_displayed = False
         self.update_suspended = None
         self.update_suspended_dirty = False
         self.tool_list = ToolListTreeItem(self)
+        self.wall_profile_list = WallProfileListTreeItem(self)
         self.shapeModel = QStandardItemModel()
         self.shapeModel.setHorizontalHeaderLabels(["Input object"])
         self.shapeModel.appendRow(self.material)
         self.shapeModel.appendRow(self.tool_list)
         self.shapeModel.appendRow(self.drawing)
+        self.shapeModel.appendRow(self.wall_profile_list)
 
         self.operModel = OperationsModel(self)
         self.operModel.setHorizontalHeaderLabels(["Operation"])
@@ -938,16 +966,20 @@ class DocumentModel(QObject):
         self.makeMachineParams()
         self.current_cutter_cycle = None
         self.project_toolbits = {}
+        self.project_wall_profiles = {}
         self.default_preset_by_tool = {}
         self.update_suspended = None
         self.update_suspended_dirty = False
         self.refreshToolList()
+        self.refreshWallProfileList()
         self.drawing.reset()
         self.drawing.removeRows(0, self.drawing.rowCount())
         self.operModel.removeRows(0, self.operModel.rowCount())
     def refreshToolList(self):
         self.tool_list.reset()
         self.toolListRefreshed.emit()
+    def refreshWallProfileList(self):
+        self.wall_profile_list.reset()
     def allCycles(self):
         return [self.operModel.item(i) for i in range(self.operModel.rowCount())]
     def store(self):
@@ -961,7 +993,7 @@ class DocumentModel(QObject):
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operation_cycles'] = [ { 'tool_id' : cycle.cutter.id, 'is_current' : (self.current_cutter_cycle is cycle), 'operations' : [op.store() for op in cycle.items()] } for cycle in self.allCycles() ]
         wall_profiles_used = set([op.wall_profile.id for op in self.allOperations()])
-        data['wall_profiles'] = [profile.store() for profile in inventory.inventory.wall_profiles if profile.id in wall_profiles_used]
+        data['wall_profiles'] = [profile.store() for profile in self.project_wall_profiles.values()]
         #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
     def load(self, data):
@@ -1066,6 +1098,11 @@ class DocumentModel(QObject):
                     operation.cutter = cutter_map[operation.cutter]
                     operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
                     cycle.appendRow(operation)
+        if 'wall_profiles' in data:
+            for i in data['wall_profiles']:
+                wp = inventory.InvWallProfile.load(i)
+                self.project_wall_profiles[wp.name] = wp
+            self.refreshWallProfileList()
         self.startUpdateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)
@@ -1459,6 +1496,18 @@ class DocumentModel(QObject):
             self.opDeletePreset(i.inventory_preset)
         for i in tools:
             self.opDeleteCycle(self.cycleForCutter(i.inventory_tool))
+    def opAddWallProfile(self, new_profile):
+        while new_profile.name in self.project_wall_profiles:
+            new_profile.name = incrSuffix(new_profile.name)
+        self.undoStack.push(AddWallProfileUndoCommand(self, new_profile))
+    def opLoadWallProfile(self, profile):
+        new_profile = profile.newInstance()
+        while new_profile.name in self.project_wall_profiles:
+            new_profile.name = incrSuffix(new_profile.name)
+        self.undoStack.push(AddWallProfileUndoCommand(self, new_profile))
+    def opDeleteWallProfile(self, name):
+        self.undoStack.push(DeleteWallProfileUndoCommand(self, self.project_wall_profiles[name]))
+
     def undo(self):
         self.undoStack.undo()
     def redo(self):

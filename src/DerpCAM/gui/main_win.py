@@ -201,8 +201,9 @@ class CAMMainWindow(QMainWindow):
     def millAddTool(self):
         self.millSelectTool(dlg_type=cutter_mgr.AddCutterDialog)
     def millWallProfiles(self):
-        mgr = wall_profile_mgr.WallProfileManagerDlg(self)
-        mgr.exec_()
+        mgr = wall_profile_mgr.WallProfileManagerDlg(self, self.document)
+        if mgr.exec_():
+            self.document.opLoadWallProfile(mgr.currentProfile())
     def millSelectTool(self, cutter_type=None, dlg_type=cutter_mgr.SelectCutterDialog):
         if not cutter_mgr.selectCutter(self, dlg_type, self.document, cutter_type):
             return False

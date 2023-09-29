@@ -277,27 +277,28 @@ def renderWallProfile(drawSurface, src, height, edge, size):
     qp.begin(drawSurface)
     qp.setRenderHint(QPainter.Antialiasing, True)
     qp.setRenderHint(QPainter.HighQualityAntialiasing, True)
-    qp.setPen(QColor(160, 160, 160))
-    qp.drawRect(-3, -3, size + 5, size + 5)
-    qp.setPen(QColor(160, 160, 160))
-    qp.drawLine(0, 0, edge, 0)
-    qp.drawLine(edge, 0, edge, size)
-    qp.setPen(QColor(0, 0, 0))
-    path = QPainterPath()
-    path.moveTo(0, 0)
-    for i in range(size):
-        depth = height * i / (size - 1)
-        if src:
+    if src:
+        qp.setPen(QColor(160, 160, 160))
+        qp.drawRect(-3, -3, size + 5, size + 5)
+        qp.setPen(QColor(160, 160, 160))
+        qp.drawLine(0, 0, edge, 0)
+        qp.drawLine(edge, 0, edge, size)
+        qp.setPen(QColor(0, 0, 0))
+        path = QPainterPath()
+        path.moveTo(0, 0)
+        for i in range(size):
+            depth = height * i / (size - 1)
             pos = -src.offset_at_depth(depth, height) * size / height
-        else:
-            pos = 0
-        nextpt = QPointF(edge - pos, i)
-        path.lineTo(nextpt)
-        lastpt = nextpt
-    path.lineTo(0, size)
-    path.lineTo(0, 0)
-    qp.fillPath(path, QBrush(Qt.black, Qt.BDiagPattern))
-    qp.drawPath(path)
+            nextpt = QPointF(edge - pos, i)
+            path.lineTo(nextpt)
+            lastpt = nextpt
+        path.lineTo(0, size)
+        path.lineTo(0, 0)
+        qp.fillPath(path, QBrush(Qt.black, Qt.BDiagPattern))
+        qp.drawPath(path)
+    else:
+        qp.setPen(QColor(160, 160, 160, 128))
+        qp.drawRect(-3, -3, size + 5, size + 5)
     qp.end()
 
 class WallProfileEditorDlg(QDialog):
@@ -366,20 +367,24 @@ class WallProfileEditorDlg(QDialog):
         QDialog.accept(self)
 
 class WallProfileManagerDlg(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, document):
         QDialog.__init__(self, parent)
+        self.document = document
         self.initUI()
     def initUI(self):
         self.setWindowTitle("Wall profiles")
         self.layout = QVBoxLayout(self)
         self.hlayout = QHBoxLayout()
+        self.largerFont = QFont()
+        self.largerFont.setBold(True)
         self.profileList = QTableWidget(0, 2)
-        self.profileList.setVerticalHeader(None)
         self.profileList.setMinimumSize(450, 200)
         self.profileList.setColumnWidth(0, 150)
         self.profileList.setColumnWidth(1, 250)
         self.profileList.setSelectionBehavior(QTableView.SelectRows)
         self.profileList.setHorizontalHeaderLabels(["Name", "Description"])
+        self.profileList.horizontalHeader().setStretchLastSection(True)
+        self.profileList.verticalHeader().hide()
         self.hlayout.addWidget(self.profileList)
         self.shapeLabel = QLabel()
         self.shapePicture = QPicture()
@@ -399,17 +404,32 @@ class WallProfileManagerDlg(QDialog):
         self.deleteButton.clicked.connect(self.deleteWallProfile)
         self.editButtons.addWidget(self.deleteButton)
         self.layout.addLayout(self.editButtons)
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Close)
-        self.buttonBox.rejected.connect(self.reject)
-        self.layout.addWidget(self.buttonBox)
+        self.buttonBox = QHBoxLayout()
+        self.closeButton = QPushButton("")
+        self.closeButton.setDefault(True)
+        self.closeButton.clicked.connect(self.onCloseClicked)
+        self.buttonBox.addStretch()
+        self.buttonBox.addWidget(self.closeButton)
+        self.layout.addLayout(self.buttonBox)
         self.profileList.selectionModel().selectionChanged.connect(self.onItemActivated)
         self.populateList()
+    def currentProfileIsFromInventory(self, allow_parent=False):
+        itemIdx = self.profileList.currentRow()
+        if allow_parent:
+            return itemIdx >= 1 + len(self.document.project_wall_profiles)
+        else:
+            return itemIdx >= 2 + len(self.document.project_wall_profiles)
     def currentProfile(self):
         itemIdx = self.profileList.currentRow()
-        if itemIdx >= 0 and itemIdx < len(inventory.inventory.wall_profiles):
-            return inventory.inventory.wall_profiles[itemIdx]
+        if itemIdx >= 0:
+            return self.profileList.item(itemIdx, 0).data(Qt.UserRole)
         else:
             return None
+    def onCloseClicked(self):
+        if self.currentProfileIsFromInventory():
+            self.accept()
+        else:
+            self.reject()
     def onItemActivated(self):
         profile = self.currentProfile()
         item = profile.shape if profile else None
@@ -417,21 +437,48 @@ class WallProfileManagerDlg(QDialog):
         self.shapeLabel.repaint()
         self.editButton.setEnabled(item is not None)
         self.deleteButton.setEnabled(item is not None)
+        if self.currentProfileIsFromInventory(True):
+            self.addButton.setText("&Add in inventory")
+        else:
+            self.addButton.setText("&Add in project")
+        if self.currentProfileIsFromInventory():
+            self.closeButton.setText("&Load into project")
+        else:
+            self.closeButton.setText("&Close")
     def populateList(self, profile=None):
-        self.profileList.setRowCount(len(inventory.inventory.wall_profiles))
+        def boldItem(s):
+            twi = QTableWidgetItem(s)
+            twi.setFont(self.largerFont)
+            return twi
+        iwp = inventory.inventory.wall_profiles
+        pwp = sorted(self.document.project_wall_profiles.values(), key=lambda wp: wp.name)
+        self.profileList.setRowCount(2 + len(iwp) + len(pwp))
         current = 0
-        for i, wp in enumerate(inventory.inventory.wall_profiles):
+        for i, wp in enumerate(["Project wall profiles"] + pwp + ["Inventory wall profiles"] + iwp):
             if wp is profile:
                 current = i
-            self.profileList.setItem(i, 0, QTableWidgetItem(wp.name))
-            self.profileList.setItem(i, 1, QTableWidgetItem(wp.description))
+            if isinstance(wp, str):
+                if self.profileList.columnSpan(i, 0) != 2:
+                    self.profileList.setSpan(i, 0, 1, 2)
+                self.profileList.setItem(i, 0, boldItem(wp))
+                self.profileList.setItem(i, 1, boldItem(""))
+                self.profileList.item(i, 0).setData(Qt.UserRole, None)
+            else:
+                if self.profileList.columnSpan(i, 0) != 1:
+                    self.profileList.setSpan(i, 0, 1, 1)
+                self.profileList.setItem(i, 0, QTableWidgetItem("  " + wp.name))
+                self.profileList.setItem(i, 1, QTableWidgetItem(wp.description))
+                self.profileList.item(i, 0).setData(Qt.UserRole, wp)
         self.profileList.setCurrentCell(current, 0)
         self.onItemActivated()
     def addWallProfile(self):
         profile = inventory.InvWallProfile.new(None, "", "")
         dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile)
         if dlg.exec_():
-            inventory.inventory.wall_profiles.append(profile)
+            if self.currentProfileIsFromInventory(True):
+                inventory.inventory.wall_profiles.append(profile)
+            else:
+                self.document.opAddWallProfile(profile)
             self.populateList(profile)
         else:
             profile.forget()
@@ -449,9 +496,13 @@ class WallProfileManagerDlg(QDialog):
             self.populateList(profile)
     def deleteWallProfile(self):
         profile = self.currentProfile()
+        isInv = self.currentProfileIsFromInventory()
         if not profile:
             return
         if QMessageBox.question(self, None, "Delete the profile: " + profile.name) != QMessageBox.Yes:
             return
-        inventory.inventory.deleteWallProfile(profile)
+        if isInv:
+            inventory.inventory.deleteWallProfile(profile)
+        else:
+            self.document.opDeleteWallProfile(profile.name)
         self.populateList()

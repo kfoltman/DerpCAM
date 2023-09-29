@@ -1,6 +1,7 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+import re
 
 class GuiSettings(object):
     inch_mode = False
@@ -401,3 +402,14 @@ def intSpin(vmin, vmax, value, tooltip):
     res.setMaximumWidth(spinWidth)
     return res
 
+def incrSuffix(name):
+    m = re.match("(.*?)(0*)([0-9]+)$", name)
+    if m:
+        prefix = m.group(1)
+        zeroPad = m.group(2)
+        origNum = m.group(3)
+        newNum = str(int(origNum) + 1)
+        if len(zeroPad) and len(newNum) > len(origNum):
+            zeroPad = zeroPad[:-1]
+        return prefix + zeroPad + newNum
+    return name + "2"

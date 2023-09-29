@@ -235,6 +235,40 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         # Affects both properties and CAM
         return set([self] + self.document.allOperationsPlusRefinements(lambda item: item.cutter is self.inventory_tool))
 
+class WallProfileTreeItem(CAMTreeItem):
+    prop_name = StringEditableProperty("Name", "name", False)
+    prop_description = StringEditableProperty("Description", "description", False)
+    def __init__(self, document, wall_profile, is_local):
+        self.wall_profile = wall_profile
+        CAMTreeItem.__init__(self, document)
+        self.setEditable(False)
+    def data(self, role):
+        if role == Qt.DisplayRole:
+            #return QVariant("Wall profile: " + (self.wall_profile.description or self.wall_profile.name))
+            if self.wall_profile.description:
+                return QVariant(self.wall_profile.name + ": " + self.wall_profile.description)
+            else:
+                return QVariant(self.wall_profile.name)
+        is_default = False
+        is_local = True
+        return self.format_item_as(role, CAMTreeItem.data(self, role), bold=is_default, italic=not is_local)
+    def resetProperties(self):
+        self.emitPropertyChanged()
+    @classmethod
+    def properties(klass):
+        return [klass.prop_name, klass.prop_description]
+    def getPropertyValue(self, name):
+        return getattr(self.wall_profile, name)
+
+class WallProfileListTreeItem(CAMListTreeItemWithChildren):
+    def __init__(self, document):
+        CAMListTreeItemWithChildren.__init__(self, document, "Wall profiles")
+        self.reset()
+    def childList(self):
+        return sorted(self.document.project_wall_profiles.values(), key=lambda item: item.name)
+    def createChildItem(self, data):
+        return WallProfileTreeItem(self.document, data, True)
+
 class ToolPresetTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_doc = FloatDistEditableProperty("Cut depth/pass", "doc", Format.depth_of_cut, unit="mm", min=0.01, max=100, allow_none=True)
