@@ -430,7 +430,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(doc.tool_list.row(), 1)
         self.assertIs(doc.drawing.model(), doc.shapeModel)
         self.assertEqual(doc.drawing.row(), 2)
-        self.assertEqual(doc.shapeModel.rowCount(), 3)
+        self.assertEqual(doc.shapeModel.rowCount(), 4)
         self.assertEqual(doc.gcode_machine_params.safe_z, doc.material.clearance)
         self.assertEqual(doc.gcode_machine_params.semi_safe_z, doc.material.safe_entry_z)
         self.assertEqual(doc.progress_dialog_displayed, False)
