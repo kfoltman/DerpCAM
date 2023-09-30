@@ -48,6 +48,37 @@ testDocument1 = {
             ],
         },
     ],
+  "wall_profiles": [
+    {
+      "_type": "InvWallProfile",
+      "id": 1052,
+      "name": "test profile",
+      "shape": {
+        "top": [
+          {
+            "offset": 0,
+            "height": 2,
+            "shape": "Round H to V \u25dd \u25dc"
+          },
+          {
+            "offset": -2,
+            "height": 30,
+            "shape": "Taper/Draft \\ /",
+            "taper": 3
+          }
+        ],
+        "bottom": [
+          {
+            "offset": 0,
+            "height": 2,
+            "shape": "Round V to H \u25df \u25de"
+          }
+        ],
+        "align": 2
+      },
+      "description": "3 degree draft angle + roundover"
+    }
+  ]
 }
 
 testDocument2 = {
@@ -89,6 +120,7 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(doc.material.clearance, 6)
         self.assertEqual(doc.material.safe_entry_z, 2)
         self.assertEqual(doc.tool_list.rowCount(), 1)
+        self.assertEqual(doc.wall_profile_list.rowCount(), 1)
         
         toolItem = doc.tool_list.child(0)
         self.assertIsInstance(toolItem, gui.model.ToolTreeItem)
@@ -109,6 +141,11 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(presetItem.getPropertyValue('direction'), gui.inventory.MillDirection.CLIMB)
         self.assertEqual(presetItem.getPropertyValue('pocket_strategy'), gui.inventory.PocketStrategy.AXIS_PARALLEL)
         self.assertEqual(presetItem.getPropertyValue('axis_angle'), 45)
+
+        wallProfileItem = doc.wall_profile_list.child(0)
+        self.assertIsInstance(wallProfileItem, gui.model.WallProfileTreeItem)
+        self.assertEqual(wallProfileItem.getPropertyValue('name'), "test profile")
+        self.assertEqual(wallProfileItem.getPropertyValue('description'), "3 degree draft angle + roundover")
         
         self.assertEqual(doc.drawing.x_offset, 10)
         self.assertEqual(doc.drawing.y_offset, 20)

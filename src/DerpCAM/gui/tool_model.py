@@ -237,7 +237,7 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
 
 class WallProfileTreeItem(CAMTreeItem):
     prop_name = StringEditableProperty("Name", "name", False)
-    prop_description = StringEditableProperty("Description", "description", False)
+    prop_description = StringEditableProperty("Description", "description", True)
     def __init__(self, document, wall_profile, is_local):
         self.wall_profile = wall_profile
         CAMTreeItem.__init__(self, document)
@@ -259,6 +259,22 @@ class WallProfileTreeItem(CAMTreeItem):
         return [klass.prop_name, klass.prop_description]
     def getPropertyValue(self, name):
         return getattr(self.wall_profile, name)
+    def setPropertyValue(self, name, value):
+        if name == 'name':
+            if value != self.wall_profile.name and value in self.document.project_wall_profiles:
+                # Cannot raise exceptions here, because it's used inside undo commands
+                #raise ValueError(f"Wall profile named '{name}' already exists")
+                return
+            self.wall_profile.name = value
+            self.wall_profile.base_object = inventory.inventory.wallProfileByName(value)
+        elif hasattr(self.wall_profile, name):
+            setattr(self.wall_profile, name, value)
+        else:
+            assert False, "Unknown attribute: " + repr(name)
+        self.emitPropertyChanged(name)
+    def invalidatedObjects(self, aspect):
+        # Need to refresh properties for any default or calculated values updated
+        return set([self] + self.document.allOperationsPlusRefinements(lambda item: item.wall_profile is self.wall_profile))
 
 class WallProfileListTreeItem(CAMListTreeItemWithChildren):
     def __init__(self, document):
