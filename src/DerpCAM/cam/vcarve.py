@@ -1,9 +1,9 @@
 import hsm_nibble.voronoi_centers
 from DerpCAM.common import geom
-from DerpCAM.cam.pocket import sort_polygons, shape_to_polygons, linestring2path
+from DerpCAM.cam.pocket import sort_polygons, shape_to_polygons, linestring2path, objects_to_polygons
 from . import shapes, toolpath, milling_tool
 import math, threading
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, MultiPolygon
 import shapely.affinity, shapely.ops
 
 pyvlock = threading.RLock()
@@ -138,9 +138,14 @@ def vcarve(shape, tool, thickness):
         raise ValueError("Cannot v-carve open polylines")
     if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
         raise ValueError("V-carving is only supported using tapered tools")
-    all_inputs = shape_to_polygons(shape, tool, -0.5 * tool.diameter, False)
-    # depth = slope * diameter, max_diameter = max_depth / slope (and max_depth=thickness)
     slope = 0.5 / math.tan((tool.tip_angle * math.pi / 180) / 2)
     max_diameter = min(tool.diameter, thickness / slope + tool.tip_diameter)
-    return [CarveGraph(polygon) for polygon in sort_polygons(all_inputs)]
+    all_inputs = MultiPolygon(shape_to_polygons(shape, tool, -0.5 * tool.diameter, False))
+    outputs = []
+    while not all_inputs.is_empty:
+        patterned_areas = all_inputs.buffer(-max_diameter)
+        edges = all_inputs.difference(patterned_areas)
+        outputs += [CarveGraph(polygon) for polygon in objects_to_polygons(edges)]
+        all_inputs = all_inputs.buffer(-max_diameter * tool.stepover)
+    return outputs
 

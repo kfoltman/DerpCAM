@@ -182,7 +182,7 @@ class OperationType(EnumClass):
         return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL)
     @staticmethod
     def has_stepover(value):
-        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE, OperationType.INSIDE_THREAD)
+        return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE, OperationType.INSIDE_THREAD, OperationType.V_CARVE)
     @staticmethod
     def has_entry_helix(value):
         return value in (OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
