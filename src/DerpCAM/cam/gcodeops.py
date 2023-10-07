@@ -5,6 +5,7 @@ import DerpCAM.cam.contour
 import DerpCAM.cam.milling_tool
 import DerpCAM.cam.peel
 import DerpCAM.cam.pocket
+import DerpCAM.cam.pattern_fill
 import DerpCAM.cam.vcarve
 from DerpCAM.common.guiutils import Format
 from DerpCAM.cam.wall_profile import PlainWallProfile
@@ -137,7 +138,7 @@ class PatternFill(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pattern fill cuts are not supported for open shapes")
-        self.graphs = cam.vcarve.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_type, self.pattern_angle, self.pattern_scale, self.offset_x, self.offset_y)
+        self.graphs = cam.pattern_fill.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_type, self.pattern_angle, self.pattern_scale, self.offset_x, self.offset_y)
         toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
         self.flattened = toolpaths
         return PathOutput(toolpaths, None, {})
