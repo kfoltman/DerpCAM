@@ -152,11 +152,12 @@ def vcarve(shape, tool, thickness):
     if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
         raise ValueError("V-carving is only supported using tapered tools")
     max_diameter = min(tool.diameter, tool.depth2dia(-thickness))
+    thickness = min(thickness, round(-tool.dia2depth(max_diameter), 3))
     # Full size
     all_inputs = MultiPolygon(shape_to_polygons(shape, tool, -tool.diameter / 2, False))
     graphs = []
     patterns = []
     for polygon in objects_to_polygons(all_inputs):
         add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns)
-    return graphs, patterns
+    return graphs, patterns, thickness
 

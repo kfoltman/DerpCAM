@@ -127,10 +127,12 @@ class VCarve(UntabbedOperation):
     def build_cutpaths(self):
         if not self.shape.closed:
             raise ValueError("V-carving cuts are not supported for open shapes")
-        self.carvings, self.patterns = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
+        self.carvings, self.patterns, self.thickness = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
+        depth = max(self.props.depth, self.props.start_depth - self.thickness)
+        self.props_pattern = self.props.clone(depth=depth)
         self.pattern_toolpaths = [toolpath.Toolpath(pattern.to_path(0), self.tool) for pattern in self.patterns]
         self.cutpaths_carvings = [CutPath2D(self.machine_params, self.props, self.tool, None, toolpath.Toolpath(carving.to_path(0), self.tool)) for carving in self.carvings]
-        self.cutpaths_patterns = [CutPath2D(self.machine_params, self.props, self.tool, None, toolpath.Toolpath(pattern.to_path(0), self.tool).optimize()) for pattern in self.patterns]
+        self.cutpaths_patterns = [CutPath2D(self.machine_params, self.props_pattern, self.tool, None, toolpath.Toolpath(pattern.to_path(0), self.tool).optimize()) for pattern in self.patterns]
         return self.cutpaths_carvings + self.cutpaths_patterns
     def to_preview(self):
         output = []
@@ -141,7 +143,7 @@ class VCarve(UntabbedOperation):
         return output
     def to_gcode(self, gcode):
         VCarveCut(self.machine_params, self.props, self.tool, self.carvings).build(gcode)
-        BaseCut2D(self.machine_params, self.props, self.tool, self.cutpaths_patterns).build(gcode)
+        BaseCut2D(self.machine_params, self.props_pattern, self.tool, self.cutpaths_patterns).build(gcode)
 
 class PatternFill(UntabbedOperation):
     def build_paths(self, margin):

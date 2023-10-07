@@ -458,7 +458,7 @@ class LayerSchedule(object):
         # XXXKF add provisions for finish passes here
         return self.tool.maxdoc
     def next_depth(self, prev_depth):
-        if prev_depth <= self.props.depth:
+        if prev_depth <= self.props.depth + 0.001:
             return None
         depth_of_cut = self.depth_of_cut(prev_depth)
         new_depth = max(self.props.depth, prev_depth - depth_of_cut)
