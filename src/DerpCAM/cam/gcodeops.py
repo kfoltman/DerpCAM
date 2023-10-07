@@ -127,7 +127,7 @@ class VCarve(UntabbedOperation):
     def build_cutpaths(self):
         if not self.shape.closed:
             raise ValueError("V-carving cuts are not supported for open shapes")
-        self.carvings, self.patterns, self.thickness = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
+        self.carvings, self.patterns, self.thickness = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_data)
         depth = max(self.props.depth, self.props.start_depth - self.thickness)
         self.props_pattern = self.props.clone(depth=depth)
         self.pattern_toolpaths = [toolpath.Toolpath(pattern.to_path(0), self.tool) for pattern in self.patterns]
@@ -149,7 +149,7 @@ class PatternFill(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Pattern fill cuts are not supported for open shapes")
-        self.graphs = cam.pattern_fill.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_type, self.pattern_angle, self.pattern_scale, self.offset_x, self.offset_y)
+        self.graphs = cam.pattern_fill.pattern_fill(self.shape, self.tool, self.props.start_depth - self.props.depth, self.pattern_data)
         toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
         self.flattened = toolpaths
         return PathOutput(toolpaths, None, {})
@@ -642,13 +642,10 @@ class Operations(object):
         self.add(Engrave(shape, self.tool, self.machine_params, props or self.props))
     def pocket(self, shape, props=None):
         self.add(Pocket(shape, self.tool, self.machine_params, props or self.props))
-    def vcarve(self, shape, props=None):
-        self.add(VCarve(shape, self.tool, self.machine_params, props or self.props))
-    def pattern_fill(self, shape, pattern_type, pattern_angle, pattern_scale, offset_x, offset_y, props=None):
-        self.add(PatternFill(shape, self.tool, self.machine_params, props or self.props, {
-            'pattern_type' : pattern_type, 'pattern_angle' : pattern_angle, 'pattern_scale' : pattern_scale,
-            'offset_x' : offset_x, 'offset_y' : offset_y
-        }))
+    def vcarve(self, shape, pattern_data, props=None):
+        self.add(VCarve(shape, self.tool, self.machine_params, props or self.props, { 'pattern_data' : pattern_data }))
+    def pattern_fill(self, shape, pattern_data, props=None):
+        self.add(PatternFill(shape, self.tool, self.machine_params, props or self.props, { 'pattern_data' : pattern_data }))
     def pocket_axis_parallel(self, shape, props=None):
         self.add(AxisParallelPocket(shape, self.tool, self.machine_params, props or self.props))
     def face_mill(self, shape, props=None):

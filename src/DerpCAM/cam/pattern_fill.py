@@ -236,7 +236,15 @@ def wave_line_maker(d, phase, side):
     single = LineString([Point(i * period / npoints, 0.25 * side * math.sin(i * s)) for i in range(npoints)])
     return repeat_line_maker(d, [single], period)
 
-def pattern_fill(shape, tool, thickness, pattern_type, pattern_angle, pattern_scale, ofx, ofy, tool_diameter_override=None):
+class PatternData:
+    def __init__(self, pattern_type, pattern_angle, pattern_scale, ofx, ofy):
+        self.pattern_type = pattern_type
+        self.pattern_angle = pattern_angle
+        self.pattern_scale = pattern_scale
+        self.ofx = ofx
+        self.ofy = ofy
+
+def pattern_fill(shape, tool, thickness, pattern_data, tool_diameter_override=None):
     if not shape.closed:
         raise ValueError("Cannot pattern fill open polylines")
     if tool_diameter_override is not None:
@@ -248,21 +256,22 @@ def pattern_fill(shape, tool, thickness, pattern_type, pattern_angle, pattern_sc
     else:
         all_inputs = shape_to_polygons(shape, tool, 0, False)
     paths = []
+    pattern_type = pattern_data.pattern_type
     for polygon in sort_polygons(all_inputs):
         if pattern_type == 'lines':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, simple_line_maker)
         elif pattern_type == 'cross':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, ofx, ofy, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_data.pattern_angle + 90, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, simple_line_maker)
         elif pattern_type == 'diamond':
-            hatch = single_hatch_pattern(polygon, pattern_angle - 30, pattern_scale, ofx, ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_angle + 30, pattern_scale, ofx, ofy, simple_line_maker)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle - 30, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, simple_line_maker) + single_hatch_pattern(polygon, pattern_data.pattern_angle + 30, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, simple_line_maker)
         elif pattern_type == 'hex':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), ofx, ofy, hex_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle, pattern_data.pattern_scale * math.sin(math.pi / 3), pattern_data.ofx, pattern_data.ofy, hex_line_maker, pattern_data.pattern_scale)
         elif pattern_type == 'teeth':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale * math.sin(math.pi / 3), ofx, ofy, teeth_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle, pattern_data.pattern_scale * math.sin(math.pi / 3), pattern_data.ofx, pattern_data.ofy, teeth_line_maker, pattern_data.pattern_scale)
         elif pattern_type == 'brick':
-            hatch = single_hatch_pattern(polygon, pattern_angle + 90, pattern_scale, ofx, ofy, brick_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle + 90, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, brick_line_maker, pattern_data.pattern_scale)
         elif pattern_type == 'wave':
-            hatch = single_hatch_pattern(polygon, pattern_angle, pattern_scale, ofx, ofy, wave_line_maker, pattern_scale)
+            hatch = single_hatch_pattern(polygon, pattern_data.pattern_angle, pattern_data.pattern_scale, pattern_data.ofx, pattern_data.ofy, wave_line_maker, pattern_data.pattern_scale)
         else:
             raise ValueError(f"Invalid pattern: {pattern_type}")
         paths += PatternFillGenerator(polygon, hatch).to_paths()

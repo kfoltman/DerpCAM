@@ -133,7 +133,7 @@ class CarveGraph:
         self.trim_loops(points, min_width)
         return geom.Path(points, False)
 
-def add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns):
+def add_vcarve_polygon(polygon, tool, thickness, max_diameter, pattern_data, graphs, patterns):
     graph = CarveGraph(polygon)
     if graph.overall_maxdia <= max_diameter:
         graphs.append(graph)
@@ -144,9 +144,9 @@ def add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns)
         graphs.append(CarveGraph(subpolygon))
     for area in objects_to_polygons(oversize):
         shape = polygon_to_shape(area)
-        patterns += pattern_fill.pattern_fill(shape, tool, thickness, 'cross', 45, 1, 0, 0, tool_diameter_override=0)
+        patterns += pattern_fill.pattern_fill(shape, tool, thickness, pattern_data, tool_diameter_override=0)
 
-def vcarve(shape, tool, thickness):
+def vcarve(shape, tool, thickness, pattern_data):
     if not shape.closed:
         raise ValueError("Cannot v-carve open polylines")
     if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
@@ -158,6 +158,6 @@ def vcarve(shape, tool, thickness):
     graphs = []
     patterns = []
     for polygon in objects_to_polygons(all_inputs):
-        add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns)
+        add_vcarve_polygon(polygon, tool, thickness, max_diameter, pattern_data, graphs, patterns)
     return graphs, patterns, thickness
 

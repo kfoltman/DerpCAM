@@ -260,7 +260,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation == OperationType.DRILLED_HOLE and name in ['hfeed', 'trc_rate', 'direction']:
             return False
-        if self.operation != OperationType.PATTERN_FILL and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
+        if self.operation != OperationType.PATTERN_FILL and self.operation != OperationType.V_CARVE and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
             return False
         if self.operation == OperationType.INSIDE_THREAD and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode', 'doc']:
             return False
@@ -526,9 +526,9 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.DRILLED_HOLE:
             return lambda: parent_cam.peck_drill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1])
         elif self.operation == OperationType.V_CARVE:
-            return lambda: parent_cam.vcarve(shape)
+            return lambda: parent_cam.vcarve(shape, self.patternData())
         elif self.operation == OperationType.PATTERN_FILL:
-            return lambda: parent_cam.pattern_fill(shape, FillType.toItem(self.pattern_type, 2), self.pattern_angle, self.pattern_scale / 100.0, 0, 0)
+            return lambda: parent_cam.pattern_fill(shape, self.patternData())
         elif self.operation == OperationType.INSIDE_THREAD:
             return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch())
         raise ValueError("Unsupported operation")
@@ -549,6 +549,8 @@ class OperationTreeItem(CAMTreeItem):
         18  : 2.5,
         20  : 2.5
     }
+    def patternData(self):
+        return pattern_fill.PatternData(FillType.toItem(self.pattern_type, 2), self.pattern_angle, self.pattern_scale / 100.0, 0, 0)
     def threadPitch(self):
         if self.thread_pitch:
             return self.thread_pitch

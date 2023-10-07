@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common import geom
 from DerpCAM.common.guiutils import EnumClass, Format, Spinner, is_gui_application, incrSuffix
 from DerpCAM import cam
-from DerpCAM.cam import dogbone, gcodegen, gcodeops, shapes, milling_tool
+from DerpCAM.cam import dogbone, gcodegen, gcodeops, shapes, milling_tool, pattern_fill
 
 from . import canvas, inventory
 from .propsheet import IntEditableProperty, \
