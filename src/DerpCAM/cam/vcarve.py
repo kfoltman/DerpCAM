@@ -1,7 +1,7 @@
 import hsm_nibble.voronoi_centers
 from DerpCAM.common import geom
-from DerpCAM.cam.pocket import sort_polygons, shape_to_polygons, linestring2path, objects_to_polygons
-from . import shapes, toolpath, milling_tool
+from DerpCAM.cam.pocket import sort_polygons, shape_to_polygons, polygon_to_shape, linestring2path, objects_to_polygons
+from . import shapes, toolpath, milling_tool, pattern_fill
 import math, threading
 from shapely.geometry import LineString, Point, MultiPolygon
 import shapely.affinity, shapely.ops
@@ -133,19 +133,30 @@ class CarveGraph:
         self.trim_loops(points, min_width)
         return geom.Path(points, False)
 
+def add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns):
+    graph = CarveGraph(polygon)
+    if graph.overall_maxdia <= max_diameter:
+        graphs.append(graph)
+        return
+    #oversize = graph.get_oversize_edges(max_diameter)
+    oversize = polygon.buffer(-max_diameter / 2)
+    for subpolygon in objects_to_polygons(polygon.difference(oversize)):
+        graphs.append(CarveGraph(subpolygon))
+    for area in objects_to_polygons(oversize):
+        shape = polygon_to_shape(area)
+        patterns += pattern_fill.pattern_fill(shape, tool, thickness, 'cross', 45, 1, 0, 0, tool_diameter_override=0)
+
 def vcarve(shape, tool, thickness):
     if not shape.closed:
         raise ValueError("Cannot v-carve open polylines")
     if not (tool.tip_angle >= 1 and tool.tip_angle <= 179):
         raise ValueError("V-carving is only supported using tapered tools")
-    slope = 0.5 / math.tan((tool.tip_angle * math.pi / 180) / 2)
-    max_diameter = min(tool.diameter, thickness / slope + tool.tip_diameter)
-    all_inputs = MultiPolygon(shape_to_polygons(shape, tool, -0.5 * tool.diameter, False))
-    outputs = []
-    while not all_inputs.is_empty:
-        patterned_areas = all_inputs.buffer(-max_diameter)
-        edges = all_inputs.difference(patterned_areas)
-        outputs += [CarveGraph(polygon) for polygon in objects_to_polygons(edges)]
-        all_inputs = all_inputs.buffer(-max_diameter * tool.stepover)
-    return outputs
+    max_diameter = min(tool.diameter, tool.depth2dia(-thickness))
+    # Full size
+    all_inputs = MultiPolygon(shape_to_polygons(shape, tool, -tool.diameter / 2, False))
+    graphs = []
+    patterns = []
+    for polygon in objects_to_polygons(all_inputs):
+        add_vcarve_polygon(polygon, tool, thickness, max_diameter, graphs, patterns)
+    return graphs, patterns
 

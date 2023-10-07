@@ -124,15 +124,24 @@ class AxisParallelFaceMill(FaceMill):
         return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset, finish_outer_contour=False, outer_margin=self.tool.diameter / 2), None, {})
     
 class VCarve(UntabbedOperation):
-    def build_paths(self, margin):
+    def build_cutpaths(self):
         if not self.shape.closed:
             raise ValueError("V-carving cuts are not supported for open shapes")
-        self.graphs = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
-        toolpaths = [toolpath.Toolpath(graph.to_path(0), self.tool) for graph in self.graphs]
-        self.flattened = toolpaths
-        return PathOutput(toolpaths, None, {})
+        self.carvings, self.patterns = cam.vcarve.vcarve(self.shape, self.tool, self.props.start_depth - self.props.depth)
+        self.pattern_toolpaths = [toolpath.Toolpath(pattern.to_path(0), self.tool) for pattern in self.patterns]
+        self.cutpaths_carvings = [CutPath2D(self.machine_params, self.props, self.tool, None, toolpath.Toolpath(carving.to_path(0), self.tool)) for carving in self.carvings]
+        self.cutpaths_patterns = [CutPath2D(self.machine_params, self.props, self.tool, None, toolpath.Toolpath(pattern.to_path(0), self.tool).optimize()) for pattern in self.patterns]
+        return self.cutpaths_carvings + self.cutpaths_patterns
+    def to_preview(self):
+        output = []
+        for path in self.cutpaths_carvings:
+            output += path.to_preview()
+        for path in self.cutpaths_patterns:
+            output += path.to_preview()
+        return output
     def to_gcode(self, gcode):
-        VCarveCut(self.machine_params, self.props, self.tool, self.graphs).build(gcode)
+        VCarveCut(self.machine_params, self.props, self.tool, self.carvings).build(gcode)
+        BaseCut2D(self.machine_params, self.props, self.tool, self.cutpaths_patterns).build(gcode)
 
 class PatternFill(UntabbedOperation):
     def build_paths(self, margin):

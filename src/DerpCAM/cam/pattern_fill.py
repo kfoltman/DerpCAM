@@ -236,10 +236,12 @@ def wave_line_maker(d, phase, side):
     single = LineString([Point(i * period / npoints, 0.25 * side * math.sin(i * s)) for i in range(npoints)])
     return repeat_line_maker(d, [single], period)
 
-def pattern_fill(shape, tool, thickness, pattern_type, pattern_angle, pattern_scale, ofx, ofy):
+def pattern_fill(shape, tool, thickness, pattern_type, pattern_angle, pattern_scale, ofx, ofy, tool_diameter_override=None):
     if not shape.closed:
         raise ValueError("Cannot pattern fill open polylines")
-    if tool.tip_angle >= 1 and tool.tip_angle <= 179:
+    if tool_diameter_override is not None:
+        all_inputs = shape_to_polygons(shape, tool, 0, False, tool_diameter_override=tool_diameter_override)
+    elif tool.tip_angle >= 1 and tool.tip_angle <= 179:
         slope = 0.5 / math.tan((tool.tip_angle * math.pi / 180) / 2)
         max_diameter = min(tool.diameter, thickness / slope + tool.tip_diameter)
         all_inputs = shape_to_polygons(shape, tool, 0, False, tool_diameter_override=max_diameter)

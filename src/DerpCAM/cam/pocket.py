@@ -327,7 +327,10 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter
                 islands_offset.append(island_offset_pts)
                 ii = LinearRing([(p.x, p.y) for p in island_offset_pts])
                 if not from_outside:
-                    polygon = polygon.difference(Polygon(ii))
+                    try:
+                        polygon = polygon.difference(Polygon(ii))
+                    except:
+                        polygon = Polygon()
                 else:
                     holes.append(Polygon(ii))
         if not polygon.is_empty:
@@ -346,6 +349,9 @@ def linestring2path(ls, orientation):
 
 def linestring2path_open(ls):
     return geom.Path([geom.PathPoint(x, y) for x, y in ls.coords], False)
+
+def polygon_to_shape(polygon):
+    return shape.Shape(linestring2path(polygon.exterior, True), [linestring2path(i, False) for i in polygon.interiors])
 
 def add_arcdata(gen_path, item):
     steps = max(1, math.ceil(item.radius * abs(item.span_angle)))
