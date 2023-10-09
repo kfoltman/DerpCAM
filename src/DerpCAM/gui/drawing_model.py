@@ -637,20 +637,44 @@ class BlockmapEntry(object):
         self.starts = set()
         self.ends = set()
 
-class Blockmap(dict):
+class Blockmap:
+    def __init__(self):
+        self.bmap = dict()
+        self.edges = set()
+        self.duplicates = set()
     def pt_to_index(self, pt):
         res = geom.GeometrySettings.RESOLUTION
-        return (int(pt.x * res), int(pt.y * res))
+        return (round(pt.x * res), round(pt.y * res))
     def point(self, pt):
         i = self.pt_to_index(pt)
-        res = self.get(i, None)
+        res = self.bmap.get(i, None)
         if res is None:
-            res = self[i] = BlockmapEntry()
+            res = self.bmap[i] = BlockmapEntry()
         return res
     def start_point(self, points):
         return self.point(points[0].seg_start())
     def end_point(self, points):
         return self.point(points[-1].seg_end())
+    def add_edge(self, edge, points):
+        # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
+        if len(points) == 2:
+            start = self.pt_to_index(points[0].seg_start())
+            end = self.pt_to_index(points[-1].seg_end())
+            if not points[0].is_arc() and not points[1].is_arc():
+                if (end, start) in self.edges or (start, end) in self.edges:
+                    self.duplicates.add(edge)
+                    return
+                self.edges.add((start, end))
+            else:
+                assert not points[0].is_arc()
+                if (end, points[1].c.r, start) in self.edges or (start, points[1].c.r, end) in self.edges:
+                    self.duplicates.add(edge)
+                    return
+                self.edges.add((start, points[1].c.r, end))
+        self.start_point(points).starts.add(edge)
+        self.end_point(points).ends.add(edge)
+    def all_points(self):
+        return self.bmap.values()
 
 class JoinItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
@@ -678,6 +702,7 @@ class JoinItemsUndoCommand(QUndoCommand):
                 assert not p2[0].is_arc()
                 return p1[:-1] + p2
             else:
+                assert not p2[0].is_arc()
                 return p1 + p2
         blockmap = Blockmap()
         joined = set()
@@ -685,26 +710,18 @@ class JoinItemsUndoCommand(QUndoCommand):
         toRemove = set()
         toRecalc = set()
         originals = {}
-        for i in self.items:
-            points = i.untransformed.points
-            originals[i] = points
-            start = blockmap.pt_to_index(points[0].seg_start())
-            end = blockmap.pt_to_index(points[-1].seg_end())
-            # Only apply duplicate elimination logic to single lines, otherwise it's too expensive
-            if len(points) == 2:
-                if ((end, start) in edges or (start, end) in edges):
-                    toRemove.add(i)
-                    continue
-                edges.add((start, end))
-            blockmap.start_point(points).starts.add(i)
-            blockmap.end_point(points).ends.add(i)
-        for bme in blockmap.values():
+        for edge in self.items:
+            points = edge.untransformed.points
+            originals[edge] = points
+            blockmap.add_edge(edge, points)
+        for bme in blockmap.all_points():
             while len(bme.starts) >= 1 and len(bme.ends) >= 1:
                 i = bme.ends.pop()
                 j = bme.starts.pop()
                 if i is j:
                     i.untransformed.closed = True
-                    del i.untransformed.points[-1:]
+                    if not i.untransformed.points[-1].is_arc():
+                        del i.untransformed.points[-1:]
                     continue
                 i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
                 p = blockmap.end_point(j.untransformed.points)
@@ -739,7 +756,7 @@ class JoinItemsUndoCommand(QUndoCommand):
         root.takeRow(pos)
         self.original_items = {k : v for k, v in originals.items() if k in toRecalc}
         self.removed_items = []
-        for i in toRemove:
+        for i in blockmap.duplicates | toRemove:
             row = i.row()
             self.removed_items.append((row, self.document.drawing.takeRow(row)))
         self.removed_items = self.removed_items[::-1]

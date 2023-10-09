@@ -126,9 +126,9 @@ class PathPoint(PathNode):
     def with_speed_hint(self, speed_hint):
         return PathPoint(self.x, self.y, speed_hint)
     def __eq__(self, other):
-        return self.x == other.x and self.y == other.y
+        return isinstance(other, PathPoint) and self.x == other.x and self.y == other.y
     def __ne__(self, other):
-        return self.x != other.x or self.y != other.y
+        return not isinstance(other, PathPoint) or self.x != other.x or self.y != other.y
     def __hash__(self):
         return (self.x, self.y).__hash__()
     def scaled(self, cx, cy, scale):
