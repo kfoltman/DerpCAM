@@ -642,9 +642,31 @@ class Blockmap:
         self.bmap = dict()
         self.edges = set()
         self.duplicates = set()
+        self.coord_values = set()
+        self.coord_map = dict()
+    def add_edge_coords(self, points):
+        self.add_point_coords(points[0].seg_start())
+        self.add_point_coords(points[-1].seg_end())
+    def add_point_coords(self, point):
+        self.coord_values.add(point.x)
+        self.coord_values.add(point.y)
+    def create_approx_map(self):
+        values = sorted(list(self.coord_values))
+        if not values:
+            return
+        deltas = [ values[i + 1] - values[i] for i in range(len(values) - 1) ]
+        self.coord_map[values[0]] = 0
+        start = values[0]
+        step = 1.0 / geom.GeometrySettings.RESOLUTION
+        counter = 0
+        for i, delta in enumerate(deltas):
+            if delta >= step / 2 or values[i + 1] - start >= step:
+                start = values[i + 1]
+                counter += 1
+            self.coord_map[values[i + 1]] = counter
+            #print (values[i + 1], counter)
     def pt_to_index(self, pt):
-        res = geom.GeometrySettings.RESOLUTION
-        return (round(pt.x * res), round(pt.y * res))
+        return (self.coord_map[pt.x], self.coord_map[pt.y])
     def point(self, pt):
         i = self.pt_to_index(pt)
         res = self.bmap.get(i, None)
@@ -711,9 +733,13 @@ class JoinItemsUndoCommand(QUndoCommand):
         toRecalc = set()
         originals = {}
         for edge in self.items:
+            blockmap.add_edge_coords(edge.untransformed.points)
+        blockmap.create_approx_map()
+        for edge in self.items:
             points = edge.untransformed.points
             originals[edge] = points
             blockmap.add_edge(edge, points)
+        result = set()
         for bme in blockmap.all_points():
             while len(bme.starts) >= 1 and len(bme.ends) >= 1:
                 i = bme.ends.pop()
@@ -722,6 +748,7 @@ class JoinItemsUndoCommand(QUndoCommand):
                     i.untransformed.closed = True
                     if not i.untransformed.points[-1].is_arc():
                         del i.untransformed.points[-1:]
+                    result.add(i)
                     continue
                 i.untransformed.points = join(i.untransformed.points, j.untransformed.points)
                 p = blockmap.end_point(j.untransformed.points)
@@ -762,6 +789,7 @@ class JoinItemsUndoCommand(QUndoCommand):
         self.removed_items = self.removed_items[::-1]
         root.insertRow(pos, self.document.drawing)
         self.document.shapesUpdated.emit()
+        self.document.shapesCreated.emit(list(result))
 
 class AddDrawingItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items):
