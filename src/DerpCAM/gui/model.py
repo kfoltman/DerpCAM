@@ -1016,7 +1016,7 @@ class DocumentModel(QObject):
         data['default_presets'] = [{'tool_id' : k.id, 'preset_id' : v.id} for k, v in self.default_preset_by_tool.items() if v is not None]
         data['drawing'] = { 'header' : self.drawing.store(), 'items' : [item.store() for item in self.drawing.items()] }
         data['operation_cycles'] = [ { 'tool_id' : cycle.cutter.id, 'is_current' : (self.current_cutter_cycle is cycle), 'operations' : [op.store() for op in cycle.items()] } for cycle in self.allCycles() ]
-        wall_profiles_used = set([op.wall_profile.id for op in self.allOperations()])
+        wall_profiles_used = set([op.wall_profile.id for op in self.allOperations() if op.wall_profile is not None])
         data['wall_profiles'] = [profile.store() for profile in self.project_wall_profiles.values()]
         #data['current_cutter_id'] = self.current_cutter_cycle.cutter.id if self.current_cutter_cycle is not None else None
         return data
