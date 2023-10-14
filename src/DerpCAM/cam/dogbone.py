@@ -111,7 +111,7 @@ def add_dogbones(shape, tool, outside, mode, is_refine):
             # what's a real direction and what's just an artifact
             # of coordinate quantization.
             angle, next_angle = seg_angle(s, e)
-            if abs(math.sin(angle - old_angle)) > sin_tolerance:
+            if old_angle is None or abs(math.sin(angle - old_angle)) > sin_tolerance:
                 old_angle = None
                 continue
         angle, next_angle = seg_angle(s, e)
