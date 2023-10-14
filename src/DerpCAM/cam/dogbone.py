@@ -34,7 +34,7 @@ def slope(angle):
     return abs(math.sin(angle))
 
 sin_tolerance = math.sin(5 * math.pi / 180)
-direction_change_threshold = math.sin(10 * math.pi / 180)
+direction_change_threshold = math.sin(22.5 * math.pi / 180)
 
 def add_circle(circles, s, m, e, old_angle, angle, tool, mode, orientation, shape, is_refine):
     dangle = (angle - old_angle)
@@ -100,9 +100,9 @@ def add_dogbones(shape, tool, outside, mode, is_refine):
     orientation = boundary.orientation()
     if not orientation ^ outside:
         boundary = boundary.reverse()
-    boundary = boundary.lines_to_arcs()
+    #boundary = boundary.lines_to_arcs()
     for s, e in geom.PathSegmentIterator(boundary):
-        if not e.is_arc() and s.dist(e) < tool.diameter / 10:
+        if False and not e.is_arc() and s.dist(e) < tool.diameter / 10:
             # Ignore extremely short segments
             if s.dist(e) < 1.0 / geom.GeometrySettings.RESOLUTION:
                 continue
