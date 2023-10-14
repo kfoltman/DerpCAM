@@ -62,18 +62,14 @@ def add_circle(circles, s, m, e, old_angle, angle, tool, mode, orientation, shap
         else:
             a = angle - dangle + math.pi
     elif mode == DogboneMode.HORIZONTAL or mode == DogboneMode.VERTICAL:
-        if d1 <= d2:
-            a = angle
-        else:
-            a = angle - dangle + math.pi
+        a1 = angle
+        a2 = angle - dangle + math.pi
         threshold = 0.01
-        if abs(math.sin(a) if mode == DogboneMode.VERTICAL else math.cos(a)) > threshold:
-            if d1 >= d2:
-                a = angle
-            else:
-                a = angle - dangle + math.pi
-            if abs(math.sin(a) if mode == DogboneMode.VERTICAL else math.cos(a)) > threshold:
-                return
+        a1_bad = (abs(math.sin(a1) if mode == DogboneMode.VERTICAL else math.cos(a1)) > threshold)
+        a2_bad = (abs(math.sin(a2) if mode == DogboneMode.VERTICAL else math.cos(a2)) > threshold)
+        if a1_bad and a2_bad:
+            return
+        a = a2 if a1_bad else a1
     eangle = 2 * math.pi - (angle - a) % (2 * math.pi)
     # Arbitrary cutoffs to avoid weird isolated circles - will ignore
     # for very acute angles and create a sausage for milder ones
