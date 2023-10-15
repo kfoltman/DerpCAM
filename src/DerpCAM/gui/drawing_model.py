@@ -248,6 +248,8 @@ class DrawingTextStyle(object):
         self.angle = angle
         self.font_name = font_name
         self.spacing = spacing
+    def clone(self):
+        return DrawingTextStyle(self.height, self.width, self.halign, self.valign, self.angle, self.font_name, self.spacing)
 
 class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_x = FloatDistEditableProperty("Insert X", "x", Format.coord, unit="mm", allow_none=False)
