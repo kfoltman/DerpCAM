@@ -320,10 +320,26 @@ class Toolpath(object):
         def polygon2points(polygon):
             return [ring2points(polygon.exterior)] + [ring2points(hole) for hole in polygon.interiors]
         preview = MultiPolygon()
+        ttd = self.tool.tip_diameter
         for s, e in PathSegmentIterator(self.path):
-            sp = Point(s.x, s.y).buffer(min(self.tool.diameter, s.speed_hint.diameter) / 2 + 0.001)
-            ep = Point(e.x, e.y).buffer(min(self.tool.diameter, e.speed_hint.diameter) / 2 + 0.001)
-            sausage = sp.union(ep).convex_hull
+            sp = Point(s.x, s.y)
+            ep = Point(e.x, e.y)
+            sd = s.speed_hint.diameter
+            ed = e.speed_hint.diameter
+            if sd < ttd or ed < ttd:
+                if sd < ttd and ed < ttd:
+                    continue
+                if sd < ed:
+                    alpha = (ttd - sd) / (ed - sd)
+                    sp = Point(s.x + (e.x - s.x) * alpha, s.y + (e.y - s.y) * alpha)
+                    sd = sd + (ed - sd) * alpha
+                else:
+                    alpha = (ttd - ed) / (sd - ed)
+                    ep = Point(e.x + (s.x - e.x) * alpha, e.y + (s.y - e.y) * alpha)
+                    ed = ed + (sd - ed) * alpha
+            sc = sp.buffer(min(self.tool.diameter, sd) / 2 + 0.001)
+            ec = ep.buffer(min(self.tool.diameter, ed) / 2 + 0.001)
+            sausage = sc.union(ec).convex_hull
             preview = preview.union(sausage)
         if isinstance(preview, Polygon):
             return polygon2points(preview)

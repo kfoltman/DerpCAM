@@ -48,7 +48,7 @@ class Tool(object):
     # Diameter to depth conversion for v-carving
     def dia2depth(self, dia):
         slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
-        eff_dia = max(0, min(dia, self.diameter) - self.tip_diameter)
+        eff_dia = min(dia, self.diameter) - self.tip_diameter
         return slope * eff_dia
     def depth2dia(self, depth):
         # depth is negative here
