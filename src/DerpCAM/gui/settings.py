@@ -53,6 +53,7 @@ class ConfigSettings(object):
         BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
         BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
+        BoolConfigSetting('spindle_fine_control', 'gcode/spindle_fine_control', GeometrySettings.spindle_fine_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
         FloatConfigSetting('spindle_min_rpm', 'gcode/spindle_min_rpm', 8000, 1),
         FloatConfigSetting('spindle_max_rpm', 'gcode/spindle_max_rpm', 24000, 1),
@@ -120,6 +121,7 @@ class ConfigSettings(object):
         GeometrySettings.gcode_inches = self.gcode_inches
         GeometrySettings.grbl_output = self.grbl_output
         GeometrySettings.spindle_control = self.spindle_control
+        GeometrySettings.spindle_fine_control = self.spindle_fine_control
         GeometrySettings.spindle_warmup = self.spindle_warmup
         GeometrySettings.spindle_min_rpm = self.spindle_min_rpm
         GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
@@ -182,13 +184,17 @@ class PreferencesDialog(QDialog):
         self.formCAM.addRow(self.grblOutputCheck)
         self.spindleControlCheck = QCheckBox("&Generate spindle control commands")
         self.spindleControlCheck.setChecked(self.config.spindle_control)
+        self.spindleControlCheck.stateChanged.connect(self.updateControls)
         self.formCAM.addRow(self.spindleControlCheck)
+        self.spindleFineControlCheck = QCheckBox("&Adaptive spindle speed control")
+        self.spindleFineControlCheck.setChecked(self.config.spindle_fine_control)
+        self.formCAM.addRow(self.spindleFineControlCheck)
         self.warmupSpin = floatSpin(0, 60, 1, self.config.spindle_warmup, "Time in seconds to wait for the spindle to get up to target speed.")
         self.formCAM.addRow("&Spin-up time (seconds):", self.warmupSpin)
         self.minRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_min_rpm, "Minimum spindle speed (that still provides usable torque) in revolutions per minute.")
         self.formCAM.addRow("&Minimum RPM:", self.minRPMSpin)
         self.maxRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_max_rpm, "Maximum spindle speed in revolutions per minute.")
-        self.formCAM.addRow("&Minimum RPM:", self.maxRPMSpin)
+        self.formCAM.addRow("&Maximum RPM:", self.maxRPMSpin)
         self.runAfterExportEdit = QLineEdit()
         self.runAfterExportEdit.setText(self.config.run_after_export)
         self.formCAM.addRow("&Run after G-Code export:", self.runAfterExportEdit)
@@ -255,7 +261,10 @@ class PreferencesDialog(QDialog):
         self.outerForm.addRow(self.tabs)
         self.outerForm.addRow(self.buttonBox)
 
+        self.updateControls()
         self.resolutionSpin.setFocus()
+    def updateControls(self):
+        self.spindleFineControlCheck.setEnabled(self.spindleControlCheck.isChecked())
     def accept(self):
         self.config.resolution = self.resolutionSpin.value()
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
@@ -263,6 +272,7 @@ class PreferencesDialog(QDialog):
         self.config.paranoid_mode = self.paranoidModeCheck.isChecked()
         self.config.grbl_output = self.grblOutputCheck.isChecked()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
+        self.config.spindle_fine_control = self.spindleControlCheck.isChecked() and self.spindleFineControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()
         self.config.spindle_min_rpm = self.minRPMSpin.value()
         self.config.spindle_max_rpm = self.maxRPMSpin.value()
