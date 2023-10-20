@@ -11,7 +11,7 @@ from DerpCAM.cam.toolpath import *
 from DerpCAM.cam.wall_profile import *
 
 machine_params = MachineParams(5, 1)
-tool = standard_tool(2, 2, material_mildsteel, carbide_uncoated)
+tool = standard_tool(2, 2, 2, material_mildsteel, carbide_uncoated)
 tool.maxdoc = 1
 
 class LayerScheduleTest(unittest.TestCase):

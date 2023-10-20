@@ -164,6 +164,10 @@ class CutterBase(Serializable):
         res.flutes = int(flutes) if flutes is not None else 0
         res.presets = []
         return res
+    def is_vbit(self):
+        return False
+    def eff_diameter(self):
+        return self.diameter
     def description(self):
         return (self.name + ": " if self.name is not None else "") + self.description_only()
     def description_only(self):
@@ -290,6 +294,10 @@ class EndMillCutter(CutterBase):
             self.angle = 180
         if self.tip_diameter is None:
             self.tip_diameter = 0
+    def is_vbit(self):
+        return self.shape == EndMillShape.TAPERED
+    def eff_diameter(self):
+        return max(0.1, self.tip_diameter) if self.shape == EndMillShape.TAPERED else self.diameter
     def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset):
         self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset))
         return self

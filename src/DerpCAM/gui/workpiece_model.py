@@ -20,12 +20,14 @@ class MaterialType(EnumClass):
     MALLEABLE_IRON = 8
     BRASS = 9
     FOAM = 10
+    BRONZE = 11
     descriptions = [
         (FOAM, "Foam", milling_tool.material_foam),
         (WOOD, "Wood/MDF", milling_tool.material_wood),
         (PLASTICS, "Plastics", milling_tool.material_plastics),
         (ALU, "Aluminium", milling_tool.material_aluminium),
         (BRASS, "Brass", milling_tool.material_brass),
+        (BRONZE, "Bronze", milling_tool.material_bronze),
         (MILD_STEEL, "Mild steel", milling_tool.material_mildsteel),
         (ALLOY_STEEL, "Alloy or MC steel", milling_tool.material_alloysteel),
         (TOOL_STEEL, "Tool steel", milling_tool.material_toolsteel),
