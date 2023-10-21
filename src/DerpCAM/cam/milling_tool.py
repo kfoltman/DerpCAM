@@ -192,7 +192,7 @@ def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, s
     if is_drill:
         plunge = feed = chipload * rpm
     else:
-        if is_vbit and inv_tool.tip_diameter < inv_tool.diameter / 8:
+        if is_vbit:
             # In most cases, maximum RPM is fine because of the shape of the bit
             rpm = machine_params.max_rpm
             feed = sfm * sfm_scale * rpm * (1 + 2 * sin(inv_tool.angle / 2 * pi / 180)) / 4 / 24000
