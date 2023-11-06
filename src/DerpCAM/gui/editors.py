@@ -8,7 +8,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.common import geom, guiutils, view
-from DerpCAM.gui import model
+from DerpCAM.gui import drawing_model, model
 
 class CanvasEditor(object):
     def __init__(self, item):
@@ -80,6 +80,61 @@ class CanvasEditor(object):
         return None
     def onShapesDeleted(self, shapes):
         pass
+
+class CanvasEditorWithSnap(CanvasEditor):
+    def coordSnapValue(self):
+        if self.canvas.scalingFactor() >= 330:
+            return 2
+        elif self.canvas.scalingFactor() >= 33:
+            return 1
+        else:
+            return 0
+    def snapCoords(self, pt):
+        snap = self.coordSnapValue()
+        def cround(val):
+            val = round(val, snap)
+            # Replace -0 by 0
+            return val if val else 0
+        return geom.PathPoint(cround(pt.x), cround(pt.y))
+    def snapInfo(self):
+        return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
+
+class CanvasSetOriginEditor(CanvasEditorWithSnap):
+    def __init__(self, document):
+        CanvasEditor.__init__(self, None)
+        self.document = document
+        self.can_cancel = False
+        self.origin = QPointF(self.document.drawing.x_offset, self.document.drawing.y_offset)
+        self.mouse_point = None
+    def setTitle(self):
+        self.parent.setWindowTitle("Set origin point of the drawing")
+    def updateLabel(self):
+        self.descriptionLabel.setText("Click the new origin point.")
+    def paint(self, e, qp):
+        if self.mouse_point is not None:
+            pen = qp.pen()
+            qp.setPen(QPen(QColor(0, 0, 0), 0))
+            pos = self.canvas.project(QPointF(self.mouse_point.x, self.mouse_point.y))
+            qp.drawLine(pos - QPointF(5, 5), pos + QPointF(5, 5))
+            qp.drawLine(pos - QPointF(-5, 5), pos + QPointF(-5, 5))
+            qp.setPen(pen)
+    def mousePointFromEvent(self, e):
+        pos = self.canvas.unproject(e.localPos())
+        pt = geom.PathPoint(pos.x(), pos.y())
+        self.mouse_point = self.snapCoords(pt)
+    def mouseMoveEvent(self, e):
+        self.mousePointFromEvent(e)
+        self.canvas.repaint()
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.mousePointFromEvent(e)
+            self.apply()
+            return True
+    def apply(self):
+        DrawingTreeItem = drawing_model.DrawingTreeItem
+        self.document.opChangeProperty(DrawingTreeItem.prop_x_offset, [(self.document.drawing, self.origin.x() + self.mouse_point.x)])
+        self.document.opChangeProperty(DrawingTreeItem.prop_y_offset, [(self.document.drawing, self.origin.y() + self.mouse_point.y)])
+        self.parent.applyClicked.emit()
 
 class CanvasTabsEditor(CanvasEditor):
     def __init__(self, item):
@@ -291,7 +346,7 @@ class CanvasExitPointEditor(CanvasEntryPointEditor):
 FEEDBACK_ADD = 1
 FEEDBACK_REMOVE = 2
 
-class CanvasDrawingItemEditor(CanvasEditor):
+class CanvasDrawingItemEditor(CanvasEditorWithSnap):
     def __init__(self, item, cancel_index=None):
         CanvasEditor.__init__(self, item)
         self.last_pos = None
@@ -331,22 +386,6 @@ Click on a drawing to create a text object.
     def onShapesDeleted(self, shapes):
         if isinstance(self.item, model.DrawingItemTreeItem) and self.item in shapes:
             self.canvas.exitEditMode(False)
-    def coordSnapValue(self):
-        if self.canvas.scalingFactor() >= 330:
-            return 2
-        elif self.canvas.scalingFactor() >= 33:
-            return 1
-        else:
-            return 0
-    def snapCoords(self, pt):
-        snap = self.coordSnapValue()
-        def cround(val):
-            val = round(val, snap)
-            # Replace -0 by 0
-            return val if val else 0
-        return geom.PathPoint(cround(pt.x), cround(pt.y))
-    def snapInfo(self):
-        return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
 
 class TempRenderer:
     def __init__(self):
