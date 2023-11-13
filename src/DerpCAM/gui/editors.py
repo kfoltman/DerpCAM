@@ -30,10 +30,13 @@ class CanvasEditor(object):
             self.canvas.exitEditMode(False)
     def createControls(self):
         self.createLabel()
+        self.createSnapMode()
         self.createExtraControls()
         self.createButtons()
         self.updateLabel()
         self.parent.widget().setLayout(self.layout)
+    def createSnapMode(self):
+        pass
     def createExtraControls(self):
         pass
     def connectSignals(self):
@@ -82,6 +85,28 @@ class CanvasEditor(object):
         pass
 
 class CanvasEditorWithSnap(CanvasEditor):
+    snapMode = 7
+    def createSnapMode(self):
+        self.snapGroup = QGroupBox("Snap mode")
+        self.snapLayout = QHBoxLayout()
+        self.snapButtons = []
+        def mkButton(idx, mode):
+            btn = QPushButton(mode)
+            btn.setCheckable(True)
+            btn.setChecked((self.snapMode & (1 << idx)) != 0)
+            btn.clicked.connect(lambda: self.onSnapButtonClicked(idx))
+            return btn
+        for idx, mode in enumerate(["Grid", "Endpoints", "Centre"]):
+            btn = mkButton(idx, mode)
+            self.snapButtons.append(btn)
+            self.snapLayout.addWidget(btn)
+        self.snapGroup.setLayout(self.snapLayout)
+        self.layout.addRow(self.snapGroup)
+    def onSnapButtonClicked(self, which):
+        if self.snapButtons[which].isChecked():
+            self.snapMode |= 1 << which
+        else:
+            self.snapMode &= ~(1 << which)
     def coordSnapValue(self):
         if self.canvas.scalingFactor() >= 330:
             return 2
@@ -90,12 +115,26 @@ class CanvasEditorWithSnap(CanvasEditor):
         else:
             return 0
     def snapCoords(self, pt):
-        snap = self.coordSnapValue()
-        def cround(val):
-            val = round(val, snap)
-            # Replace -0 by 0
-            return val if val else 0
-        return geom.PathPoint(cround(pt.x), cround(pt.y))
+        threshold = 10 / self.canvas.scalingFactor()
+        drawing = self.document.drawing
+        pt2 = geom.PathPoint(pt.x + drawing.x_offset, pt.y + drawing.y_offset)
+        if self.snapMode & 6:
+            points = set()
+            if self.snapMode & 2:
+                points |= drawing.snapEndPoints()
+            if self.snapMode & 4:
+                points |= drawing.snapCentrePoints()
+            for i in points:
+                if geom.dist_fast(i, pt2) < threshold:
+                    return geom.PathPoint(i.x - drawing.x_offset, i.y - drawing.y_offset)
+        if self.snapMode & 1:
+            snap = self.coordSnapValue()
+            def cround(val):
+                val = round(val, snap)
+                # Replace -0 by 0
+                return val if val else 0
+            return geom.PathPoint(cround(pt.x), cround(pt.y))
+        return pt
     def snapInfo(self):
         return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
 
@@ -103,7 +142,8 @@ class CanvasSetOriginEditor(CanvasEditorWithSnap):
     def __init__(self, document):
         CanvasEditor.__init__(self, None)
         self.document = document
-        self.can_cancel = False
+        self.can_cancel = True
+        self.cancel_index = None
         self.origin = QPointF(self.document.drawing.x_offset, self.document.drawing.y_offset)
         self.mouse_point = None
     def setTitle(self):
@@ -348,7 +388,8 @@ FEEDBACK_REMOVE = 2
 
 class CanvasDrawingItemEditor(CanvasEditorWithSnap):
     def __init__(self, item, cancel_index=None):
-        CanvasEditor.__init__(self, item)
+        CanvasEditorWithSnap.__init__(self, item)
+        self.document = item.document if item else None
         self.last_pos = None
         self.visual_feedback = None
         self.can_cancel = True

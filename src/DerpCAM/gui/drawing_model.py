@@ -633,6 +633,19 @@ class DrawingTreeItem(CAMListTreeItem):
             return set([self] + self.document.allOperations())
         # Properties of operations are not affected
         return set([self])
+    def snapCentrePoints(self):
+        points = set()
+        for item in self.items():
+            if isinstance(item, DrawingCircleTreeItem):
+                points.add(item.centre)
+        return points
+    def snapEndPoints(self):
+        points = set()
+        for item in self.items():
+            if isinstance(item, DrawingPolylineTreeItem):
+                for p in item.points:
+                    points.add(p.seg_end())
+        return points
         
 class BlockmapEntry(object):
     def __init__(self):
