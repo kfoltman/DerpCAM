@@ -394,8 +394,20 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
         self.visual_feedback = None
         self.can_cancel = True
         self.cancel_index = cancel_index
+    def drawingOffset(self):
+        return self.document.drawing.x_offset, self.document.drawing.y_offset
+    def ptFromPos(self, eLocalPos, snap=True, inverse=False):
+        pos = self.canvas.unproject(eLocalPos)
+        ox, oy = self.drawingOffset()
+        if inverse:
+            ox, oy = -ox, -oy
+        if snap:
+            return self.snapCoords(geom.PathPoint(pos.x() + ox, pos.y() + oy))
+        else:
+            return geom.PathPoint(pos.x() + ox, pos.y() + oy)
     def paintPoint(self, qp, loc, as_arc):
-        coordsText = "(" + guiutils.Format.coord(loc.x, brief=True) + ", " + guiutils.Format.coord(loc.y, brief=True) + ")"
+        ox, oy = self.drawingOffset()
+        coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + ", " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
         hbox = QPointF(3, 3)
         metrics = QFontMetrics(qp.font())
         size = metrics.size(Qt.TextSingleLine, coordsText)
@@ -403,7 +415,7 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
         hbox2a = QPointF(width / 2, size.height() + 1)
         hbox2b = QPointF(width / 2, 5)
         displ = QPointF(0, 7.5)
-        pt = self.canvas.project(QPointF(loc.x, loc.y))
+        pt = self.canvas.project(QPointF(loc.x - ox, loc.y - oy))
         color = qp.pen().color()
         if as_arc:
             brush = qp.brush()
@@ -452,9 +464,6 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
         self.initState(self.ptFromPos(eLocalPos))
         self.canvas.repaint()
-    def ptFromPos(self, eLocalPos):
-        pos = self.canvas.unproject(eLocalPos)
-        return self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
     def drawPreview(self, qp):
         self.item.createPaths()
         oldTransform = qp.transform()
@@ -462,7 +471,8 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         qp.setTransform(transform)
         qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
         tempRenderer = TempRenderer()
-        self.item.renderTo(tempRenderer, None)
+        ox, oy = self.drawingOffset()
+        self.item.translated(-ox, -oy).renderTo(tempRenderer, None)
         tempRenderer.paint(qp, self.canvas)
         qp.setTransform(oldTransform)
     def mousePressEvent(self, e):
@@ -579,9 +589,10 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
         if self.second_point is None:
             return
         path = geom.Path(self.polylinePath(), True)
+        ox, oy = self.drawingOffset()
         for start, end in geom.PathSegmentIterator(path):
-            qs = self.canvas.project(QPointF(start.x, start.y))
-            qe = self.canvas.project(QPointF(end.x, end.y))
+            qs = self.canvas.project(QPointF(start.x - ox, start.y - oy))
+            qe = self.canvas.project(QPointF(end.x - ox, end.y - oy))
             qp.drawLine(qs, qe)
     def mouseMoveEventPos(self, e, newPos):
         if self.second_point is None:
@@ -665,7 +676,8 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
     def drawPreview(self, qp):
         if self.second_point is None and self.radius is None:
             return
-        xc, yc = self.first_point.x, self.first_point.y
+        ox, oy = self.drawingOffset()
+        xc, yc = self.first_point.x - ox, self.first_point.y - oy
         if self.radius is None:
             r = self.first_point.dist(self.second_point)
         else:
@@ -758,6 +770,7 @@ Double-clicking a node removes it.
         #    modeText += str(i) + "\n"
         self.descriptionLabel.setText(modeText)
     def paint(self, e, qp):
+        ox, oy = self.drawingOffset()
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
         normPen = QColor(0, 0, 0)
@@ -781,12 +794,12 @@ Double-clicking a node removes it.
             if self.visual_feedback[0] == FEEDBACK_ADD:
                 other = self.visual_feedback[1]
                 if other.is_point():
-                    qp.drawLine(self.canvas.project(QPointF(other.x, other.y)), self.canvas.project(QPointF(self.last_pos.x, self.last_pos.y)))
+                    qp.drawLine(self.canvas.project(QPointF(other.x - ox, other.y - oy)), self.canvas.project(QPointF(self.last_pos.x - ox, self.last_pos.y - iy)))
             elif self.visual_feedback[0] == FEEDBACK_REMOVE:
                 other1 = self.visual_feedback[1].seg_end()
                 other2 = self.visual_feedback[2].seg_end()
                 if other1.is_point() and other2.is_point():
-                    qp.drawLine(self.canvas.project(QPointF(other1.x, other1.y)), self.canvas.project(QPointF(other2.x, other2.y)))
+                    qp.drawLine(self.canvas.project(QPointF(other1.x - ox, other1.y - oy)), self.canvas.project(QPointF(other2.x - ox, other2.y - oy)))
     def isArcEndpoint(self, index):
         if self.item.points[index].is_arc():
             return True, index, 1
@@ -795,12 +808,12 @@ Double-clicking a node removes it.
         return False, index, None
     def startDragArc(self, pos, index, where):
         self.drag_start_data = (pos, index, where, self.item.points[index].as_tuple())
-    def clickOnPolyline(self, pos, e, is_double):
+    def clickOnPolyline(self, e, is_double):
         self.visual_feedback = None
         npts = len(self.item.points)
         is_add = isinstance(self, CanvasNewPolylineEditor)
         polyline = self.item
-        pt = geom.PathPoint(pos.x(), pos.y())
+        pt = self.ptFromPos(e.localPos(), snap=False)
         nearest = self.nearestPolylineItem(pt)
         if nearest is None and is_double:
             nearest = self.nearestPolylineItem(self.snapCoords(pt))
@@ -908,12 +921,10 @@ Double-clicking a node removes it.
         return None
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
-            pos = self.canvas.unproject(e.localPos())
-            self.clickOnPolyline(pos, e, True)
+            self.clickOnPolyline(e, True)
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            pos = self.canvas.unproject(e.localPos())
-            self.clickOnPolyline(pos, e, False)
+            self.clickOnPolyline(e, False)
             return True
     def adjacent(self, i1, i2):
         if abs(i1 - i2) == 1:
@@ -1027,13 +1038,12 @@ Double-clicking a node removes it.
             self.visual_feedback = None
             repaint = True
         pos = self.canvas.unproject(e.localPos())
-        self.last_pos = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+        self.last_pos = self.ptFromPos(pos, inverse=True)
         npts = len(self.item.points)
         if self.canvas.dragging:
             sp, dragged, start_pos = self.drag_start_data[:3]
             is_arc = len(self.drag_start_data) > 3
-            pos = self.canvas.unproject(e.localPos())
-            pt = geom.PathPoint(pos.x(), pos.y())
+            pt = self.ptFromPos(e.localPos(), snap=False)
             if is_arc:
                 self.editArcEndpoint(pt)
                 return True
@@ -1062,8 +1072,7 @@ Double-clicking a node removes it.
             self.canvas.renderDrawing()
             self.canvas.repaint()
             return True
-        pos = self.canvas.unproject(e.localPos())
-        pt = geom.PathPoint(pos.x(), pos.y())
+        pt = self.ptFromPos(e.localPos(), snap=False)
         nearest = self.nearestPolylineItem(pt)
         if nearest is not None:
             is_arc_ep, index, t = self.isArcEndpoint(nearest)
@@ -1096,8 +1105,7 @@ Double-clicking a node removes it.
             if self.canvas.dragging:
                 is_arc = len(self.drag_start_data) > 3
                 sp, dragged, start_pos = self.drag_start_data[:3]
-                pos = self.canvas.unproject(e.localPos())
-                pt = geom.PathPoint(pos.x(), pos.y())
+                pt = self.ptFromPos(e.localPos())
                 if is_arc:
                     self.editArcEndpoint(pt)
                 else:
