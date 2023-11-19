@@ -571,11 +571,20 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
         return True
 
 class CanvasNewRectangleEditor(CanvasNewItemEditor):
+    RADIUS = 0
     def createItem(self, document):
         return None
     def initState(self, pos):
         self.first_point = pos
         self.second_point = None
+    def createExtraControls(self):
+        self.controlsLayout = QHBoxLayout()
+        self.radiusEditor = QLineEdit()
+        self.radiusEditor.setValidator(QDoubleValidator(0, 1000, 20))
+        self.radiusEditor.setText(self.radiusEditor.validator().locale().toString(self.RADIUS))
+        self.controlsLayout.addWidget(QLabel("Radius"))
+        self.controlsLayout.addWidget(self.radiusEditor)
+        self.layout.addRow(self.controlsLayout)
     def setTitle(self):
         self.parent.setWindowTitle("Create a rectangle polyline object")
     def drawCursorPoint(self, qp):
@@ -584,16 +593,33 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
     def polylinePath(self):
         x1, y1 = self.first_point.x, self.first_point.y
         x2, y2 = self.second_point.x, self.second_point.y
-        return [geom.PathPoint(x1, y1), geom.PathPoint(x2, y1), geom.PathPoint(x2, y2), geom.PathPoint(x1, y2)]
+        if x2 < x1:
+            x1, x2 = x2, x1
+        if y2 < y1:
+            y1, y2 = y2, y1
+        radius, ok = self.radiusEditor.validator().locale().toDouble(self.radiusEditor.text())
+        if radius == 0 or not ok or abs(x2 - x1) <= 2 * radius or abs(y2 - y1) <= 2 * radius:
+            return [geom.PathPoint(x1, y1), geom.PathPoint(x2, y1), geom.PathPoint(x2, y2), geom.PathPoint(x1, y2)]
+        else:
+            def fillet(x, y, no):
+                x += -radius if no < 2 else +radius
+                y += -radius if no >= 1 and no < 3 else +radius
+                return geom.PathArc.xyra(x, y, radius, (no + 3) * math.pi / 2, math.pi / 2)
+            return [geom.PathPoint(x1 + radius, y1), geom.PathPoint(x2 - radius, y1), fillet(x2, y1, 0), geom.PathPoint(x2, y1 + radius), geom.PathPoint(x2, y2 - radius), fillet(x2, y2, 1), geom.PathPoint(x2 - radius, y2), geom.PathPoint(x1 + radius, y2), fillet(x1, y2, 2), geom.PathPoint(x1, y2 - radius), geom.PathPoint(x1, y1 + radius), fillet(x1, y1, 3)]
     def drawPreview(self, qp):
         if self.second_point is None:
             return
-        path = geom.Path(self.polylinePath(), True)
+        path = geom.Path(self.polylinePath(), True).interpolated()
         ox, oy = self.drawingOffset()
         for start, end in geom.PathSegmentIterator(path):
             qs = self.canvas.project(QPointF(start.x - ox, start.y - oy))
             qe = self.canvas.project(QPointF(end.x - ox, end.y - oy))
             qp.drawLine(qs, qe)
+    def apply(self):
+        radius, ok = self.radiusEditor.validator().locale().toDouble(self.radiusEditor.text())
+        if ok:
+            CanvasNewRectangleEditor.RADIUS = radius
+        CanvasNewItemEditor.apply(self)
     def mouseMoveEventPos(self, e, newPos):
         if self.second_point is None:
             changed = self.first_point != newPos
