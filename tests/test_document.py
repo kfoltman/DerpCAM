@@ -171,8 +171,8 @@ class DocumentTest(unittest.TestCase):
         self.assertEqual(poly.points, [geom.PathPoint(200, 0), geom.PathPoint(250, 0), geom.PathPoint(250, 50), geom.PathPoint(200, 50)])
         self.assertEqual(poly.translated(20, 10).points, [geom.PathPoint(220, 10), geom.PathPoint(270, 10), geom.PathPoint(270, 60), geom.PathPoint(220, 60)])
         self.assertEqual(poly.scaled(200, 0, 2).points, [geom.PathPoint(200, 0), geom.PathPoint(300, 0), geom.PathPoint(300, 100), geom.PathPoint(200, 100)])
-        self.assertEqual(poly.label(), "Polyline15")
-        self.assertIn("Polyline15(200, 0)-(250, 50)", poly.textDescription())
+        self.assertEqual(poly.label(), "Rectangle15")
+        self.assertIn("Rectangle15(200, 0)-(250, 50)", poly.textDescription())
         shape = poly.toShape()
         self.assertEqual(shape.boundary, [geom.PathPoint(200, 0), geom.PathPoint(250, 0), geom.PathPoint(250, 50), geom.PathPoint(200, 50)])
         self.assertEqual(shape.closed, True)
@@ -495,10 +495,10 @@ class DrawingTest(unittest.TestCase):
     def testHoleParser(self):
         outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.DRILLED_HOLE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
-        self.assertEqual(warnings, ["Line4 is not a circle", "Polyline5 is not a circle", "Polyline6 is not a circle"])
+        self.assertEqual(warnings, ["Line4 is not a circle", "Rectangle5 is not a circle", "Polyline6 is not a circle"])
         outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.INTERPOLATED_HOLE)
         self.assertEqual(outsides, {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3]})
-        self.assertEqual(warnings, ["Line4 is not a circle", "Polyline5 is not a circle", "Polyline6 is not a circle"])
+        self.assertEqual(warnings, ["Line4 is not a circle", "Rectangle5 is not a circle", "Polyline6 is not a circle"])
     def testContourParser(self):
         contourIds = {i.shape_id: set() for i in self.selection if i.shape_id in [1, 2, 3, 5, 6]}
         outsides, actualSelection, warnings = self.drawing.parseSelection(self.selection, gui.model.OperationType.OUTSIDE_CONTOUR)
