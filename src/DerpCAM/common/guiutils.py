@@ -35,6 +35,20 @@ class EnumClass(object):
 
 class UnitConverter(object):
     alt_units = {"in", "sfm", "ipm", "ipt"}
+    def locale():
+        locale = QLocale(QLocale.system())
+        locale.setNumberOptions(QLocale.OmitGroupSeparator)
+        return locale
+    @staticmethod
+    def toDouble(s):
+        if isinstance(s, float):
+            return s
+        if isinstance(s, int):
+            return float(s)
+        val, ok = UnitConverter.locale().toDouble(s)
+        if not ok:
+            raise ValueError(f"Invalid number: {s}")
+        return val
     @staticmethod
     def fromInch(value, multiplier=25.4):
         value = value.strip()
@@ -45,15 +59,16 @@ class UnitConverter(object):
                 wholesStr, value = value.split(" ", 1)
                 wholes = int(wholesStr)
             num, denom = value.split("/", 1)
-            return str((float(num) + wholes * float(denom)) * multiplier / float(denom))
-        return str(float(value) * multiplier)
+            return UnitConverter.fmtfloat((UnitConverter.toDouble(num) + wholes * UnitConverter.toDouble(denom)) * multiplier / UnitConverter.toDouble(denom), 6)
+        return UnitConverter.fmtfloat(UnitConverter.toDouble(value) * multiplier, 6)
     @staticmethod
     def fromMetric(value, multiplier):
         value = value.strip()
+        locale = QLocale.system()
         if '/' in value:
             num, denom = value.split("/", 1)
-            return str(float(num) * multiplier / float(denom))
-        return str(float(value) * multiplier)
+            return UnitConverter.fmtfloat(UnitConverter.toDouble(num) * multiplier / UnitConverter.toDouble(denom), 6)
+        return UnitConverter.fmtfloat(UnitConverter.toDouble(value) * multiplier, 6)
     @staticmethod
     def isAltUnit(unit):
         return unit in UnitConverter.alt_units
@@ -82,6 +97,13 @@ class UnitConverter(object):
         else:
             assert False, f"Unhandled unit: {unit}"
     @staticmethod
+    def fmtfloat(value, dp):
+        locale = UnitConverter.locale()
+        s = locale.toString(float(value), 'f', dp)
+        if locale.decimalPoint() in s:
+            s = s.rstrip("0").rstrip(locale.decimalPoint())
+        return s
+    @staticmethod
     def fmt(value, dp, suffix, force_suffix, binary_fractions=False):
         suffix = force_suffix if force_suffix is not None else suffix
         if binary_fractions and value != round(value):
@@ -100,9 +122,7 @@ class UnitConverter(object):
                     num = num % denom
                     return f"{whole} {num}/{denom}" + suffix
                 return f"{num}/{denom}" + suffix
-        s = f"%0.{dp}f" % (value,)
-        if '.' in s:
-            s = s.rstrip("0").rstrip(".")
+        s = UnitConverter.fmtfloat(value, dp)
         s += suffix
         return s
     @staticmethod
@@ -213,20 +233,24 @@ class UnitConverter(object):
                 value = value2[:-3].strip()
         elif unit == "":
             if value2.endswith("%"):
-                value = str(float(value2) / 100.0)
+                value = str(UnitConverter.toDouble(value2) / 100.0)
         elif unit == "%":
             if value2.endswith("%"):
                 # Dodgy special case, a bare value is the same as percent value
                 value2 = value2[:-1].strip()
-            value = str(float(value2))
+            value = str(UnitConverter.toDouble(value2))
         elif unit == "\u00b0": # degrees
             if value2.endswith("\u00b0"):
                 value = value2[:-1].strip()
         else:
             raise ValueError(f"Unknown unit: {unit}")
         if as_float:
-            value = float(value)
+            value = UnitConverter.toDouble(value)
         return value, unit
+    @staticmethod
+    def itemSeparator():
+        return "," if QLocale.system().decimalPoint() == '.' else ';'
+
 
 def mk_fmt(dp, unit="mm", suffix=None):
     return lambda value, alt_suffix=None, brief=False: UnitConverter.format(value, UnitConverter.curUnit(unit), dp, "" if brief else (alt_suffix or suffix))
@@ -250,7 +274,7 @@ class Format(object):
         return UnitConverter.curUnit("mm")
     @staticmethod
     def point_tuple(value, brief=False):
-        return f"({Format.coord(value[0], brief=brief)}, {Format.coord(value[1], brief=brief)})"
+        return f"({Format.coord(value[0], brief=brief)}{UnitConverter.itemSeparator()} {Format.coord(value[1], brief=brief)})"
     @staticmethod
     def point(value, brief=False):
         return Format.point_tuple((value.x, value.y), brief=brief)

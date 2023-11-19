@@ -231,10 +231,7 @@ class FloatEditableProperty(EditableProperty):
                 return None, None
             if self.default_value is not None:
                 return self.default_value, None
-        try:
-            value = float(value)
-        except ValueError as e:
-            raise ValueError(f"'{value}' is not a valid number")
+        value = UnitConverter.toDouble(value)
         if self.min is not None and value < self.min:
             value = self.min
         if self.max is not None and value > self.max:

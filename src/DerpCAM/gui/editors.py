@@ -407,7 +407,7 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
             return geom.PathPoint(pos.x() + ox, pos.y() + oy)
     def paintPoint(self, qp, loc, as_arc):
         ox, oy = self.drawingOffset()
-        coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + ", " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
+        coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + guiutils.itemSeparator() + " " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
         hbox = QPointF(3, 3)
         metrics = QFontMetrics(qp.font())
         size = metrics.size(Qt.TextSingleLine, coordsText)
