@@ -471,6 +471,34 @@ class Path(object):
             return Path(nodes, False)
     def interpolated(self):
         return Path(CircleFitter.interpolate_arcs(self.nodes, False, 1), self.closed)
+    def is_rectangle(self, details=False):
+        if not self.closed or len(self.nodes) != 4:
+            return False
+        if not all([n.is_point() for n in self.nodes]):
+            return False
+        prev = self.nodes[-1]
+        dx = [None] * 4
+        dy = [None] * 4
+        for i in range(4):
+            this = self.nodes[i]
+            dx[i] = this.x - prev.x
+            dy[i] = this.y - prev.y
+            prev = this
+        eps = 1e-8
+        if abs(dx[0] + dx[2]) + abs(dy[0] + dy[2]) > eps:
+            return False
+        if abs(dx[1] + dx[3]) + abs(dy[1] + dy[3]) > eps:
+            return False
+        return (dx, dy) if details else True
+    def is_aligned_rectangle(self, details=False):
+        is_rect = self.is_rectangle(details=True)
+        if not is_rect:
+            return False
+        dx, dy = is_rect
+        eps = 1e-8
+        if abs(dx[0]) > eps and abs(dx[1]) > eps:
+            return False
+        return (dx, dy) if details else True
 
 class PathSegmentIterator(object):
     def __init__(self, path, index=0):

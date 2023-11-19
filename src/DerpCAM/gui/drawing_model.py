@@ -161,6 +161,8 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         else:
             self.bounds = None
     def label(self):
+        if geom.Path(self.points, self.closed).is_aligned_rectangle():
+            return "Rectangle%d" % self.shape_id
         if len(self.points) == 2:
             if self.points[1].is_point():
                 return "Line%d" % self.shape_id
