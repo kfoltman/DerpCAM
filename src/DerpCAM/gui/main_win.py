@@ -18,6 +18,7 @@ class CAMMainWindow(QMainWindow):
         self.configSettings = config
         self.resetZoomNeeded = False
         self.lastProgress = None
+        self.clipboard = None
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:
@@ -98,10 +99,13 @@ class CAMMainWindow(QMainWindow):
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
+            ("&Copy", self.editCopy, QKeySequence("Ctrl+C"), "Copy drawing objects to clipboard"),
+            ("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard"),
+            None,
             ("&Join lines", self.editJoin, None, "Join line segments into a polyline"),
             ("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
-            ("&Preferences...", self.editPreferences, None, "Set application preferences"),
+            ("P&references...", self.editPreferences, None, "Set application preferences"),
         ])
         self.drawMenu = self.addMenu("&Draw", [
             ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
@@ -109,7 +113,7 @@ class CAMMainWindow(QMainWindow):
             ("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
             ("&Text", self.drawText, None, "Add a text to the drawing"),
             None,
-            ("&Set origin", self.setOrigin, None, "Set the origin point of the drawing"),
+            ("&Set origin", self.drawSetOrigin, None, "Set the origin point of the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
             ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
@@ -216,7 +220,24 @@ class CAMMainWindow(QMainWindow):
         self.projectDW.operTree.selectionModel().setCurrentIndex(cycle.index(), QItemSelectionModel.SelectCurrent)
         return True
     def onEditorApplyClicked(self):
+        if isinstance(self.viewer.editor, editors.CanvasCopyEditor):
+            self.onEditCopyApplyClicked(self.viewer.editor)
+        elif isinstance(self.viewer.editor, editors.CanvasPasteEditor):
+            self.onEditPasteApplyClicked(self.viewer.editor)
         self.viewer.applyClicked()
+    def onEditCopyApplyClicked(self, editor):
+        point = editor.mouse_point
+        selType, items = self.projectDW.activeSelection()
+        self.clipboard = (point, [i.store() for i in items])
+    def onEditPasteApplyClicked(self, editor):
+        if not self.clipboard:
+            return
+        origin, items_json = self.clipboard
+        paste_point = editor.mouse_point
+        dx = paste_point.x - origin.x
+        dy = paste_point.y - origin.y
+        items = [model.DrawingItemTreeItem.load(self.document, item_json).translated(dx, dy).reset_untransformed() for item_json in items_json]
+        self.document.opAddDrawingItems(items)
     def onDrawingItemDoubleClicked(self, item):
         if isinstance(item, model.DrawingPolylineTreeItem):
             self.projectDW.shapeEdit(item)
@@ -296,6 +317,13 @@ class CAMMainWindow(QMainWindow):
                 self.projectDW.operationDelete()
         except Exception as e:
             QMessageBox.critical(self, None, str(e))
+    def editCopy(self):
+        selType, items = self.projectDW.activeSelection()
+        if selType == 's' and items:
+            self.switchToEditor(editors.CanvasCopyEditor(self.document))
+    def editPaste(self):
+        if self.clipboard:
+            self.switchToEditor(editors.CanvasPasteEditor(self.document, self.clipboard))
     def editJoin(self):
         self.projectDW.shapeJoin()
     def editPreferences(self):
@@ -332,7 +360,7 @@ class CAMMainWindow(QMainWindow):
         self.switchToEditor(editors.CanvasNewPolylineEditor(polyline, cancel_index))
     def drawText(self):
         self.switchToEditor(editors.CanvasNewTextEditor(self.document))
-    def setOrigin(self):
+    def drawSetOrigin(self):
         self.switchToEditor(editors.CanvasSetOriginEditor(self.document))
     def millSelectedShapes(self, operType):
         selection = self.viewer.selection

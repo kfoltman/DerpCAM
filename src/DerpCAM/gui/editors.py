@@ -83,6 +83,34 @@ class CanvasEditor(object):
         return None
     def onShapesDeleted(self, shapes):
         pass
+    def drawPreview(self, qp, item, ox, oy):
+        item.createPaths()
+        oldTransform = qp.transform()
+        transform = self.canvas.drawingTransform()
+        qp.setTransform(transform)
+        qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
+        tempRenderer = TempRenderer(self.canvas)
+        item.translated(ox, oy).renderTo(tempRenderer, None)
+        tempRenderer.paint(qp, self.canvas)
+        qp.setTransform(oldTransform)
+
+class TempRenderer:
+    def __init__(self, canvas):
+        self.drawingOps = []
+        self.canvas = canvas
+    def scalingFactor(self):
+        return self.canvas.scalingFactor()
+    def addLines(self, pen, points, closed):
+        if closed:
+            points = points + points[0:1]
+        path = QPainterPath()
+        view.addPolylineToPath(path, points)
+        self.drawingOps.append((pen, path))
+    def paint(self, qp, canvas):
+        oldPen = qp.pen()
+        for pen, path in self.drawingOps:
+            qp.drawPath(path)
+        qp.setPen(oldPen)
 
 class CanvasEditorWithSnap(CanvasEditor):
     snapMode = 7
@@ -137,27 +165,24 @@ class CanvasEditorWithSnap(CanvasEditor):
         return pt
     def snapInfo(self):
         return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
+    def paintCoords(self, qp, loc, ox, oy):
+        coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + guiutils.UnitConverter.itemSeparator() + " " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
+        metrics = QFontMetrics(qp.font())
+        size = metrics.size(Qt.TextSingleLine, coordsText)
+        width = size.width() + 10
+        hbox2a = QPointF(width / 2, size.height() + 1)
+        hbox2b = QPointF(width / 2, 5)
+        displ = QPointF(0, 7.5)
+        pt = self.canvas.project(QPointF(loc.x - ox, loc.y - oy))
+        qp.drawText(QRectF(pt - hbox2a - displ, pt + hbox2b - displ), Qt.AlignBottom | Qt.AlignCenter, coordsText)
 
-class CanvasSetOriginEditor(CanvasEditorWithSnap):
+class CanvasEditorPickPoint(CanvasEditorWithSnap):
     def __init__(self, document):
-        CanvasEditor.__init__(self, None)
+        CanvasEditorWithSnap.__init__(self, None)
         self.document = document
         self.can_cancel = True
         self.cancel_index = None
-        self.origin = QPointF(self.document.drawing.x_offset, self.document.drawing.y_offset)
         self.mouse_point = None
-    def setTitle(self):
-        self.parent.setWindowTitle("Set origin point of the drawing")
-    def updateLabel(self):
-        self.descriptionLabel.setText("Click the new origin point.")
-    def paint(self, e, qp):
-        if self.mouse_point is not None:
-            pen = qp.pen()
-            qp.setPen(QPen(QColor(0, 0, 0), 0))
-            pos = self.canvas.project(QPointF(self.mouse_point.x, self.mouse_point.y))
-            qp.drawLine(pos - QPointF(5, 5), pos + QPointF(5, 5))
-            qp.drawLine(pos - QPointF(-5, 5), pos + QPointF(-5, 5))
-            qp.setPen(pen)
     def mousePointFromEvent(self, e):
         pos = self.canvas.unproject(e.localPos())
         pt = geom.PathPoint(pos.x(), pos.y())
@@ -170,11 +195,52 @@ class CanvasSetOriginEditor(CanvasEditorWithSnap):
             self.mousePointFromEvent(e)
             self.apply()
             return True
+    def paint(self, e, qp):
+        if self.mouse_point is not None:
+            pen = qp.pen()
+            qp.setPen(QPen(QColor(0, 0, 0), 0))
+            pos = self.canvas.project(QPointF(self.mouse_point.x, self.mouse_point.y))
+            qp.drawLine(pos - QPointF(5, 5), pos + QPointF(5, 5))
+            qp.drawLine(pos - QPointF(-5, 5), pos + QPointF(-5, 5))
+            qp.setPen(pen)
+            self.paintCoords(qp, self.mouse_point, 0, 0)
+
+class CanvasSetOriginEditor(CanvasEditorPickPoint):
+    def __init__(self, document):
+        CanvasEditorPickPoint.__init__(self, document)
+        self.origin = QPointF(self.document.drawing.x_offset, self.document.drawing.y_offset)
+    def setTitle(self):
+        self.parent.setWindowTitle("Set origin point of the drawing")
+    def updateLabel(self):
+        self.descriptionLabel.setText("Click the new origin point.")
     def apply(self):
         DrawingTreeItem = drawing_model.DrawingTreeItem
         self.document.opChangeProperty(DrawingTreeItem.prop_x_offset, [(self.document.drawing, self.origin.x() + self.mouse_point.x)])
         self.document.opChangeProperty(DrawingTreeItem.prop_y_offset, [(self.document.drawing, self.origin.y() + self.mouse_point.y)])
         self.parent.applyClicked.emit()
+
+class CanvasCopyEditor(CanvasEditorPickPoint):
+    def setTitle(self):
+        self.parent.setWindowTitle("Copy objects - select reference point")
+    def updateLabel(self):
+        self.descriptionLabel.setText("Click the reference point for the objects.")
+
+class CanvasPasteEditor(CanvasEditorPickPoint):
+    def __init__(self, document, clipboard):
+        CanvasEditorPickPoint.__init__(self, document)
+        self.origin = clipboard[0]
+        self.objects = [model.DrawingItemTreeItem.load(self.document, item_json) for item_json in clipboard[1]]
+    def setTitle(self):
+        self.parent.setWindowTitle("Paste objects - select insertion point")
+    def updateLabel(self):
+        self.descriptionLabel.setText("Click the insertion point for the objects.")
+    def paint(self, e, qp):
+        CanvasEditorPickPoint.paint(self, e, qp)
+        if self.mouse_point is not None:
+            dx = self.mouse_point.x - self.origin.x - self.document.drawing.x_offset
+            dy = self.mouse_point.y - self.origin.y - self.document.drawing.y_offset
+            for item in self.objects:
+                self.drawPreview(qp, item, dx, dy)
 
 class CanvasTabsEditor(CanvasEditor):
     def __init__(self, item):
@@ -407,15 +473,9 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
             return geom.PathPoint(pos.x() + ox, pos.y() + oy)
     def paintPoint(self, qp, loc, as_arc):
         ox, oy = self.drawingOffset()
-        coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + guiutils.itemSeparator() + " " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
-        hbox = QPointF(3, 3)
-        metrics = QFontMetrics(qp.font())
-        size = metrics.size(Qt.TextSingleLine, coordsText)
-        width = size.width() + 10
-        hbox2a = QPointF(width / 2, size.height() + 1)
-        hbox2b = QPointF(width / 2, 5)
-        displ = QPointF(0, 7.5)
+        self.paintCoords(qp, loc, ox, oy)
         pt = self.canvas.project(QPointF(loc.x - ox, loc.y - oy))
+        hbox = QPointF(3, 3)
         color = qp.pen().color()
         if as_arc:
             brush = qp.brush()
@@ -424,7 +484,6 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
             qp.setBrush(brush)
         else:
             qp.fillRect(QRectF(pt - hbox, pt + hbox), color)
-        qp.drawText(QRectF(pt - hbox2a - displ, pt + hbox2b - displ), Qt.AlignBottom | Qt.AlignCenter, coordsText)
     def setTitle(self):
         self.parent.setWindowTitle("Create a text object")
     def updateLabel(self):
@@ -440,21 +499,6 @@ Click on a drawing to create a text object.
         if isinstance(self.item, model.DrawingItemTreeItem) and self.item in shapes:
             self.canvas.exitEditMode(False)
 
-class TempRenderer:
-    def __init__(self):
-        self.drawingOps = []
-    def addLines(self, pen, points, closed):
-        if closed:
-            points = points + points[0:1]
-        path = QPainterPath()
-        view.addPolylineToPath(path, points)
-        self.drawingOps.append((pen, path))
-    def paint(self, qp, canvas):
-        oldPen = qp.pen()
-        for pen, path in self.drawingOps:
-            qp.drawPath(path)
-        qp.setPen(oldPen)
-
 class CanvasNewItemEditor(CanvasDrawingItemEditor):
     def __init__(self, document):
         CanvasDrawingItemEditor.__init__(self, self.createItem(document))
@@ -464,24 +508,14 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
         self.initState(self.ptFromPos(eLocalPos))
         self.canvas.repaint()
-    def drawPreview(self, qp):
-        self.item.createPaths()
-        oldTransform = qp.transform()
-        transform = self.canvas.drawingTransform()
-        qp.setTransform(transform)
-        qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
-        tempRenderer = TempRenderer()
-        ox, oy = self.drawingOffset()
-        self.item.translated(-ox, -oy).renderTo(tempRenderer, None)
-        tempRenderer.paint(qp, self.canvas)
-        qp.setTransform(oldTransform)
     def mousePressEvent(self, e):
         return self.mousePressEventPos(e, self.ptFromPos(e.localPos()))
     def mouseMoveEvent(self, e):
         return self.mouseMoveEventPos(e, self.ptFromPos(e.localPos()))
     def paint(self, e, qp):
         self.drawCursorPoint(qp)
-        self.drawPreview(qp)
+        ox, oy = self.drawingOffset()
+        self.drawPreview(qp, self.item, -ox, -oy)
 
 class CanvasNewTextEditor(CanvasNewItemEditor):
     last_style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)

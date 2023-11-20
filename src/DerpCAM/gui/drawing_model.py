@@ -52,6 +52,11 @@ class DrawingItemTreeItem(CAMTreeItem):
             return set([self] + self.document.allOperations(lambda item: item.usesShape(self.shape_id)))
         # Settings of operations are not affected and don't need to be refreshed
         return set([self])
+    def reset_untransformed(self):
+        self.untransformed = self
+        return self
+    def createPaths(self):
+        pass
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_x = FloatDistEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
