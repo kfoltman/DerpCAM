@@ -640,14 +640,13 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
                 y += -radius if no >= 1 and no < 3 else +radius
                 return geom.PathArc.xyra(x, y, radius, (no + 3) * math.pi / 2, math.pi / 2)
             return [geom.PathPoint(x1 + radius, y1), geom.PathPoint(x2 - radius, y1), fillet(x2, y1, 0), geom.PathPoint(x2, y1 + radius), geom.PathPoint(x2, y2 - radius), fillet(x2, y2, 1), geom.PathPoint(x2 - radius, y2), geom.PathPoint(x1 + radius, y2), fillet(x1, y2, 2), geom.PathPoint(x1, y2 - radius), geom.PathPoint(x1, y1 + radius), fillet(x1, y1, 3)]
-    def drawPreview(self, qp):
+    def drawPreview(self, qp, item, ox, oy):
         if self.second_point is None:
             return
         path = geom.Path(self.polylinePath(), True).interpolated()
-        ox, oy = self.drawingOffset()
         for start, end in geom.PathSegmentIterator(path):
-            qs = self.canvas.project(QPointF(start.x - ox, start.y - oy))
-            qe = self.canvas.project(QPointF(end.x - ox, end.y - oy))
+            qs = self.canvas.project(QPointF(start.x + ox, start.y + oy))
+            qe = self.canvas.project(QPointF(end.x + ox, end.y + oy))
             qp.drawLine(qs, qe)
     def apply(self):
         radius, ok = self.radiusEditor.validator().locale().toDouble(self.radiusEditor.text())
@@ -733,11 +732,10 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
     def polylinePath(self):
         endp = geom.PathPoint(xc + r, yc)
         return [endp, geom.PathArc.xyra(xc, yc, r, 0, 2 * math.pi, steps = int(max(20, 10 * r)))]
-    def drawPreview(self, qp):
+    def drawPreview(self, qp, item, ox, oy):
         if self.second_point is None and self.radius is None:
             return
-        ox, oy = self.drawingOffset()
-        xc, yc = self.first_point.x - ox, self.first_point.y - oy
+        xc, yc = self.first_point.x + ox, self.first_point.y + oy
         if self.radius is None:
             r = self.first_point.dist(self.second_point)
         else:
