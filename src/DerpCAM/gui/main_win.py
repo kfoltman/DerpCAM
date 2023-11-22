@@ -11,6 +11,15 @@ from DerpCAM.gui import propsheet, settings, canvas, model, dock, cutter_mgr, ab
 
 OperationType = model.OperationType
 
+class MenuItem:
+    def __init__(self, label, fn, shortcut, tip, enable_func=None, allow_in_editor=False):
+        self.label = label
+        self.fn = fn
+        self.shortcut = shortcut
+        self.tip = tip
+        self.enable_func = enable_func
+        self.allow_in_editor = allow_in_editor
+
 class CAMMainWindow(QMainWindow):
     def __init__(self, document, config):
         QMainWindow.__init__(self)
@@ -19,6 +28,7 @@ class CAMMainWindow(QMainWindow):
         self.resetZoomNeeded = False
         self.lastProgress = None
         self.clipboard = None
+        self.actionData = {}
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
         for i in actions:
@@ -26,16 +36,27 @@ class CAMMainWindow(QMainWindow):
                 menu.addSeparator()
             elif isinstance(i, QAction):
                 menu.addAction(i)
-            else:
-                label, fn, shortcut, tip = i
-                action = QAction(label, self)
-                if shortcut:
-                    action.setShortcuts(shortcut)
-                if tip:
-                    action.setStatusTip(tip)
-                action.triggered.connect(fn)
+            elif isinstance(i, MenuItem):
+                action = QAction(i.label, self)
+                if i.shortcut:
+                    action.setShortcuts(i.shortcut)
+                if i.tip:
+                    action.setStatusTip(i.tip)
+                action.triggered.connect(i.fn)
+                self.actionData[action] = i
                 menu.addAction(action)
+            else:
+                assert False, i
+        menu.aboutToShow.connect(lambda: self.refreshMenu(menu))
         return menu
+    def refreshMenu(self, menu):
+        for i in menu.actions():
+            adata = self.actionData.get(i)
+            if adata is not None:
+                if adata.enable_func is not None:
+                    i.setEnabled(adata.enable_func() and (self.viewer.editor is None or adata.allow_in_editor))
+                else:
+                    i.setEnabled(self.viewer.editor is None or adata.allow_in_editor)
     def initUI(self):
         def addShortcut(action, shortcut):
             action.setShortcuts(shortcut)
@@ -82,16 +103,16 @@ class CAMMainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self.editorDW)
 
         self.fileMenu = self.addMenu("&File", [
-            ("&New project", self.fileNew, QKeySequence.New, "Remove everything and start a new project"),
-            ("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file into the current project"),
+            MenuItem("&New project", self.fileNew, QKeySequence.New, "Remove everything and start a new project"),
+            MenuItem("&Import DXF...", self.fileImport, QKeySequence("Ctrl+L"), "Load a drawing file into the current project"),
             None,
-            ("&Open project...", self.fileOpen, QKeySequence.Open, "Open a project file"),
-            ("&Save project", self.fileSave, QKeySequence.Save, "Save a project file"),
-            ("Save project &as...", self.fileSaveAs, QKeySequence.SaveAs, "Save a project file under a different name"),
+            MenuItem("&Open project...", self.fileOpen, QKeySequence.Open, "Open a project file"),
+            MenuItem("&Save project", self.fileSave, QKeySequence.Save, "Save a project file", allow_in_editor=True),
+            MenuItem("Save project &as...", self.fileSaveAs, QKeySequence.SaveAs, "Save a project file under a different name", allow_in_editor=True),
             None,
-            ("&Export G-Code...", self.fileExportGcode, QKeySequence("Ctrl+G"), "Generate and export the G-Code"),
+            MenuItem("&Export G-Code...", self.fileExportGcode, QKeySequence("Ctrl+G"), "Generate and export the G-Code"),
             None,
-            ("E&xit", self.fileExit, QKeySequence.Quit, "Quit application"),
+            MenuItem("E&xit", self.fileExit, QKeySequence.Quit, "Quit application", allow_in_editor=True),
         ])
         self.mruActions = []
         self.exitAction = self.fileMenu.actions()[-1]
@@ -99,42 +120,42 @@ class CAMMainWindow(QMainWindow):
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
-            ("&Copy", self.editCopy, QKeySequence("Ctrl+C"), "Copy drawing objects to clipboard"),
-            ("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard"),
+            MenuItem("&Copy", self.editCopy, QKeySequence("Ctrl+C"), "Copy drawing objects to clipboard", enable_func=self.isGeometrySelected),
+            MenuItem("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard", enable_func=self.isClipboardNonEmpty),
             None,
-            ("&Join lines", self.editJoin, None, "Join line segments into a polyline"),
-            ("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
+            MenuItem("&Join lines", self.editJoin, None, "Join line segments or polylines end to end", enable_func=lambda: self.isOpenGeometrySelected(2)),
+            MenuItem("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
-            ("P&references...", self.editPreferences, None, "Set application preferences"),
+            MenuItem("P&references...", self.editPreferences, None, "Set application preferences"),
         ])
         self.drawMenu = self.addMenu("&Draw", [
-            ("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
-            ("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
-            ("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
-            ("&Text", self.drawText, None, "Add a text to the drawing"),
+            MenuItem("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
+            MenuItem("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
+            MenuItem("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
+            MenuItem("&Text", self.drawText, None, "Add a text to the drawing"),
             None,
-            ("&Set origin", self.drawSetOrigin, None, "Set the origin point of the drawing"),
+            MenuItem("&Set origin", self.drawSetOrigin, None, "Set the origin point of the drawing"),
         ])
         self.operationsMenu = self.addMenu("&Machining", [
-            ("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
-            ("&Wall profiles...", lambda: self.millWallProfiles(), QKeySequence("Shift+Ctrl+W"), "Create, edit and delete wall profile shapes"),
+            MenuItem("&Add tool/preset...", lambda: self.millAddTool(), QKeySequence("Ctrl+T"), "Import cutters and cutting parameters from the inventory to the project"),
+            MenuItem("&Wall profiles...", lambda: self.millWallProfiles(), QKeySequence("Shift+Ctrl+W"), "Create, edit and delete wall profile shapes"),
             None,
-            ("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape as a slotting cut on the outside (part)"),
-            ("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape as a slotting cut the inside (cutout)"),
-            ("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
-            ("&Face mill", self.millFace, QKeySequence("Shift+Ctrl+F"), "Face-mill (flatten) the top surface only, without refining side edges"),
-            ("&Side mill", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling from the outer edges of the part, leaving islands as the final shape"),
-            ("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
-            ("&V-carve", self.millVCarve, QKeySequence("Shift+Ctrl+R"), "Use a v-bit at a variable depth of cut to engrave a contour"),
-            ("Pa&ttern fill", self.millPatternFill, QKeySequence("Shift+Ctrl+T"), "Engrave a pattern in a closed shape"),
-            ("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
-            ("Internal t&hread", self.millInternalThread, QKeySequence("Shift+Ctrl+H"), "Mill an internal thread in an existing hole using a thread cutter"),
-            ("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
+            MenuItem("&Outside contour", self.millOutsideContour, QKeySequence("Ctrl+E"), "Mill the outline of a shape as a slotting cut on the outside (part)"),
+            MenuItem("&Inside contour", self.millInsideContour, QKeySequence("Ctrl+I"), "Mill the outline of a shape as a slotting cut the inside (cutout)"),
+            MenuItem("&Pocket", self.millPocket, QKeySequence("Ctrl+K"), "Mill a pocket"),
+            MenuItem("&Face mill", self.millFace, QKeySequence("Shift+Ctrl+F"), "Face-mill (flatten) the top surface only, without refining side edges"),
+            MenuItem("&Side mill", self.millOutsidePeel, QKeySequence("Shift+Ctrl+E"), "Create the part by side milling from the outer edges of the part, leaving islands as the final shape"),
+            MenuItem("&Engrave", self.millEngrave, QKeySequence("Ctrl+M"), "Follow a line without an offset"),
+            MenuItem("&V-carve", self.millVCarve, QKeySequence("Shift+Ctrl+R"), "Use a v-bit at a variable depth of cut to engrave a contour"),
+            MenuItem("Pa&ttern fill", self.millPatternFill, QKeySequence("Shift+Ctrl+T"), "Engrave a pattern in a closed shape"),
+            MenuItem("Interpolated &hole", self.millInterpolatedHole, QKeySequence("Ctrl+H"), "Mill a circular hole wider than the endmill size using helical interpolation"),
+            MenuItem("Internal t&hread", self.millInternalThread, QKeySequence("Shift+Ctrl+H"), "Mill an internal thread in an existing hole using a thread cutter"),
+            MenuItem("&Refine", self.millRefine, QKeySequence("Shift+Ctrl+K"), "Mill finer details remaining from a cut with a larger diameter tool"),
             None,
-            ("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
+            MenuItem("&Drilled hole", self.drillHole, QKeySequence("Ctrl+B"), "Drill a circular hole with a twist drill bit"),
         ])
         self.helpMenu = self.addMenu("&Help", [
-            ("&About...", lambda: self.helpAbout(), None, "Display project information"),
+            MenuItem("&About...", lambda: self.helpAbout(), None, "Display project information"),
         ])
         self.coordLabel = QLabel("")
         self.statusBar().addPermanentWidget(self.coordLabel)
@@ -147,18 +168,11 @@ class CAMMainWindow(QMainWindow):
         self.refreshNeeded = False
         self.resetCAMNeeded()
         self.idleTimer = self.startTimer(500)
-    def updateMenusFromEditor(self, editor):
-        normalFunctionsEnabled = editor is None
-        for i in self.editMenu.actions()[2:]:
-            i.setEnabled(normalFunctionsEnabled)
-        for i in self.drawMenu.actions():
-            i.setEnabled(normalFunctionsEnabled)
-        for i in self.operationsMenu.actions():
-            i.setEnabled(normalFunctionsEnabled)
     def updateFileMenu(self):
         def fileAction(id, filename):
             action = QAction(f"&{id + 1} {filename}", self.fileMenu)
             action.triggered.connect(lambda checked: self.loadProjectIf(filename))
+            self.actionData[action] = MenuItem(None, None, None, None, allow_in_editor=False)
             return action
         sep = QAction(self.fileMenu)
         sep.setSeparator(True)
@@ -167,7 +181,10 @@ class CAMMainWindow(QMainWindow):
         else:
             actions = []
         while self.mruActions:
-            self.fileMenu.removeAction(self.mruActions.pop())
+            action = self.mruActions.pop()
+            if action in self.actionData:
+                del self.actionData[action]
+            self.fileMenu.removeAction(action)
         self.fileMenu.insertActions(self.exitAction, actions)
         self.mruActions = actions
     def cleanFlagChanged(self, clean):
@@ -204,6 +221,16 @@ class CAMMainWindow(QMainWindow):
             self.viewer.flashHighlight(item)
         else:
             self.viewer.flashHighlight(None)
+    def isGeometrySelected(self):
+        selType, items = self.projectDW.activeSelection()
+        return selType == 's' and len(items) > 0
+    def isOpenGeometrySelected(self, min_size):
+        selType, items = self.projectDW.activeSelection()
+        return selType == 's' and len([i for i in items if isinstance(i, model.DrawingPolylineTreeItem) and not i.closed]) >= min_size
+    def isClipboardNonEmpty(self):
+        clipboard = QApplication.instance().clipboard()
+        mime_data = clipboard.mimeData()
+        return mime_data is not None and mime_data.hasFormat("application/x-derpcam-geometry")
     def millAddTool(self):
         self.millSelectTool(dlg_type=cutter_mgr.AddCutterDialog)
     def millWallProfiles(self):
@@ -295,7 +322,6 @@ class CAMMainWindow(QMainWindow):
             self.propsDW.propsheet.setFocus()
         elif editor is not None:
             self.viewer.setFocus()
-        self.updateMenusFromEditor(editor)
     def updateShapeSelection(self):
         # Update preview regardless
         items = self.projectDW.shapeSelection()
