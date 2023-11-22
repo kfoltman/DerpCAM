@@ -6,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.common import guiutils
+from DerpCAM.common import guiutils, geom
 from DerpCAM.gui import propsheet, settings, canvas, model, dock, cutter_mgr, about, draw, editors, wall_profile_mgr
 
 OperationType = model.OperationType
@@ -228,10 +228,12 @@ class CAMMainWindow(QMainWindow):
     def onEditCopyApplyClicked(self, editor):
         point = editor.mouse_point
         selType, items = self.projectDW.activeSelection()
-        self.clipboard = (point, [i.store() for i in items])
+        clipboard = QApplication.instance().clipboard()
+        data = ((point.x + self.document.drawing.x_offset, point.y + self.document.drawing.y_offset), [i.store() for i in items])
+        mime_data = QMimeData()
+        mime_data.setData("application/x-derpcam-geometry", json.dumps(data).encode("utf-8"))
+        clipboard.setMimeData(mime_data)
     def onEditPasteApplyClicked(self, editor):
-        if not self.clipboard:
-            return
         origin, items_json = self.clipboard
         paste_point = editor.mouse_point
         dx = paste_point.x - origin.x
@@ -322,8 +324,15 @@ class CAMMainWindow(QMainWindow):
         if selType == 's' and items:
             self.switchToEditor(editors.CanvasCopyEditor(self.document))
     def editPaste(self):
-        if self.clipboard:
-            self.switchToEditor(editors.CanvasPasteEditor(self.document, self.clipboard))
+        clipboard = QApplication.instance().clipboard()
+        mime_data = clipboard.mimeData()
+        if not mime_data or not mime_data.hasFormat("application/x-derpcam-geometry"):
+            return
+        data = json.loads(mime_data.data("application/x-derpcam-geometry").data().decode("utf-8"))
+        origin = geom.PathPoint(data[0][0] - self.document.drawing.x_offset, data[0][1] - self.document.drawing.y_offset)
+        items_json = data[1]
+        self.clipboard = (origin, items_json)
+        self.switchToEditor(editors.CanvasPasteEditor(self.document, self.clipboard))
     def editJoin(self):
         self.projectDW.shapeJoin()
     def editPreferences(self):
