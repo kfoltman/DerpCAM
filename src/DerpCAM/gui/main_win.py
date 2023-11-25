@@ -28,6 +28,7 @@ class CAMMainWindow(QMainWindow):
         self.resetZoomNeeded = False
         self.lastProgress = None
         self.clipboard = None
+        self.copyIsCut = None
         self.actionData = {}
     def addMenu(self, menuLabel, actions):
         menu = self.menuBar().addMenu(menuLabel)
@@ -120,6 +121,7 @@ class CAMMainWindow(QMainWindow):
             addShortcut(self.document.undoStack.createUndoAction(self), QKeySequence("Ctrl+Z")),
             addShortcut(self.document.undoStack.createRedoAction(self), QKeySequence("Ctrl+Y")),
             None,
+            MenuItem("Cu&t", self.editCut, QKeySequence("Ctrl+X"), "Cut drawing objects to clipboard", enable_func=self.isGeometrySelected),
             MenuItem("&Copy", self.editCopy, QKeySequence("Ctrl+C"), "Copy drawing objects to clipboard", enable_func=self.isGeometrySelected),
             MenuItem("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard", enable_func=self.isClipboardNonEmpty),
             None,
@@ -260,6 +262,9 @@ class CAMMainWindow(QMainWindow):
         mime_data = QMimeData()
         mime_data.setData("application/x-derpcam-geometry", json.dumps(data).encode("utf-8"))
         clipboard.setMimeData(mime_data)
+        if self.copyIsCut:
+            self.document.opDeleteDrawingItems(items)
+        self.copyIsCut = None
     def onEditPasteApplyClicked(self, editor):
         origin, items_json = self.clipboard
         paste_point = editor.mouse_point
@@ -345,7 +350,13 @@ class CAMMainWindow(QMainWindow):
                 self.projectDW.operationDelete()
         except Exception as e:
             QMessageBox.critical(self, None, str(e))
+    def editCut(self):
+        self.copyIsCut = True
+        selType, items = self.projectDW.activeSelection()
+        if selType == 's' and items:
+            self.switchToEditor(editors.CanvasCopyEditor(self.document))
     def editCopy(self):
+        self.copyIsCut = False
         selType, items = self.projectDW.activeSelection()
         if selType == 's' and items:
             self.switchToEditor(editors.CanvasCopyEditor(self.document))
