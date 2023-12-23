@@ -183,6 +183,8 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
         self.can_cancel = True
         self.cancel_index = None
         self.mouse_point = None
+    def pointSelected(self):
+        self.apply()
     def mousePointFromEvent(self, e):
         pos = self.canvas.unproject(e.localPos())
         pt = geom.PathPoint(pos.x(), pos.y())
@@ -193,7 +195,7 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.mousePointFromEvent(e)
-            self.apply()
+            self.pointSelected()
             return True
     def paint(self, e, qp):
         if self.mouse_point is not None:
@@ -225,6 +227,10 @@ class CanvasCopyEditor(CanvasEditorPickPoint):
     def updateLabel(self):
         self.descriptionLabel.setText("Click the reference point for the objects.")
 
+class CanvasCutEditor(CanvasCopyEditor):
+    def setTitle(self):
+        self.parent.setWindowTitle("Cut objects - select reference point")
+
 class CanvasPasteEditor(CanvasEditorPickPoint):
     def __init__(self, document, clipboard):
         CanvasEditorPickPoint.__init__(self, document)
@@ -241,6 +247,49 @@ class CanvasPasteEditor(CanvasEditorPickPoint):
             dy = self.mouse_point.y - self.origin.y - self.document.drawing.y_offset
             for item in self.objects:
                 self.drawPreview(qp, item, dx, dy)
+
+class CanvasMoveEditor(CanvasEditorPickPoint):
+    def __init__(self, document, objects):
+        CanvasEditorPickPoint.__init__(self, document)
+        self.objects = objects
+        self.stage = 0
+        self.origin_point = None
+    def setTitle(self):
+        if self.stage == 0:
+            self.parent.setWindowTitle("Move objects - select origin reference point")
+        else:
+            self.parent.setWindowTitle("Move objects - select target reference point")
+    def updateLabel(self):
+        if self.stage == 0:
+            self.descriptionLabel.setText("Click the origin reference point for moving the objects.")
+        else:
+            self.descriptionLabel.setText("Click the target reference point for moving the objects.")
+    def pointSelected(self):
+        if self.stage == 0:
+            self.origin_point = self.mouse_point
+            self.stage = 1
+            self.setTitle()
+            self.updateLabel()
+        else:
+            self.apply()
+    def paint(self, e, qp):
+        CanvasEditorPickPoint.paint(self, e, qp)
+        if self.origin_point is not None:
+            dx = self.mouse_point.x - self.origin_point.x
+            dy = self.mouse_point.y - self.origin_point.y
+            for item in self.objects:
+                self.drawPreview(qp, item, dx, dy)
+    def apply(self):
+        if self.stage == 1:
+            paste_point = self.mouse_point
+            dx = paste_point.x - self.origin_point.x
+            dy = paste_point.y - self.origin_point.y
+            if False: # XXXKF TODO copy
+                items = [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx, dy).reset_untransformed() for item in self.objects]
+                self.document.opAddDrawingItems(items)
+            else:
+                self.document.opMoveDrawingItems(self.objects, dx, dy)
+                CanvasEditorPickPoint.apply(self)
 
 class CanvasTabsEditor(CanvasEditor):
     def __init__(self, item):

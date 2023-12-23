@@ -126,6 +126,7 @@ class CAMMainWindow(QMainWindow):
             MenuItem("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard", enable_func=self.isClipboardNonEmpty),
             None,
             MenuItem("&Join lines", self.editJoin, None, "Join line segments or polylines end to end", enable_func=lambda: self.isOpenGeometrySelected(2)),
+            MenuItem("&Move objects", self.editMove, None, "Move geometry objects", enable_func=self.isGeometrySelected),
             MenuItem("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
             MenuItem("P&references...", self.editPreferences, None, "Set application preferences"),
@@ -354,7 +355,7 @@ class CAMMainWindow(QMainWindow):
         self.copyIsCut = True
         selType, items = self.projectDW.activeSelection()
         if selType == 's' and items:
-            self.switchToEditor(editors.CanvasCopyEditor(self.document))
+            self.switchToEditor(editors.CanvasCutEditor(self.document))
     def editCopy(self):
         self.copyIsCut = False
         selType, items = self.projectDW.activeSelection()
@@ -372,6 +373,10 @@ class CAMMainWindow(QMainWindow):
         self.switchToEditor(editors.CanvasPasteEditor(self.document, self.clipboard))
     def editJoin(self):
         self.projectDW.shapeJoin()
+    def editMove(self):
+        selType, items = self.projectDW.activeSelection()
+        if selType == 's' and items:
+            self.switchToEditor(editors.CanvasMoveEditor(self.document, items))
     def editPreferences(self):
         dlg = settings.PreferencesDialog(self, self.configSettings)
         self.prefDlg = dlg

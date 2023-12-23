@@ -114,6 +114,12 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, self.centre.scaled(cx, cy, scale), self.r * scale, self.untransformed)
+    def translate(self, dx, dy):
+        old = self.centre
+        self.centre = self.centre.translated(dx, dy)
+        return old
+    def restore_translate(self, old):
+        self.centre = old
     def store(self):
         res = DrawingItemTreeItem.store(self)
         res['cx'] = self.centre.x
@@ -150,6 +156,12 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         path = geom.Path(self.points, self.closed)
         closest, mindist = path.closest_point(pt)
         return mindist
+    def translate(self, dx, dy):
+        old = self.points
+        self.points = [p.translated(dx, dy) for p in self.points]
+        return old
+    def restore_translate(self, points):
+        self.points = points
     def translated(self, dx, dy):
         pti = DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed)
         pti.shape_id = self.shape_id
@@ -352,6 +364,12 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.target_width, self.style, self.text, self.untransformed)
         tti.shape_id = self.shape_id
         return tti
+    def translate(self, dx, dy):
+        old = self.origin
+        self.origin = self.origin.translated(dx, dy)
+        return old
+    def restore_translate(self, old):
+        self.origin = old
     def toShape(self):
         res = []
         last_bounds = None

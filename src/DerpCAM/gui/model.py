@@ -935,6 +935,24 @@ class MoveItemUndoCommand(QUndoCommand):
         if hasattr(self.newParent, 'updateItemAfterMove'):
             self.newParent.updateItemAfterMove(self.child)
 
+class MoveDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items, dx, dy):
+        QUndoCommand.__init__(self, "Move geometry item" if len(items) == 1 else "Move {len(items)} geometry items")
+        self.document = document
+        self.items = items
+        self.dx = dx
+        self.dy = dy
+        self.undo_data = None
+    def undo(self):
+        for i, old_data in self.undo_data:
+            i.restore_translate(old_data)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.undo_data = []
+        for i in self.items:
+            self.undo_data.append((i, i.translate(self.dx, self.dy)))
+        self.document.shapesUpdated.emit()
+
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
@@ -1459,6 +1477,8 @@ class DocumentModel(QObject):
                 if index is not None:
                     indexes.append(index)
         return indexes
+    def opMoveDrawingItems(self, items, dx, dy):
+        self.undoStack.push(MoveDrawingItemsUndoCommand(self, items, dx, dy))
     def opDeletePreset(self, preset):
         self.undoStack.beginMacro(f"Delete preset: {preset.name}")
         try:
