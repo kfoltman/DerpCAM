@@ -34,12 +34,15 @@ class CanvasEditor(object):
         self.createExtraControls()
         self.createButtons()
         self.updateLabel()
+        self.updateControls()
         self.parent.widget().setLayout(self.layout)
     def createSnapMode(self):
         pass
     def createExtraControls(self):
         pass
     def connectSignals(self):
+        pass
+    def updateControls(self):
         pass
     def createLabel(self):
         self.descriptionLabel = QLabel()
@@ -249,6 +252,9 @@ class CanvasPasteEditor(CanvasEditorPickPoint):
                 self.drawPreview(qp, item, dx, dy)
 
 class CanvasMoveEditor(CanvasEditorPickPoint):
+    mode = 0
+    rows = 2
+    cols = 2
     def __init__(self, document, objects):
         CanvasEditorPickPoint.__init__(self, document)
         self.objects = objects
@@ -256,20 +262,55 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
         self.origin_point = None
     def setTitle(self):
         if self.stage == 0:
-            self.parent.setWindowTitle("Move objects - select origin reference point")
+            self.parent.setWindowTitle("Move/clone objects - select origin reference point")
         else:
-            self.parent.setWindowTitle("Move objects - select target reference point")
+            self.parent.setWindowTitle("Move/clone objects - select target reference point")
     def updateLabel(self):
         if self.stage == 0:
-            self.descriptionLabel.setText("Click the origin reference point for moving the objects.")
+            self.descriptionLabel.setText("Click the origin reference point for moving/cloning the objects.")
         else:
-            self.descriptionLabel.setText("Click the target reference point for moving the objects.")
+            self.descriptionLabel.setText("Click the target reference point for moving/cloning the objects.")
+    def updateControls(self):
+        self.updateButtons()
+    def updateButtons(self):
+        self.applyButton.setText(["Move", "Clone", "Create array"][self.mode])
+        self.applyButton.setEnabled(self.stage == 1)
+        self.modeRadioMove.setChecked(self.mode == 0)
+        self.modeRadioClone.setChecked(self.mode == 1)
+        self.modeRadioArray.setChecked(self.mode == 2)
+    def createExtraControls(self):
+        self.modeGroupBox = QGroupBox()
+        self.modeRadioMove = QRadioButton("&Move the item(s)")
+        self.modeRadioClone = QRadioButton("&Clone the item(s)")
+        self.modeRadioArray = QRadioButton("Create an &array")
+        self.modeGroupBoxLayout = QVBoxLayout()
+        self.modeGroupBoxLayout.addWidget(self.modeRadioMove)
+        self.modeGroupBoxLayout.addWidget(self.modeRadioClone)
+        self.arrayLayout = QHBoxLayout()
+        self.arrayLayout.addWidget(self.modeRadioArray)
+        self.arrayRows = guiutils.intSpin(1, 100, self.rows, "Rows in the array")
+        self.arrayLayout.addWidget(self.arrayRows)
+        self.arrayLayout.addWidget(QLabel("rows x"))
+        self.arrayCols = guiutils.intSpin(1, 100, self.cols, "Columns in the array")
+        self.arrayLayout.addWidget(self.arrayCols)
+        self.arrayLayout.addWidget(QLabel("columns"))
+        self.arrayLayout.addStretch()
+        self.modeGroupBoxLayout.addLayout(self.arrayLayout)
+        self.modeGroupBox.setLayout(self.modeGroupBoxLayout)
+        self.layout.addRow(self.modeGroupBox)
+        self.modeRadioMove.clicked.connect(lambda: self.setMode(0))
+        self.modeRadioClone.clicked.connect(lambda: self.setMode(1))
+        self.modeRadioArray.clicked.connect(lambda: self.setMode(2))
+    def setMode(self, mode):
+        CanvasMoveEditor.mode = mode
+        self.updateButtons()
     def pointSelected(self):
         if self.stage == 0:
             self.origin_point = self.mouse_point
             self.stage = 1
             self.setTitle()
             self.updateLabel()
+            self.updateControls()
         else:
             self.apply()
     def paint(self, e, qp):
@@ -277,16 +318,42 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
         if self.origin_point is not None:
             dx = self.mouse_point.x - self.origin_point.x
             dy = self.mouse_point.y - self.origin_point.y
-            for item in self.objects:
-                self.drawPreview(qp, item, dx, dy)
+            if self.mode != 2:
+                for item in self.objects:
+                    self.drawPreview(qp, item, dx, dy)
+            else:
+                for i in range(self.arrayCols.value()):
+                    dx2 = dx * i
+                    for j in range(self.arrayRows.value()):
+                        dy2 = dy * j
+                        for item in self.objects:
+                            self.drawPreview(qp, item, dx2, dy2)
     def apply(self):
         if self.stage == 1:
             paste_point = self.mouse_point
             dx = paste_point.x - self.origin_point.x
             dy = paste_point.y - self.origin_point.y
-            if False: # XXXKF TODO copy
+            if self.mode == 1:
                 items = [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx, dy).reset_untransformed() for item in self.objects]
                 self.document.opAddDrawingItems(items)
+            elif self.mode == 2:
+                if dx == 0 and self.arrayCols.value() > 1:
+                    QMessageBox.critical(self.parent, None, "Multiple columns but horizontal spacing is zero")
+                    return
+                if dy == 0 and self.arrayRows.value() > 1:
+                    QMessageBox.critical(self.parent, None, "Multiple rows but vertical spacing is zero")
+                    return
+                CanvasMoveEditor.rows = self.arrayRows.value()
+                CanvasMoveEditor.cols = self.arrayCols.value()
+                items = []
+                for i in range(self.cols):
+                    dx2 = dx * i
+                    for j in range(self.rows):
+                        dy2 = dy * j
+                        if i or j:
+                            items += [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx2, dy2).reset_untransformed() for item in self.objects]
+                self.document.opAddDrawingItems(items)
+                CanvasEditorPickPoint.apply(self)
             else:
                 self.document.opMoveDrawingItems(self.objects, dx, dy)
                 CanvasEditorPickPoint.apply(self)

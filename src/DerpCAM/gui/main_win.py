@@ -126,7 +126,7 @@ class CAMMainWindow(QMainWindow):
             MenuItem("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard", enable_func=self.isClipboardNonEmpty),
             None,
             MenuItem("&Join lines", self.editJoin, None, "Join line segments or polylines end to end", enable_func=lambda: self.isOpenGeometrySelected(2)),
-            MenuItem("&Move objects", self.editMove, None, "Move geometry objects", enable_func=self.isGeometrySelected),
+            MenuItem("&Move/clone objects", self.editMove, None, "Move or clone geometry objects", enable_func=self.isGeometrySelected),
             MenuItem("&Delete", self.editDelete, QKeySequence.Delete, "Delete the selected item"),
             None,
             MenuItem("P&references...", self.editPreferences, None, "Set application preferences"),
