@@ -968,7 +968,7 @@ Double-clicking a node removes it.
             if self.visual_feedback[0] == FEEDBACK_ADD:
                 other = self.visual_feedback[1]
                 if other.is_point():
-                    qp.drawLine(self.canvas.project(QPointF(other.x - ox, other.y - oy)), self.canvas.project(QPointF(self.last_pos.x - ox, self.last_pos.y - iy)))
+                    qp.drawLine(self.canvas.project(QPointF(other.x - ox, other.y - oy)), self.canvas.project(QPointF(self.last_pos.x - ox, self.last_pos.y - oy)))
             elif self.visual_feedback[0] == FEEDBACK_REMOVE:
                 other1 = self.visual_feedback[1].seg_end()
                 other2 = self.visual_feedback[2].seg_end()
@@ -1212,7 +1212,7 @@ Double-clicking a node removes it.
             self.visual_feedback = None
             repaint = True
         pos = self.canvas.unproject(e.localPos())
-        self.last_pos = self.ptFromPos(pos, inverse=True)
+        self.last_pos = self.ptFromPos(e.localPos(), inverse=True)
         npts = len(self.item.points)
         if self.canvas.dragging:
             sp, dragged, start_pos = self.drag_start_data[:3]
