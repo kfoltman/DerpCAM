@@ -68,6 +68,8 @@ class SetEditableProperty(EditableProperty):
         if self.edit_func is not None:
             if len(objects) == 1:
                 self.edit_func(objects[0])
+            else:
+                QMessageBox.critical(parent, None, "Multiple selection not supported")
             return Ellipsis
 
 class FontEditableProperty(EditableProperty):
