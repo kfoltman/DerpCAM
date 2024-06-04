@@ -153,6 +153,8 @@ class CanvasEditorWithSnap(CanvasEditor):
                 return 10
             else:
                 return 1
+    def excludeSnapPoints(self):
+        return None
     def snapCoords(self, pt):
         threshold = 10 / self.canvas.scalingFactor()
         drawing = self.document.drawing
@@ -163,6 +165,9 @@ class CanvasEditorWithSnap(CanvasEditor):
                 points |= drawing.snapEndPoints()
             if self.snapMode & 4:
                 points |= drawing.snapCentrePoints()
+            excluded = self.excludeSnapPoints()
+            if excluded:
+                points -= excluded
             for i in points:
                 if geom.dist_fast(i, pt2) < threshold:
                     return geom.PathPoint(i.x - drawing.x_offset, i.y - drawing.y_offset)
@@ -991,6 +996,10 @@ Double-clicking a node removes it.
         elif index + 1 < len(self.item.points) and self.item.points[index + 1].is_arc():
             return True, index + 1, 0
         return False, index, None
+    def excludeSnapPoints(self):
+        if self.canvas.dragging and len(self.drag_start_data) == 3:
+            index = self.drag_start_data[1]
+            return set([ self.item.points[index] ])
     def startDragArc(self, pos, index, where):
         self.drag_start_data = (pos, index, where, self.item.points[index].as_tuple())
     def clickOnPolyline(self, e, is_double):
