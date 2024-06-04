@@ -120,7 +120,11 @@ class UnitConverter(object):
                 if num >= denom:
                     whole = num // denom
                     num = num % denom
+                    if num == 0:
+                        return f"{whole}"
                     return f"{whole} {num}/{denom}" + suffix
+                if num == 0:
+                    return "0"
                 return f"{num}/{denom}" + suffix
         s = UnitConverter.fmtfloat(value, dp)
         s += suffix

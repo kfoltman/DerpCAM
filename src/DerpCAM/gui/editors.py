@@ -139,12 +139,20 @@ class CanvasEditorWithSnap(CanvasEditor):
         else:
             self.snapMode &= ~(1 << which)
     def coordSnapValue(self):
-        if self.canvas.scalingFactor() >= 330:
-            return 2
-        elif self.canvas.scalingFactor() >= 33:
-            return 1
+        if guiutils.GuiSettings.inch_mode:
+            if self.canvas.scalingFactor() >= 16:
+                return 128 / 25.4
+            elif self.canvas.scalingFactor() >= 1:
+                return 16 / 25.4
+            else:
+                return 2 / 25.4
         else:
-            return 0
+            if self.canvas.scalingFactor() >= 330:
+                return 100
+            elif self.canvas.scalingFactor() >= 33:
+                return 10
+            else:
+                return 1
     def snapCoords(self, pt):
         threshold = 10 / self.canvas.scalingFactor()
         drawing = self.document.drawing
@@ -161,13 +169,16 @@ class CanvasEditorWithSnap(CanvasEditor):
         if self.snapMode & 1:
             snap = self.coordSnapValue()
             def cround(val):
-                val = round(val, snap)
+                val = round(val * snap) / snap
                 # Replace -0 by 0
                 return val if val else 0
             return geom.PathPoint(cround(pt.x), cround(pt.y))
         return pt
     def snapInfo(self):
-        return f"snap={10 ** -self.coordSnapValue():0.2f} mm (zoom-dependent)"
+        if guiutils.GuiSettings.inch_mode:
+            return f"snap=1/{(25.4 * self.coordSnapValue()):0.0f} in (zoom-dependent)"
+        else:
+            return f"snap={1.0 / self.coordSnapValue():0.2f} mm (zoom-dependent)"
     def paintCoords(self, qp, loc, ox, oy):
         coordsText = "(" + guiutils.Format.coord(loc.x - ox, brief=True) + guiutils.UnitConverter.itemSeparator() + " " + guiutils.Format.coord(loc.y - oy, brief=True) + ")"
         metrics = QFontMetrics(qp.font())
@@ -1212,7 +1223,10 @@ Double-clicking a node removes it.
             self.visual_feedback = None
             repaint = True
         pos = self.canvas.unproject(e.localPos())
+        prev_last_pos = self.last_pos
         self.last_pos = self.ptFromPos(e.localPos(), inverse=True)
+        if prev_last_pos != self.last_pos:
+            repaint = True
         npts = len(self.item.points)
         if self.canvas.dragging:
             sp, dragged, start_pos = self.drag_start_data[:3]
