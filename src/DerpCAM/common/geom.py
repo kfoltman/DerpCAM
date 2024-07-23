@@ -1,10 +1,10 @@
-from pyclipper import *
+import pyclipr
 from math import *
 import threading
 
 class GeometrySettings:
     RESOLUTION = 25.0
-    fillMode = PFT_POSITIVE
+    fillMode = pyclipr.FillRule.Positive
     simplify_arcs = True
     simplify_lines = False
     draw_arrows = False
@@ -18,6 +18,9 @@ class GeometrySettings:
     spindle_max_rpm = None
     paranoid_mode = False
 
+def epsilon():
+    return 1.0 / GeometrySettings.RESOLUTION
+
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION
     return [(round(p.x * res), round(p.y * res)) for p in points]
@@ -28,13 +31,13 @@ def PtsFromInts(points, res=None):
     
 def PtsToIntsPos(points):
     res = [(round(p.x * GeometrySettings.RESOLUTION), round(p.y * GeometrySettings.RESOLUTION)) for p in points]
-    if Orientation(res) == False:
+    if pyclipr.orientation(res) == False:
         res = list(reversed(res))
     return res
 
 def PtsToIntsNeg(points):
     res = [(round(p.x * GeometrySettings.RESOLUTION), round(p.y * GeometrySettings.RESOLUTION)) for p in points]
-    if Orientation(res) == True:
+    if pyclipr.orientation(res) == True:
         res = list(reversed(res))
     return res
 
@@ -546,8 +549,11 @@ def weighted_with_arcs(p1, p2, alpha):
         return p2.at_fraction(alpha)
     return weighted(p1, p2, alpha)
 
+def ReversePath(path):
+    return list(path[::-1])
+
 def SameOrientation(path, expected):
-    return path if Orientation(path) == expected else ReversePath(path)
+    return path if pyclipr.orientation(path) == expected else ReversePath(path)
 
 def bounds_area(b):
     sx, sy, ex, ey = b
@@ -925,7 +931,7 @@ class IntPath(object):
     def real_points(self):
         return PtsFromInts(self.int_points)
     def orientation(self):
-        return Orientation(self.int_points)
+        return pyclipr.orientation(self.int_points)
     def reversed(self):
         return IntPath(list(reversed(self.int_points)), True)
     def force_orientation(self, orientation):
@@ -934,25 +940,40 @@ class IntPath(object):
         else:
             return self.reversed()
     def area(self):
-        return Area(self.int_points)
+        pc = pyclipr.Clipper()
+        pc.addPath(self.int_points, pyclipr.Subject, False)
+        res = pc.executeTree(pyclipr.Union, pyclipr.FillRule.Positive)
+        return res.area if res else 0
+    def bounding_box(self):
+        if len(self.int_points) == 0:
+            return None
+        sx = min([p[0] / GeometrySettings.RESOLUTION for p in self.int_points])
+        ex = max([p[0] / GeometrySettings.RESOLUTION for p in self.int_points])
+        sy = min([p[1] / GeometrySettings.RESOLUTION for p in self.int_points])
+        ey = max([p[1] / GeometrySettings.RESOLUTION for p in self.int_points])
+        return sx, sy, ex, ey
 
 def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=False, return_ints=False, fillMode=None):
     if fillMode is None:
         fillMode = GeometrySettings.fillMode
-    pc = Pyclipper()
+    pc = pyclipr.Clipper()
+    pc.scaleFactor = 10
     for path in subject_polys:
         try:
-            pc.AddPath(path.int_points, PT_SUBJECT, True)
-        except ClipperException:
+            pc.addPath(path.int_points, pyclipr.Subject, False)
+        #except ClipperException:
+        except ValueError:
             pass #print (path.int_points)
     for path in clipper_polys:
         try:
-            pc.AddPath(path.int_points, PT_CLIP, True)
-        except ClipperException:
+            pc.addPath(path.int_points, pyclipr.Clip, False)
+        #except ClipperException:
+        except ValueError:
             pass #print (path.int_points)
     try:
-        res = pc.Execute(operation, fillMode, fillMode)
-    except ClipperException:
+        res = pc.execute(operation, fillMode)
+    #except pyclipr.ClipperException:
+    except ValueError:
         res = None
     if bool_only:
         return True if res else False
@@ -966,43 +987,69 @@ def run_clipper_simple(operation, subject_polys=[], clipper_polys=[], bool_only=
 def run_clipper_advanced(operation, subject_polys=[], clipper_polys=[], subject_paths=[], fillMode=None):
     if fillMode is None:
         fillMode = GeometrySettings.fillMode
-    pc = Pyclipper()
-    if operation == CT_DIFFERENCE and subject_paths and not subject_polys:
-        lowest_y = None
-        for i in subject_paths:
-            p = i.int_points
-            i = 0
-            j = len(p) - 1
-            while i + 1 < len(p) and p[0] == p[i + 1]:
-                i += 1
-            while j - 1 > i and p[j] == p[-1]:
-                j -= 1
-            if j == i + 1 and p[i][1] == p[j][1]:
-                if lowest_y is None or p[i][1] < lowest_y:
-                    lowest_y = p[i][1]
-        if lowest_y is not None:
-            import traceback
-            print ("Warning: CT_DIFFERENCE may trigger a Clipper bug affecting horizontal lines and no workaround geometry has been passed!")
-            traceback.print_stack()
+    pc = pyclipr.Clipper()
+    pc.scaleFactor = 10
     for path in subject_polys:
-        pc.AddPath(path.int_points, PT_SUBJECT, True)
+        pc.addPath(path.int_points, pyclipr.Subject, False)
     for path in subject_paths:
-        pc.AddPath(path.int_points, PT_SUBJECT, False)
+        pc.addPath(path.int_points, pyclipr.Subject, True)
     for path in clipper_polys:
-        if Area(path.int_points) > 0:
-            pc.AddPath(path.int_points, PT_CLIP, True)
+        if path.area() > 0:
+            pc.addPath(path.int_points, pyclipr.Clip, False)
     try:
-        tree = pc.Execute2(operation, fillMode, fillMode)
-    except ClipperException as e:
+        tree = pc.executeTree(operation, fillMode)
+    #except ClipperException as e:
+    except ValueError as e:
         print ("Subject polys", subject_polys)
         print ("Subject paths", subject_paths)
         print ("Clipper polys", clipper_polys)
         return None
     return tree
 
-def run_clipper_checkpath(operation, subject_polys=[], clipper_polys=[], subject_paths=[], fillMode=None):
-    tree = run_clipper_advanced(operation, subject_polys, clipper_polys, subject_paths, fillMode)
-    return OpenPathsFromPolyTree(tree)
+def run_clipper_polygons(operation, shapes):
+    pc = pyclipr.Clipper()
+    pc.scaleFactor = 10
+    for shape in shapes:
+        pc.addPath(PtsToIntsPos(shape.boundary), pyclipr.Subject if shape is shapes[0] else pyclipr.Clip, not shape.closed)
+        for island in shape.islands:
+            pc.addPath(PtsToIntsNeg(island), pyclipr.Subject if shape is shapes[0] else pyclipr.Clip, not shape.closed)
+    res = pc.execute(operation, pyclipr.FillRule.Positive)
+    return [PtsFromInts(i) for i in res]
+    
+def run_clipper_openpaths(operation, clipper_polys=[], subject_paths=[], fillMode=None, bool_only=False):
+    if fillMode is None:
+        fillMode = GeometrySettings.fillMode
+    pc = pyclipr.Clipper()
+    pc.scaleFactor = 10
+    for path in subject_paths:
+        pc.addPath(path.int_points, pyclipr.Subject, True)
+    for path in clipper_polys:
+        if path.area() > 0:
+            pc.addPath(path.int_points, pyclipr.Clip, False)
+    try:
+        _, openpaths = pc.executeTree(operation, fillMode, returnOpenPaths=True)
+    #except ClipperException as e:
+    except ValueError as e:
+        print ("Subject paths", subject_paths)
+        print ("Clipper polys", clipper_polys)
+        return None
+    if bool_only:
+        return len(openpaths) > 0
+    return openpaths
+
+def run_clipper_offset(points, closed, dist, joined=False, scaleFactor=10):
+    pc = pyclipr.ClipperOffset()
+    pc.scaleFactor = scaleFactor
+    pc.addPath(points, pyclipr.JoinType.Round, pyclipr.EndType.Joined if joined else (pyclipr.EndType.Polygon if closed else pyclipr.EndType.Round))
+    return pc.execute(dist * GeometrySettings.RESOLUTION)
+
+def polyTreeToClosedPaths(tree):
+    res = []
+    if len(tree.polygon):
+        res.append(tree.polygon)
+    for i in tree.children:
+        res += polyTreeToClosedPaths(i)
+    return res
 
 def arc_from_cad(p1, p2, bulge):
     theta = 4 * atan(bulge)

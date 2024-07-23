@@ -1,4 +1,3 @@
-from pyclipper import *
 from math import *
 from DerpCAM.common.geom import *
 from DerpCAM.cam.shapes import Shape

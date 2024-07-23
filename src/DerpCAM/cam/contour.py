@@ -3,9 +3,9 @@ from DerpCAM.cam import shapes, toolpath
 import math
 
 def plain_clipper(shape, diameter, outside, displace, climb):
-    dist = (0.5 * diameter + displace) * geom.GeometrySettings.RESOLUTION
+    dist = 0.5 * diameter + displace
     boundary = geom.PtsToInts(shape.boundary)
-    res = shapes.Shape._offset(boundary, shape.closed, dist if outside else -dist)
+    res = geom.run_clipper_offset(boundary, shape.closed, dist if outside else -dist)
     if not res:
         return None
     res = [geom.SameOrientation(i, outside ^ climb) for i in res]
@@ -133,25 +133,21 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     ddist2 = -circle_size * diameter
 
     # Use much higher resolution here, because the circles are tiny
-    resolution = geom.GeometrySettings.RESOLUTION * max(4.0 / circle_size, 4.0 / stepover, 3)
-    def PtsToInts(points):
-        return [(round(p.x * resolution), round(p.y * resolution)) for p in points]
-    def PtsFromInts(points):
-        return [geom.PathPoint(x / resolution, y / resolution) for x, y in points]
+    scaleFactor = int(math.ceil(10 * max(4.0 / circle_size, 4.0 / stepover, 3)))
 
-    res_out = shapes.Shape._offset(PtsToInts(shape.boundary), True, (dist2 if is_outside else -dist2) * resolution)
+    res_out = geom.run_clipper_offset(geom.PtsToInts(shape.boundary), True, dist2 if is_outside else -dist2, scaleFactor=scaleFactor)
     if not res_out:
         return None
-    outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in PtsFromInts(path + path[0:1])] for path in res_out])
+    outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in geom.PtsFromInts(path + path[0:1])] for path in res_out])
 
     res = []
     for i in res_out:
-        res_item = shapes.Shape._offset(i, True, (ddist2 if is_outside else -ddist2) * resolution)
+        res_item = geom.run_clipper_offset(i, True, ddist2 if is_outside else -ddist2, scaleFactor=scaleFactor)
         if res_item:
             res += res_item
     if not res:
         return None
-    inside = [geom.Path(PtsFromInts(path), shape.closed) for path in res]
+    inside = [geom.Path(geom.PtsFromInts(path), shape.closed) for path in res]
     tlength = sum([path.length() for path in inside])
 
     paths = []

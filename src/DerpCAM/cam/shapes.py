@@ -1,4 +1,3 @@
-from pyclipper import *
 from math import *
 from DerpCAM.common.geom import *
 from . import toolpath
@@ -9,6 +8,8 @@ class Shape(object):
     def __init__(self, boundary, closed=True, islands=None):
         for i in boundary:
             assert isinstance(i, PathPoint)
+        if not pyclipr.orientation(PtsToInts(boundary)):
+            boundary = boundary[::-1]
         self.boundary = boundary
         self.closed = closed
         self.islands = list(islands) if islands is not None else []
@@ -33,29 +34,14 @@ class Shape(object):
                 ls = shapely.geometry.LinearRing(pts)
             else:
                 ls = shapely.geometry.LineString(pts)
-            ls = ls.simplify(1.0 / GeometrySettings.RESOLUTION)
+            ls = ls.simplify(epsilon())
             lso = ls.parallel_offset(abs(offset), 'right' if offset > 0 else 'left', 4)
-            lso = lso.simplify(1.0 / GeometrySettings.RESOLUTION)
+            lso = lso.simplify(epsilon())
             return Path([PathPoint(x, y) for x, y in lso.coords], closed)
         tps = [toolpath.Toolpath(offset_path(self.boundary, self.closed, offset), tool)] + [
             toolpath.Toolpath(offset_path(island, True, offset), tool) for island in self.islands ]
         tps = [tp for tp in tps if not tp.is_empty()]
         return tps
-    @staticmethod
-    def _offset(points, closed, dist):
-        if abs(dist) > 10 * GeometrySettings.RESOLUTION:
-            res = Shape._offset(points, closed, int(dist / 2))
-            if not res:
-                return
-            res2 = []
-            for contour in res:
-                offset = Shape._offset(contour, closed, dist - int(dist / 2))
-                if offset:
-                    res2 += offset
-            return res2
-        pc = PyclipperOffset()
-        pc.AddPath(points, JT_ROUND, ET_CLOSEDPOLYGON if closed else ET_OPENROUND)
-        return pc.Execute(dist)
     def warp(self, transform):
         def interpolate(pts):
             res = []
@@ -108,66 +94,43 @@ class Shape(object):
         return Shape(polygon, True, None)
     @staticmethod
     def _from_clipper_res(orig_orient_path, res):
-        orig_orientation = Orientation(PtsToInts(orig_orient_path.boundary))
+        # XXXKF maybe use the tree representation here instead
+        orig_orientation = pyclipr.orientation(PtsToInts(orig_orient_path.boundary))
         if not res:
             return []
         if len(res) == 1:
-            return Shape(PtsFromInts(res[0]))
+            return Shape(res[0])
         shapes = []
         for i in res:
-            if Orientation(i) == orig_orientation:
-                shapes.append(Shape(PtsFromInts(i), True, []))
+            if pyclipr.orientation(PtsToInts(i)) == orig_orientation:
+                shapes.append(Shape(i, True, []))
             else:
                 # XXXKF find the enclosing shape
-                shapes[-1].islands.append(PtsFromInts(i))
+                shapes[-1].islands.append(i)
         if len(shapes) == 1:
             return shapes[0]
         else:
             return shapes
     @staticmethod
-    def union(*paths):
-        pc = Pyclipper()
-        for path in paths:
-            pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-        res = pc.Execute(CT_UNION, GeometrySettings.fillMode, GeometrySettings.fillMode)
-        return Shape._from_clipper_res(paths[0], res)
-    @staticmethod
     def union2(*paths):
-        pc = Pyclipper()
-        for path in paths:
-            pc.AddPath(PtsToIntsPos(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-            for island in path.islands:
-                pc.AddPath(PtsToIntsNeg(island), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-        res = pc.Execute(CT_UNION, PFT_POSITIVE, PFT_POSITIVE)
-        return Shape._from_clipper_res(paths[0], res)
-    @staticmethod
-    def difference(*paths):
-        pc = Pyclipper()
-        for path in paths:
-            pc.AddPath(PtsToInts(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-        res = pc.Execute(CT_DIFFERENCE, GeometrySettings.fillMode, GeometrySettings.fillMode)
+        res = run_clipper_polygons(pyclipr.Union, paths)
         return Shape._from_clipper_res(paths[0], res)
     @staticmethod
     def difference2(*paths):
-        pc = Pyclipper()
-        for path in paths:
-            pc.AddPath(PtsToIntsPos(path.boundary), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-            for island in path.islands:
-                pc.AddPath(PtsToIntsNeg(island), PT_SUBJECT if path is paths[0] else PT_CLIP, path.closed)
-        res = pc.Execute(CT_DIFFERENCE, PFT_POSITIVE, PFT_POSITIVE)
+        res = run_clipper_polygons(pyclipr.Difference, paths)
         return Shape._from_clipper_res(paths[0], res)
     # This works on lists of points
     @staticmethod
     def _difference(*paths, return_ints=False):
-        return run_clipper_simple(CT_DIFFERENCE, paths[0:1], paths[1:], return_ints=return_ints)
+        return run_clipper_simple(pyclipr.Difference, paths[0:1], paths[1:], return_ints=return_ints)
     # This works on lists of points
     @staticmethod
     def _intersection(*paths, return_ints=False):
-        return run_clipper_simple(CT_INTERSECTION, paths[0:1], paths[1:], return_ints=return_ints)
+        return run_clipper_simple(pyclipr.Intersection, paths[0:1], paths[1:], return_ints=return_ints)
     # This works on lists of points
     @staticmethod
     def _union(*paths, return_ints=False):
-        return run_clipper_simple(CT_UNION, paths[0:1], paths[1:], return_ints=return_ints)
+        return run_clipper_simple(pyclipr.Union, paths[0:1], paths[1:], return_ints=return_ints)
 
 def interpolate_path(path):
     lastpt = path[0]

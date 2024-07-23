@@ -1,4 +1,3 @@
-from pyclipper import *
 from math import *
 from ..common.geom import *
 from .milling_tool import *
@@ -372,33 +371,29 @@ class Toolpath(object):
         for i in range(0, len(intsFull), step):
             ints = intsFull[i : i + step + 1]
             ints += ints[::-1]
-            pc = PyclipperOffset()
-            pc.AddPath(ints, JT_ROUND, ET_OPENROUND)
             initv = min(offset, 3)
-            res = pc.Execute(initv)
+            res = run_clipper_offset(ints, False, initv / GeometrySettings.RESOLUTION)
             if res:
                 outlines += res
 
         if is_calculation_cancelled():
             return []
-        pc = Pyclipper()
+        pc = pyclipr.Clipper()
         for o in outlines:
-            pc.AddPath(o, PT_SUBJECT, True)
-        outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+            pc.addPath(o, pyclipr.Subject, False)
+        outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
         outlines2 = []
         for o in outlines:
             if is_calculation_cancelled():
                 return []
-            pc = PyclipperOffset()
-            pc.AddPath(o, JT_ROUND, ET_CLOSEDLINE)
-            outlines2 += pc.Execute(offset - initv)
+            outlines2 += run_clipper_offset(o, False, (offset - initv) / GeometrySettings.RESOLUTION, joined=True)
         outlines = outlines2
-        pc = Pyclipper()
+        pc = pyclipr.Clipper()
         for o in outlines:
-            pc.AddPath(o, PT_SUBJECT, True)
+            pc.addPath(o, pyclipr.Subject, False)
         for c in circles:
-            pc.AddPath(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution), PT_SUBJECT, True)
-        outlines = pc.Execute(CT_UNION, PFT_NONZERO, PFT_NONZERO)
+            pc.addPath(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution), pyclipr.Subject, False)
+        outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
         return [PtsFromInts(ints, resolution) for ints in outlines]
     def is_empty(self):
         return self.path.is_empty()
@@ -504,8 +499,8 @@ def joinClosePathsWithCollisionCheck(tps, boundary, islands):
                         lastpt = last.path.nodes[-1]
                         continue
                     # XXXKF workaround clipper bug
-                    if not boundary or not run_clipper_checkpath(CT_DIFFERENCE, subject_polys=[], clipper_polys=boundary, subject_paths=[new_path], fillMode=PFT_NONZERO):
-                        if not islands or not run_clipper_checkpath(CT_INTERSECTION, subject_polys=[], clipper_polys=islands, subject_paths=[new_path], fillMode=PFT_NONZERO):
+                    if not boundary or not run_clipper_openpaths(pyclipr.Difference, clipper_polys=boundary, subject_paths=[new_path], fillMode=pyclipr.FillRule.NonZero, bool_only=True):
+                        if not islands or not run_clipper_openpaths(pyclipr.Intersection, clipper_polys=islands, subject_paths=[new_path], fillMode=pyclipr.FillRule.NonZero, bool_only=True):
                             res[-1] = Toolpath(Path(last.path.nodes + (last.path.nodes[0:1] if last.path.closed else []) + points + (points[0:1] if tp.path.closed else []), False), tp.tool)
                             last = res[-1]
                             lastpt = last.path.nodes[-1]
@@ -537,10 +532,10 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             c = IntPath(circle(start.x, start.y, d / 2))
             # Check if it sticks outside of the final shape
             # XXXKF could be optimized by doing a simple bounds check first
-            if run_clipper_simple(CT_DIFFERENCE, [c], [boundary_path], bool_only=True):
+            if run_clipper_simple(pyclipr.Difference, [c], [boundary_path], bool_only=True):
                 continue
             # Check for collision with islands
-            if islands and any([run_clipper_simple(CT_INTERSECTION, [i], [c], bool_only=True) for i in island_paths]):
+            if islands and any([run_clipper_simple(pyclipr.Intersection, [i], [c], bool_only=True) for i in island_paths]):
                 continue
             tp.helical_entry = HelicalEntry(start, mr)
             break

@@ -3,23 +3,24 @@ import hsm_nibble.voronoi_centers
 from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
-import pyclipper
+import pyclipr
 from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
-    dist = (0.5 * tool.diameter + displace) * geom.GeometrySettings.RESOLUTION
+    dist = (0.5 * tool.diameter + displace)
     boundary = geom.PtsToInts(shape.boundary)
-    res = shapes.Shape._offset(boundary, shape.closed, dist if outside else -dist)
+    res = geom.run_clipper_offset(boundary, shape.closed, dist if outside else -dist)
     if not res:
         return None
 
     if subtract:
         res2 = []
         for i in res:
-            exp_orient = pyclipper.Orientation(i)
-            d = shapes.Shape._difference(geom.IntPath(i, True), *subtract, return_ints=True)
+            ip = geom.IntPath(i, True)
+            exp_orient = ip.orientation()
+            d = shapes.Shape._difference(ip, *subtract, return_ints=True)
             if d:
-                res2 += [j for j in d if pyclipper.Orientation(j.int_points) == exp_orient]
+                res2 += [j for j in d if j.orientation() == exp_orient]
         if not res2:
             return None
         res2 = [geom.SameOrientation(i.int_points, outside ^ tool.climb) for i in res2]
@@ -31,31 +32,29 @@ def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
 
 def calculate_tool_margin(shape, tool, displace, outer_margin):
     boundary = geom.IntPath(shape.boundary)
-    boundary_transformed = [ geom.IntPath(i, True) for i in shapes.Shape._offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace + outer_margin) * geom.GeometrySettings.RESOLUTION) ]
+    boundary_transformed = [ geom.IntPath(i, True) for i in geom.run_clipper_offset(boundary.int_points, True, (-tool.diameter * 0.5 - displace + outer_margin)) ]
     islands_transformed = []
     islands_transformed_nonoverlap = []
     boundary_transformed_nonoverlap = boundary_transformed
     if shape.islands:
         islands = shapes.Shape._union(*[geom.IntPath(i).force_orientation(True) for i in shape.islands])
         for island in islands:
-            pc = pyclipper.PyclipperOffset()
             pts = geom.PtsToInts(island)
-            if not pyclipper.Orientation(pts):
+            if not pyclipr.orientation(pts):
                 pts = list(reversed(pts))
-            pc.AddPath(pts, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-            res = pc.Execute((tool.diameter * 0.5 + displace) * geom.GeometrySettings.RESOLUTION)
+            res = geom.run_clipper_offset(pts, True, tool.diameter * 0.5 + displace)
             if not res:
                 return None
             res = [geom.IntPath(it, True) for it in res]
             islands_transformed += res
-            islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, [it], boundary_transformed, bool_only=True)]
+            islands_transformed_nonoverlap += [it for it in res if not geom.run_clipper_simple(pyclipr.Difference, [it], boundary_transformed, bool_only=True)]
         if islands_transformed_nonoverlap:
             islands_transformed_nonoverlap = shapes.Shape._union(*[i for i in islands_transformed_nonoverlap], return_ints=True)
-        tree = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE,
+        tree = geom.run_clipper_advanced(pyclipr.Difference,
             subject_polys=[i for i in boundary_transformed],
             clipper_polys=[i for i in islands_transformed])
         if tree:
-            boundary_transformed_nonoverlap = [geom.IntPath(i, True) for i in pyclipper.ClosedPathsFromPolyTree(tree)]
+            boundary_transformed_nonoverlap = [geom.IntPath(i, True) for i in geom.polyTreeToClosedPaths(tree)]
         else:
             boundary_transformed_nonoverlap = []
     return boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap
@@ -69,10 +68,10 @@ def pts2path(pts, orientation):
 def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands_transformed_nonoverlap, finish_outer_contour):
     if finish_outer_contour:
         for b in boundary_transformed:
-            expected_orientation = pyclipper.Orientation(b.int_points)
+            expected_orientation = b.orientation()
             for d in shapes.Shape._difference(b, *islands_transformed, return_ints=True):
                 pts = geom.PtsFromInts(d.int_points)
-                if pyclipper.Orientation(d.int_points) == expected_orientation:
+                if d.orientation() == expected_orientation:
                     tps.append(toolpath.Toolpath(pts2path(pts, tool.climb), tool, is_edge=True))
     for h in islands_transformed_nonoverlap:
         for pts in shapes.Shape._intersection(h, *boundary_transformed):
@@ -200,20 +199,19 @@ def process_rows(rows, tool):
     return tps
 
 def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_outer_contour=True, outer_margin=0):
-    offset_dist = (0.5 * tool.diameter - margin) * geom.GeometrySettings.RESOLUTION
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin + roughing_offset, outer_margin)
-    border_paths = [geom.IntPath(path.int_points, True) for path in boundary_transformed_nonoverlap] + [geom.IntPath(pyclipper.ReversePath(path.int_points), True) for path in islands_transformed_nonoverlap]
-    border_paths = [path for path in border_paths if geom.Area(path.int_points) != 0]
+    border_paths = [geom.IntPath(path.int_points, True) for path in boundary_transformed_nonoverlap] + [geom.IntPath(geom.ReversePath(path.int_points), True) for path in islands_transformed_nonoverlap]
+    border_paths = [path for path in border_paths if path.area() != 0]
 
-    coords = sum([i.int_points for i in boundary_transformed], [])
-    xcoords = [p[0] / geom.GeometrySettings.RESOLUTION for p in coords]
-    ycoords = [p[1] / geom.GeometrySettings.RESOLUTION for p in coords]
-    sx, sy, ex, ey = min(xcoords), min(ycoords), max(xcoords), max(ycoords)
+    bounds = geom.max_bounds(*[i.bounding_box() for i in boundary_transformed])
+    if not bounds:
+        return None
+    sx, sy, ex, ey = bounds
     stepover = tool.diameter * tool.stepover
     tps = []
     maxlen = geom.dist(geom.PathPoint(sx, sy), geom.PathPoint(ex, ey))
     #p = (ex + tool.diameter / 2 * cos(angle + pi / 2), sy + tool.diameter / 2 * sin(angle + pi / 2))
-    p = (ex, sy + 1 / geom.GeometrySettings.RESOLUTION)
+    p = (ex, sy + geom.epsilon())
     fsteps = maxlen / stepover
     nsteps = int(math.ceil(fsteps))
     rows = []
@@ -221,21 +219,17 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
     my = maxlen * math.sin(angle)
     dx = stepover * math.cos(angle + math.pi / 2)
     dy = stepover * math.sin(angle + math.pi / 2)
-    # Clipper bug workaround! A difference of a horizontal line and a contour that is *above* the line will be null,
-    # instead of the whole line.
-    subtract_hack = [geom.IntPath([geom.PathPoint(sx, sy - 1), geom.PathPoint(sx + 1, sy - 1), geom.PathPoint(sx, sy - 2)], False)]
     for i in range(nsteps):
         p1 = geom.PathPoint(p[0] - mx, p[1] - my)
         p2 = geom.PathPoint(p[0] + mx, p[1] + my)
         path = geom.IntPath([p2, p1]) if zigzag and (i & 1) else geom.IntPath([p1, p2])
-        tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], boundary_transformed, [path])
+        trimmed = geom.run_clipper_openpaths(pyclipr.Intersection, boundary_transformed, [path])
         if islands_transformed:
-            treepaths = pyclipper.OpenPathsFromPolyTree(tree)
-            tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, subtract_hack, islands_transformed, [geom.IntPath(path2, True) for path2 in treepaths])
+            trimmed2 = geom.run_clipper_openpaths(pyclipr.Difference, islands_transformed, [geom.IntPath(path2, True) for path2 in trimmed])
         else:
-            tree2 = tree
+            trimmed2 = trimmed
         row = AxisParallelRow()
-        for path3 in pyclipper.OpenPathsFromPolyTree(tree2):
+        for path3 in trimmed2:
             row.add_slice(geom.Path(geom.PtsFromInts(path3), False))
         frac = fsteps - nsteps if i == nsteps - 1 else 1
         p = (p[0] + frac * dx, p[1] + frac * dy)
@@ -244,18 +238,18 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
         slice = geom.IntPath([p1, p2, p4, p3])
 
         if False: # use for debugging
-            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [slice], boundary_transformed, [])
-            treepaths = pyclipper.ClosedPathsFromPolyTree(tree)
+            tree = geom.run_clipper_advanced(pyclipr.Intersection, [slice], boundary_transformed, [])
+            treepaths = geom.closedPathsFromPolyTree(tree)
             if islands_transformed:
-                tree2 = geom.run_clipper_advanced(pyclipper.CT_DIFFERENCE, [geom.IntPath(path2, True) for path2 in treepaths], islands_transformed, [])
+                tree2 = geom.run_clipper_advanced(pyclipr.Difference, [geom.IntPath(path2, True) for path2 in treepaths], islands_transformed, [])
             else:
                 tree2 = tree
-            for path3 in pyclipper.ClosedPathsFromPolyTree(tree2):
+            for path3 in geom.closedPathsFromPolyTree(tree2):
                 row.add_area(geom.Path(geom.PtsFromInts(path3), True))
         #tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed + islands_transformed_nonoverlap])
         if zigzag and border_paths:
-            tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], border_paths)
-            for path3 in pyclipper.OpenPathsFromPolyTree(tree):
+            trimmed3 = geom.run_clipper_openpaths(pyclipr.Intersection, [slice], border_paths)
+            for path3 in trimmed3:
                 row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
         rows.append(row)
     tps = process_rows(rows, tool)
@@ -307,11 +301,11 @@ def objects_to_polygons(polygon):
 def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter_override=None):
     if tool_diameter_override is None:
         tool_diameter_override = tool.diameter
-    tdist = (0.5 * tool_diameter_override + displace) * geom.GeometrySettings.RESOLUTION
+    tdist = (0.5 * tool_diameter_override + displace)
     if from_outside:
-        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist + tool_diameter_override * geom.GeometrySettings.RESOLUTION)
+        subpockets = geom.run_clipper_offset(geom.PtsToInts(shape.boundary), True, -tdist + tool_diameter_override)
     else:
-        subpockets = shapes.Shape._offset(geom.PtsToInts(shape.boundary), True, -tdist)
+        subpockets = geom.run_clipper_offset(geom.PtsToInts(shape.boundary), True, -tdist)
     all_inputs = []
     for subpocket in subpockets:
         boundary_offset = geom.PtsFromInts(subpocket)
@@ -320,8 +314,8 @@ def shape_to_polygons(shape, tool, displace=0, from_outside=False, tool_diameter
         islands_offset = []
         holes = []
         for island in shape.islands:
-            island_offsets = shapes.Shape._offset(geom.PtsToInts(island), True, tdist)
-            island_offsets = pyclipper.SimplifyPolygons(island_offsets)
+            island_offsets = geom.run_clipper_offset(geom.PtsToInts(island), True, tdist)
+            #island_offsets = pyclipr.simplifyPaths(island_offsets, geom.epsilon())
             for island_offset in island_offsets:
                 island_offset_pts = geom.PtsFromInts(island_offset)
                 islands_offset.append(island_offset_pts)
@@ -551,7 +545,7 @@ def refine_shape_internal(shape, previous, current, min_entry_dia):
     unmilled = entire_shape.difference(previous_milled)
     unmilled_polygons = objects_to_polygons(unmilled)
     output_polygons = []
-    junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
+    junk_cutoff = max(current / 20, geom.epsilon())
     cnt = 0
     for polygon in unmilled_polygons:
         # Skip very tiny shapes
@@ -589,7 +583,7 @@ def refine_shape_external(shape, previous, current, min_entry_dia):
     unmilled = previous_milled.difference(entire_shape)
     unmilled_polygons = objects_to_polygons(unmilled)
     output_polygons = []
-    junk_cutoff = max(current / 20, 1.0 / geom.GeometrySettings.RESOLUTION)
+    junk_cutoff = max(current / 20, geom.epsilon())
     for polygon in unmilled_polygons:
         # Skip very tiny shapes
         polygons = polygon.buffer(-junk_cutoff)

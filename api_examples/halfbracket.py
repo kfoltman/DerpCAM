@@ -16,7 +16,7 @@ machine_params = MachineParams(safe_z = safe_z, semi_safe_z = semi_safe_z)
 
 hole_diameter = 4.2
 
-outside = Shape.union(
+outside = Shape.union2(
     Shape.rectangle(0, 0, width, length - width / 2),
     Shape.circle(width / 2, length - width / 2, d = width)
 )

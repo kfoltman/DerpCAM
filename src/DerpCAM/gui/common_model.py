@@ -6,7 +6,6 @@ import threading
 import time
 
 import ezdxf
-import pyclipper
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *

@@ -1,4 +1,5 @@
 from .common_model import *
+import pyclipr
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -619,7 +620,7 @@ class DrawingTreeItem(CAMListTreeItem):
                 if i == j:
                     continue
                 jsi = selectionId[j]
-                if not geom.run_clipper_simple(pyclipper.CT_DIFFERENCE, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipper.PFT_NONZERO):
+                if not geom.run_clipper_simple(pyclipr.Difference, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipr.FillRule.NonZero):
                     zeros.add((isi, jsi))
         outsides = { i.shape_id: set() for i in selection }
         for isi, jsi in zeros:

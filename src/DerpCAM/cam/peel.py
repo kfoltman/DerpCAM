@@ -1,6 +1,5 @@
 from DerpCAM.common import geom
 import math
-import pyclipper
 from . import pocket, shapes, toolpath
 
 def outside_peel(shape, tool, displace=0):
