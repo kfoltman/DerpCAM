@@ -939,10 +939,10 @@ class IntPath(object):
             return self
         else:
             return self.reversed()
-    def area(self):
+    def area(self, fillRule=pyclipr.FillRule.NonZero):
         pc = pyclipr.Clipper()
         pc.addPath(self.int_points, pyclipr.Subject, False)
-        res = pc.executeTree(pyclipr.Union, pyclipr.FillRule.Positive)
+        res = pc.executeTree(pyclipr.Union, fillRule)
         return res.area if res else 0
     def bounding_box(self):
         if len(self.int_points) == 0:
