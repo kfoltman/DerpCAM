@@ -374,6 +374,118 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
                 self.document.opMoveDrawingItems(self.objects, dx, dy)
                 CanvasEditorPickPoint.apply(self)
 
+class CanvasRotateEditor(CanvasEditorPickPoint):
+    deleteOrig = True
+    count = 1
+    def __init__(self, document, objects):
+        CanvasEditorPickPoint.__init__(self, document)
+        self.objects = objects
+        self.stage = 0
+        self.centre_point = None
+        self.first_arm = None
+    def setTitle(self):
+        if self.stage == 0:
+            self.parent.setWindowTitle("Rotate objects - select centre of rotation")
+        elif self.stage == 1:
+            self.parent.setWindowTitle("Rotate objects - set the first arm of the angle")
+        else:
+            self.parent.setWindowTitle("Rotate objects - set the second arm of the angle")
+    def updateLabel(self):
+        if self.stage == 0:
+            self.descriptionLabel.setText("Click the centre of rotation.")
+        elif self.stage == 1:
+            self.descriptionLabel.setText("Click to determine the first (origin) arm of rotation angle.")
+        else:
+            self.descriptionLabel.setText("Click to determine the second (target) arm of rotation angle.")
+    def updateControls(self):
+        self.updateButtons()
+    def updateButtons(self):
+        self.applyButton.setText("Rotate")
+        self.applyButton.setEnabled(self.stage == 2)
+        self.deleteOriginalButton.setChecked(self.deleteOrig)
+    def createExtraControls(self):
+        self.deleteOriginalButton = QCheckBox("&Delete original")
+        self.optionsLayout = QVBoxLayout()
+        self.optionsLayout.addWidget(self.deleteOriginalButton)
+        self.arrayLayout = QHBoxLayout()
+        self.arrayCount = guiutils.intSpin(1, 100, self.count, "Number of copies added")
+        self.arrayLayout.addWidget(QLabel("Copies:"))
+        self.arrayLayout.addWidget(self.arrayCount)
+        self.arrayLayout.addStretch()
+        self.optionsLayout.addLayout(self.arrayLayout)
+        self.layout.addRow(self.optionsLayout)
+        self.deleteOriginalButton.clicked.connect(lambda: self.setDeleteOriginal(self.deleteOriginalButton.isChecked()))
+    def setDeleteOriginal(self, value):
+        CanvasRotateEditor.deleteOrig = value
+        self.updateButtons()
+    def pointSelected(self):
+        if self.stage == 0:
+            self.centre_point = self.mouse_point
+            self.stage = 1
+            self.setTitle()
+            self.updateLabel()
+            self.updateControls()
+        elif self.stage == 1:
+            self.first_arm = self.mouse_point
+            self.stage = 2
+            self.setTitle()
+            self.updateLabel()
+            self.updateControls()
+        else:
+            self.apply()
+    def getTransform(self, second_arm):
+        ox = self.centre_point.x
+        oy = self.centre_point.y
+        angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
+        angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
+        rotation = angle2 - angle1
+        return ox, oy, rotation
+    def drawPreview(self, qp, item, ox, oy, rotation):
+        item.createPaths()
+        oldTransform = qp.transform()
+        transform = self.canvas.drawingTransform()
+        qp.setTransform(transform)
+        qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
+        tempRenderer = TempRenderer(self.canvas)
+        item.rotated(ox, oy, rotation).renderTo(tempRenderer, None)
+        tempRenderer.paint(qp, self.canvas)
+        qp.setTransform(oldTransform)
+    def paint(self, e, qp):
+        CanvasEditorPickPoint.paint(self, e, qp)
+        if self.centre_point is not None:
+            first_arm = self.first_arm if self.first_arm is not None else self.mouse_point
+            pen = qp.pen()
+            qp.setPen(QPen(QColor(255, 0, 0), 0))
+            qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
+            if self.first_arm is not None:
+                second_arm = self.mouse_point
+                qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
+            qp.setPen(pen)
+            if self.first_arm is not None:
+                ox, oy, rotation = self.getTransform(self.mouse_point)
+                for i in range(self.arrayCount.value()):
+                    for item in self.objects:
+                        self.drawPreview(qp, item, ox, oy, rotation * (i + 1))
+    def apply(self):
+        if self.stage == 2:
+            second_arm = self.mouse_point
+            ox, oy, rotation = self.getTransform(second_arm)
+            CanvasRotateEditor.count = self.arrayCount.value()
+            items = []
+            count = self.count
+            start = 0
+            if self.deleteOrig:
+                # Rotate existing
+                self.document.opRotateDrawingItems(self.objects, ox, oy, rotation)
+                if count <= 1:
+                    CanvasEditorPickPoint.apply(self)
+                    return
+                start += 1
+            for i in range(start, self.count):
+                items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed() for item in self.objects]
+            self.document.opAddDrawingItems(items)
+            CanvasEditorPickPoint.apply(self)
+
 class CanvasTabsEditor(CanvasEditor):
     def __init__(self, item):
         CanvasEditor.__init__(self, item)

@@ -113,6 +113,10 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         cti = DrawingCircleTreeItem(self.document, self.centre.translated(dx, dy), self.r, self.untransformed)
         cti.shape_id = self.shape_id
         return cti
+    def rotated(self, ox, oy, rotation):
+        cti = DrawingCircleTreeItem(self.document, self.centre.rotated(ox, oy, rotation), self.r, self.untransformed)
+        cti.shape_id = self.shape_id
+        return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, self.centre.scaled(cx, cy, scale), self.r * scale, self.untransformed)
     def translate(self, dx, dy):
@@ -120,6 +124,12 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         self.centre = self.centre.translated(dx, dy)
         return old
     def restore_translate(self, old):
+        self.centre = old
+    def rotate(self, ox, oy, rotation):
+        old = self.centre
+        self.centre = self.centre.rotated(ox, oy, rotation)
+        return old
+    def restore_rotate(self, old):
         self.centre = old
     def store(self):
         res = DrawingItemTreeItem.store(self)
@@ -163,8 +173,18 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
         return old
     def restore_translate(self, points):
         self.points = points
+    def rotate(self, ox, oy, rotation):
+        old = self.points
+        self.points = [p.rotated(ox, oy, rotation) for p in self.points]
+        return old
+    def restore_rotate(self, points):
+        self.points = points
     def translated(self, dx, dy):
         pti = DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed)
+        pti.shape_id = self.shape_id
+        return pti
+    def rotated(self, ox, oy, rotation):
+        pti = DrawingPolylineTreeItem(self.document, [p.rotated(ox, oy, rotation) for p in self.points], self.closed, self.untransformed)
         pti.shape_id = self.shape_id
         return pti
     def scaled(self, cx, cy, scale):
@@ -365,12 +385,32 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         tti = DrawingTextTreeItem(self.document, self.origin.translated(dx, dy), self.target_width, self.style, self.text, self.untransformed)
         tti.shape_id = self.shape_id
         return tti
+    def rotated(self, ox, oy, rotation):
+        style = self.style.clone()
+        style.angle += round(rotation * 180 / math.pi, 3)
+        style.angle = style.angle % 360
+        if style.angle > 180:
+            style.angle -= 360
+        tti = DrawingTextTreeItem(self.document, self.origin.rotated(ox, oy, rotation), self.target_width, style, self.text, self.untransformed)
+        tti.shape_id = self.shape_id
+        return tti
     def translate(self, dx, dy):
         old = self.origin
         self.origin = self.origin.translated(dx, dy)
         return old
     def restore_translate(self, old):
         self.origin = old
+    def rotate(self, ox, oy, rotation):
+        old = (self.origin, self.style)
+        self.origin = self.origin.rotated(ox, oy, rotation)
+        style = self.style.clone()
+        style.angle += round(rotation * 180 / math.pi, 3)
+        style.angle = style.angle % 360
+        self.style = style
+        return old
+    def restore_rotate(self, old):
+        self.origin = old[0]
+        self.style = old[1]
     def toShape(self):
         res = []
         last_bounds = None
@@ -445,10 +485,11 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
                 y -= metrics.capHeight() / scale
         ppath = QPainterPath()
         ppath.addText(0, 0, font, self.text)
-        transform = QTransform().rotate(angle).scale(width, 1)
+        transform = QTransform().scale(width, 1)
+        angle_rad = math.pi * angle / 180
         self.paths = []
         for polygon in ppath.toSubpathPolygons(transform):
-            self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y) for p in polygon], True))
+            self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y).rotated(self.origin.x, self.origin.y, -angle_rad) for p in polygon], True))
         self.calcBounds()
     def startEndPos(self):
         if self.paths:

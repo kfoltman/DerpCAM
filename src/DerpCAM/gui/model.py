@@ -953,6 +953,25 @@ class MoveDrawingItemsUndoCommand(QUndoCommand):
             self.undo_data.append((i, i.translate(self.dx, self.dy)))
         self.document.shapesUpdated.emit()
 
+class RotateDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items, ox, oy, rotation):
+        QUndoCommand.__init__(self, "Rotate geometry item" if len(items) == 1 else "Rotate {len(items)} geometry items")
+        self.document = document
+        self.items = items
+        self.ox = ox
+        self.oy = oy
+        self.rotation = rotation
+        self.undo_data = None
+    def undo(self):
+        for i, old_data in self.undo_data:
+            i.restore_rotate(old_data)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.undo_data = []
+        for i in self.items:
+            self.undo_data.append((i, i.rotate(self.ox, self.oy, self.rotation)))
+        self.document.shapesUpdated.emit()
+
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
@@ -1479,6 +1498,8 @@ class DocumentModel(QObject):
         return indexes
     def opMoveDrawingItems(self, items, dx, dy):
         self.undoStack.push(MoveDrawingItemsUndoCommand(self, items, dx, dy))
+    def opRotateDrawingItems(self, items, ox, oy, rotation):
+        self.undoStack.push(RotateDrawingItemsUndoCommand(self, items, ox, oy, rotation))
     def opDeletePreset(self, preset):
         self.undoStack.beginMacro(f"Delete preset: {preset.name}")
         try:

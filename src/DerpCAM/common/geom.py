@@ -127,6 +127,11 @@ class PathPoint(PathNode):
         return PathPoint(t[0], t[1])
     def translated(self, dx, dy):
         return PathPoint(self.x + dx, self.y + dy)
+    def rotated(self, ox, oy, rotation):
+        cosv, sinv = cos(rotation), sin(rotation)
+        x = ox + (self.x - ox) * cosv - (self.y - oy) * sinv
+        y = oy + (self.x - ox) * sinv + (self.y - oy) * cosv
+        return PathPoint(x, y)
     def with_speed_hint(self, speed_hint):
         return PathPoint(self.x, self.y, speed_hint)
     def __eq__(self, other):
@@ -199,6 +204,8 @@ class PathArc(PathNode):
         return PathArc(self.p2, self.p1, self.c, self.steps, self.sstart + self.sspan, -self.sspan, self.speed_hint)
     def translated(self, dx, dy):
         return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan, self.speed_hint)
+    def rotated(self, ox, oy, rotation):
+        return PathArc(self.p1.rotated(ox, oy, rotation), self.p2.rotated(ox, oy, rotation), self.c.rotated(ox, oy, rotation), self.steps, self.sstart + rotation, self.sspan, self.speed_hint)
     def scaled(self, cx, cy, scale):
         return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan, self.speed_hint)
     def cut(self, alpha, beta):
@@ -634,6 +641,9 @@ class CandidateCircle(object):
         return PathPoint(self.cx + self.r * cos(angle), self.cy + self.r * sin(angle))
     def translated(self, dx, dy):
         return CandidateCircle(self.cx + dx, self.cy + dy, self.r)
+    def rotated(self, ox, oy, rotation):
+        newc = PathPoint(self.cx, self.cy).rotated(ox, oy, rotation)
+        return CandidateCircle(newc.x, newc.y, self.r)
     def scaled(self, cx, cy, scale):
         return CandidateCircle(*self.centre().scaled(cx, cy, scale).as_tuple(), self.r * scale)
     def calc_error(self, points):
@@ -1041,6 +1051,12 @@ def run_clipper_offset(points, closed, dist, joined=False, scaleFactor=10):
     pc = pyclipr.ClipperOffset()
     pc.scaleFactor = scaleFactor
     pc.addPath(points, pyclipr.JoinType.Round, pyclipr.EndType.Joined if joined else (pyclipr.EndType.Polygon if closed else pyclipr.EndType.Round))
+    return pc.execute(dist * GeometrySettings.RESOLUTION)
+
+def run_clipper_offset_multiple(paths, dist, joined=False, scaleFactor=10):
+    pc = pyclipr.ClipperOffset()
+    pc.scaleFactor = scaleFactor
+    pc.addPaths(paths, pyclipr.JoinType.Round, pyclipr.EndType.Polygon)
     return pc.execute(dist * GeometrySettings.RESOLUTION)
 
 def polyTreeToClosedPaths(tree):
