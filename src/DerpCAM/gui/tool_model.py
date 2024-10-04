@@ -188,6 +188,8 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         CAMListTreeItemWithChildren.__init__(self, document, "Tool")
         self.setEditable(False)
         self.reset()
+    def label(self):
+        return f"Tool '{self.inventory_tool.name}'"
     def isLocal(self):
         return not self.inventory_tool.base_object or not (self.inventory_tool.equals(self.inventory_tool.base_object))
     def isNewObject(self):
@@ -311,6 +313,8 @@ class ToolPresetTreeItem(CAMTreeItem):
         CAMTreeItem.__init__(self, document, "Tool preset")
         self.setEditable(False)
         self.resetProperties()
+    def label(self):
+        return f"Preset '{self.inventory_preset.name}'"
     def resetProperties(self):
         self.emitPropertyChanged()
     def data(self, role):

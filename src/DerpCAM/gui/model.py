@@ -133,6 +133,10 @@ class CycleTreeItem(CAMTreeItem):
                     child.tool_preset = None
     def invalidatedObjects(self, aspect):
         return set([self] + self.document.allOperations(lambda item: item.parent() is self))
+    def usesItem(self, item):
+        if isinstance(item, ToolTreeItem):
+            return self.cutter is item.inventory_tool
+        return False
 
 def not_none(*args):
     for i in args:
@@ -230,6 +234,12 @@ class OperationTreeItem(CAMTreeItem):
         if self.operation not in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.FACE, OperationType.V_CARVE, OperationType.PATTERN_FILL):
             return False
         return not isinstance(self.orig_shape, DrawingTextTreeItem)
+    def usesItem(self, item):
+        if isinstance(item, ToolPresetTreeItem):
+            return self.tool_preset is item.inventory_preset
+        if isinstance(item, DrawingItemTreeItem):
+            return self.usesShape(item.shape_id)
+        return False
     def usesShape(self, shape_id):
         if self.shape_id == shape_id:
             return True
@@ -1043,6 +1053,14 @@ class DocumentModel(QObject):
         self.wall_profile_list.reset()
     def allCycles(self):
         return [self.operModel.item(i) for i in range(self.operModel.rowCount())]
+    def itemInUse(self, item):
+        for cycle in self.allCycles():
+            if cycle.usesItem(item):
+                return True
+        for operation in self.allOperations():
+            if operation.usesItem(item):
+                return True
+        return False
     def store(self):
         #cutters = set(self.forEachOperation(lambda op: op.cutter))
         #presets = set(self.forEachOperation(lambda op: op.tool_preset))
@@ -1546,6 +1564,7 @@ class DocumentModel(QObject):
         shapes = []
         tools = []
         presets = []
+        itemsInUse = []
         for i in items:
             if isinstance(i, DrawingItemTreeItem):
                 shapes.append(i)
@@ -1555,6 +1574,10 @@ class DocumentModel(QObject):
                 presets.append(i)
             else:
                 raise ValueError("Cannot delete an item of type: " + str(i.__class__.__name__))
+            if self.itemInUse(i):
+                itemsInUse.append(i)
+        if itemsInUse:
+            raise ValueError("Cannot delete items in use: " + ", ".join([i.label() for i in itemsInUse]))
         if shapes:
             self.undoStack.push(DeleteDrawingItemsUndoCommand(self, shapes))
         for i in presets:
