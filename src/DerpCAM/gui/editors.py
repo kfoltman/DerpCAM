@@ -334,16 +334,18 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
         if self.origin_point is not None:
             dx = self.mouse_point.x - self.origin_point.x
             dy = self.mouse_point.y - self.origin_point.y
+            ox = self.document.drawing.x_offset
+            oy = self.document.drawing.y_offset
             if self.mode != 2:
                 for item in self.objects:
-                    self.drawPreview(qp, item, dx, dy)
+                    self.drawPreview(qp, item, dx - ox, dy - oy)
             else:
                 for i in range(self.arrayCols.value()):
                     dx2 = dx * i
                     for j in range(self.arrayRows.value()):
                         dy2 = dy * j
                         for item in self.objects:
-                            self.drawPreview(qp, item, dx2, dy2)
+                            self.drawPreview(qp, item, dx2 - ox, dy2 - oy)
     def apply(self):
         if self.stage == 1:
             paste_point = self.mouse_point
