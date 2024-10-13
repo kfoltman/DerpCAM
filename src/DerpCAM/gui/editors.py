@@ -441,7 +441,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
         angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
         rotation = angle2 - angle1
-        return ox, oy, rotation
+        return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation
     def drawPreview(self, qp, item, ox, oy, rotation):
         item.createPaths()
         oldTransform = qp.transform()
@@ -449,7 +449,9 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         qp.setTransform(transform)
         qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
         tempRenderer = TempRenderer(self.canvas)
-        item.rotated(ox, oy, rotation).renderTo(tempRenderer, None)
+        ox2 = self.document.drawing.x_offset
+        oy2 = self.document.drawing.y_offset
+        item.rotated(ox, oy, rotation).translated(-ox2, -oy2).renderTo(tempRenderer, None)
         tempRenderer.paint(qp, self.canvas)
         qp.setTransform(oldTransform)
     def paint(self, e, qp):
