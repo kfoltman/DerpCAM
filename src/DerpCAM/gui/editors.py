@@ -350,7 +350,7 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
             dx = paste_point.x - self.origin_point.x
             dy = paste_point.y - self.origin_point.y
             if self.mode == 1:
-                items = [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx, dy).reset_untransformed() for item in self.objects]
+                items = [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx, dy).reset_untransformed().reset_id() for item in self.objects]
                 self.document.opAddDrawingItems(items)
             elif self.mode == 2:
                 if dx == 0 and self.arrayCols.value() > 1:
@@ -367,7 +367,7 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
                     for j in range(self.rows):
                         dy2 = dy * j
                         if i or j:
-                            items += [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx2, dy2).reset_untransformed() for item in self.objects]
+                            items += [model.DrawingItemTreeItem.load(self.document, item.store()).translated(dx2, dy2).reset_untransformed().reset_id() for item in self.objects]
                 self.document.opAddDrawingItems(items)
                 CanvasEditorPickPoint.apply(self)
             else:
@@ -482,7 +482,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
                     return
                 start += 1
             for i in range(start, self.count):
-                items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed() for item in self.objects]
+                items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed().reset_id() for item in self.objects]
             self.document.opAddDrawingItems(items)
             CanvasEditorPickPoint.apply(self)
 

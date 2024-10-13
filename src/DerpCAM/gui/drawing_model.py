@@ -7,10 +7,13 @@ class DrawingItemTreeItem(CAMTreeItem):
     selectedItemDrawingPen = QPen(QColor(0, 64, 128, 255), 2)
     selectedItemDrawingPen2 = QPen(QColor(0, 64, 128, 255), 2)
     next_drawing_item_id = 1
-    def __init__(self, document):
+    def __init__(self, document, shape_id=None):
         CAMTreeItem.__init__(self, document)
-        self.shape_id = DrawingItemTreeItem.next_drawing_item_id
-        DrawingItemTreeItem.next_drawing_item_id += 1
+        if shape_id is None:
+            self.shape_id = DrawingItemTreeItem.next_drawing_item_id
+            DrawingItemTreeItem.next_drawing_item_id += 1
+        else:
+            self.shape_id = shape_id
     def __hash__(self):
         return hash(self.shape_id)
     def selectedItemPenFunc(self, item, scale):
@@ -56,6 +59,10 @@ class DrawingItemTreeItem(CAMTreeItem):
     def reset_untransformed(self):
         self.untransformed = self
         return self
+    def reset_id(self):
+        self.shape_id = DrawingItemTreeItem.next_drawing_item_id
+        DrawingItemTreeItem.next_drawing_item_id += 1
+        return self
     def createPaths(self):
         pass
 
@@ -64,8 +71,8 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_y = FloatDistEditableProperty("Centre Y", "y", Format.coord, unit="mm", allow_none=False)
     prop_dia = FloatDistEditableProperty("Diameter", "diameter", Format.coord, unit="mm", min=0, allow_none=False)
     prop_radius = FloatDistEditableProperty("Radius", "radius", Format.coord, unit="mm", min=0, allow_none=False)
-    def __init__(self, document, centre, r, untransformed = None):
-        DrawingItemTreeItem.__init__(self, document)
+    def __init__(self, document, centre, r, untransformed=None, shape_id=None):
+        DrawingItemTreeItem.__init__(self, document, shape_id=shape_id)
         self.centre = centre
         self.r = r
         self.calcBounds()
@@ -110,12 +117,10 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def toShape(self):
         return shapes.Shape.circle(self.centre.x, self.centre.y, self.r)
     def translated(self, dx, dy):
-        cti = DrawingCircleTreeItem(self.document, self.centre.translated(dx, dy), self.r, self.untransformed)
-        cti.shape_id = self.shape_id
+        cti = DrawingCircleTreeItem(self.document, self.centre.translated(dx, dy), self.r, self.untransformed, shape_id=self.shape_id)
         return cti
     def rotated(self, ox, oy, rotation):
-        cti = DrawingCircleTreeItem(self.document, self.centre.rotated(ox, oy, rotation), self.r, self.untransformed)
-        cti.shape_id = self.shape_id
+        cti = DrawingCircleTreeItem(self.document, self.centre.rotated(ox, oy, rotation), self.r, self.untransformed, shape_id=self.shape_id)
         return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, self.centre.scaled(cx, cy, scale), self.r * scale, self.untransformed)
@@ -144,8 +149,8 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
     prop_points = SetEditableProperty("Points", "points", format_func=lambda value: f"{len(value)} points - double-click to edit", edit_func=lambda item: item.editPoints())
 
-    def __init__(self, document, points, closed, untransformed=None, src_name=None):
-        DrawingItemTreeItem.__init__(self, document)
+    def __init__(self, document, points, closed, untransformed=None, src_name=None, shape_id=None):
+        DrawingItemTreeItem.__init__(self, document, shape_id=shape_id)
         self.points = points
         self.closed = closed
         self.untransformed = untransformed if untransformed is not None else self
@@ -180,15 +185,11 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def restore_rotate(self, points):
         self.points = points
     def translated(self, dx, dy):
-        pti = DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed)
-        pti.shape_id = self.shape_id
-        return pti
+        return DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def rotated(self, ox, oy, rotation):
-        pti = DrawingPolylineTreeItem(self.document, [p.rotated(ox, oy, rotation) for p in self.points], self.closed, self.untransformed)
-        pti.shape_id = self.shape_id
-        return pti
+        return DrawingPolylineTreeItem(self.document, [p.rotated(ox, oy, rotation) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def scaled(self, cx, cy, scale):
-        return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed)
+        return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def renderTo(self, path, editor):
         if not self.points:
             return
@@ -303,8 +304,8 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
     prop_halign = EnumEditableProperty("Horizontal align", "halign", DrawingTextStyleHAlign, allow_none=False)
     prop_valign = EnumEditableProperty("Vertical align", "valign", DrawingTextStyleVAlign, allow_none=False)
     prop_target_width = FloatDistEditableProperty("Target width", "target_width", Format.coord, unit="mm", allow_none=True, min=0)
-    def __init__(self, document, origin, target_width, style, text, untransformed = None):
-        DrawingItemTreeItem.__init__(self, document)
+    def __init__(self, document, origin, target_width, style, text, untransformed=None, shape_id=None):
+        DrawingItemTreeItem.__init__(self, document, shape_id=shape_id)
         self.untransformed = untransformed if untransformed is not None else self
         self.origin = origin
         self.target_width = target_width
