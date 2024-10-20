@@ -486,8 +486,13 @@ class WallProfileManagerDlg(QDialog):
         self.onItemActivated()
     def addWallProfile(self):
         profile = inventory.InvWallProfile.new(None, "", "")
-        dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile, document=self.document, from_inventory=self.currentProfileIsFromInventory(True))
-        if dlg.exec_():
+        try:
+            dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile, document=self.document, from_inventory=self.currentProfileIsFromInventory(True))
+            res = dlg.exec_()
+        except:
+            profile.forget()
+            raise
+        if res:
             if self.currentProfileIsFromInventory(True):
                 inventory.inventory.wall_profiles.append(profile)
             else:

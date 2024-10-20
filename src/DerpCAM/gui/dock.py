@@ -7,6 +7,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
 from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr, editors
+from DerpCAM.gui.wall_profile_mgr import WallProfileEditorDlg, WallProfileManagerDlg
 
 OperationType = model.OperationType
 
@@ -174,6 +175,11 @@ class CAMObjectTreeDockWidget(QDockWidget):
             elif isinstance(item, model.DrawingPolylineTreeItem):
                 action = menu.addAction("Edit")
                 action.triggered.connect(lambda: self.shapeEdit(item))
+            elif isinstance(item, model.WallProfileListTreeItem):
+                menu.addAction("Add").triggered.connect(lambda: self.wallProfileAdd())
+                menu.addAction("Load").triggered.connect(lambda: self.wallProfileLoad())
+            elif isinstance(item, model.WallProfileTreeItem):
+                menu.addAction("Edit").triggered.connect(lambda: self.wallProfileEdit(item))
         if menu.isEmpty():
             return
         menu.exec_(point)
@@ -243,6 +249,32 @@ class CAMObjectTreeDockWidget(QDockWidget):
     def toolPresetDelete(self, item):
         if QMessageBox.question(self, "Delete preset from project", "This will delete the preset from the project. Continue?") == QMessageBox.Yes:
             self.document.opDeletePreset(item.inventory_preset)
+    def wallProfileAdd(self):
+        profile = inventory.InvWallProfile.new(None, "", "")
+        try:
+            dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile, document=self.document, from_inventory=False)
+            res = dlg.exec_()
+        except:
+            profile.forget()
+            raise
+        if res:
+            self.document.opAddWallProfile(profile)
+        else:
+            profile.forget()
+    def wallProfileEdit(self, item):
+        profile = item.wall_profile
+        workcopy = inventory.InvWallProfile.new(None, profile.name, "", )
+        workcopy.resetTo(profile)
+        dlg = WallProfileEditorDlg(self, "Edit a wall profile", workcopy, self.document, False)
+        if dlg.exec_():
+            try:
+                self.document.opUpdateWallProfile(profile, workcopy)
+            except ValueError as e:
+                QMessageBox.critical(self, None, str(e))
+    def wallProfileLoad(self):
+        mgr = WallProfileManagerDlg(self, self.document)
+        if mgr.exec_():
+            self.document.opLoadWallProfile(mgr.currentProfile())
     def updateShapeSelection(self, selection):
         item_selection = QItemSelection()
         for idx, item in enumerate(self.document.drawing.items()):
