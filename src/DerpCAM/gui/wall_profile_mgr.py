@@ -425,6 +425,7 @@ class WallProfileManagerDlg(QDialog):
         self.buttonBox.addWidget(self.closeButton)
         self.layout.addLayout(self.buttonBox)
         self.profileList.selectionModel().selectionChanged.connect(self.onItemActivated)
+        self.profileList.cellDoubleClicked.connect(self.accept)
         self.populateList()
     def currentProfileIsFromInventory(self, allow_parent=False):
         itemIdx = self.profileList.currentRow()
@@ -463,6 +464,8 @@ class WallProfileManagerDlg(QDialog):
             twi = QTableWidgetItem(s)
             twi.setFont(self.largerFont)
             return twi
+        def makeNonEditable(item):
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         iwp = inventory.inventory.wall_profiles
         pwp = sorted(self.document.project_wall_profiles.values(), key=lambda wp: wp.name)
         self.profileList.setRowCount(2 + len(iwp) + len(pwp))
@@ -482,6 +485,8 @@ class WallProfileManagerDlg(QDialog):
                 self.profileList.setItem(i, 0, QTableWidgetItem("  " + wp.name))
                 self.profileList.setItem(i, 1, QTableWidgetItem(wp.description))
                 self.profileList.item(i, 0).setData(Qt.UserRole, wp)
+            makeNonEditable(self.profileList.item(i, 0))
+            makeNonEditable(self.profileList.item(i, 1))
         self.profileList.setCurrentCell(current, 0)
         self.onItemActivated()
     def addWallProfile(self):
