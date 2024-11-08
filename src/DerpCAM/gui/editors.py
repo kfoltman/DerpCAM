@@ -850,7 +850,6 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
             self.document.addShapesFromEditor([self.item])
             self.apply()
             return True
-        return True
 
 class CanvasNewRectangleEditor(CanvasNewItemEditor):
     RADIUS = 0
@@ -923,7 +922,6 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
                 self.document.addShapesFromEditor([self.item])
                 self.apply()
             return True
-        return True
 
 class CanvasNewCircleEditor(CanvasNewItemEditor):
     drawMode = 0
@@ -1017,7 +1015,6 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
                 self.document.addShapesFromEditor([self.item])
                 self.apply()
             return True
-        return True
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
