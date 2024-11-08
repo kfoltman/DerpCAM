@@ -136,6 +136,7 @@ class CAMMainWindow(QMainWindow):
             MenuItem("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
             MenuItem("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
             MenuItem("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
+            MenuItem("&Arc", self.drawArc, None, "Add an arc to the drawing"),
             MenuItem("&Text", self.drawText, None, "Add a text to the drawing"),
             None,
             MenuItem("&Set origin", self.drawSetOrigin, None, "Set the origin point of the drawing"),
@@ -393,6 +394,8 @@ class CAMMainWindow(QMainWindow):
             self.viewer.repaint()
             #self.viewer.majorUpdate()
             self.configSettings.save()
+    def drawArc(self):
+        self.switchToEditor(editors.CanvasNewArcEditor(self.document))
     def drawCircle(self):
         if True:
             self.switchToEditor(editors.CanvasNewCircleEditor(self.document))

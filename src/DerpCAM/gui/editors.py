@@ -1016,6 +1016,102 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
                 self.apply()
             return True
 
+class CanvasNewArcEditor(CanvasNewItemEditor):
+    def setTitle(self):
+        self.parent.setWindowTitle("Create an arc object")
+    def createItem(self, document):
+        return None
+    def initState(self, pos):
+        self.first_point = pos
+        self.second_point = None
+        self.third_point = None
+        self.arc_direction = 1
+        self.can_change_direction = True
+    def firstClick(self, e, newPos):
+        self.first_point = newPos
+        self.second_point = newPos
+        return True
+    def secondClick(self, e, newPos):
+        r = self.first_point.dist(newPos)
+        if r < 1.0 / geom.GeometrySettings.RESOLUTION:
+            return True
+        self.second_point = newPos
+        self.third_point = newPos
+        return True
+    def thirdClick(self, e, newPos):
+        r, sangle, eangle, dangle = self.arcData()
+        arc = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r, sangle, dangle)
+        arc_points = [arc.seg_start(), arc]
+        self.item = model.DrawingPolylineTreeItem(self.document, arc_points, False)
+        self.document.addShapesFromEditor([self.item])
+        self.apply()
+        return True
+    def drawCursorPoint(self, qp):
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+    def arcData(self):
+        r = self.first_point.dist(self.second_point)
+        sangle = self.first_point.angle_to(self.second_point)
+        if self.third_point is None:
+            eangle = sangle + math.pi / 2
+        else:
+            eangle = self.first_point.angle_to(self.third_point)
+        dangle = eangle - sangle
+        if dangle < 0 and self.arc_direction == 1:
+            dangle += 2 * math.pi
+        if dangle > 0 and self.arc_direction == -1:
+            dangle -= 2 * math.pi
+        return r, sangle, eangle, dangle
+    def drawPreview(self, qp, item, ox, oy):
+        if self.second_point is None:
+            return
+        r, sangle, eangle, dangle = self.arcData()
+        centre = QPointF(self.first_point.x + ox, self.first_point.y + oy)
+        centre_p = self.canvas.project(centre)
+        r *= self.canvas.scalingFactor()
+        if self.third_point is None:
+            qp.drawEllipse(QRectF(centre_p.x() - r, centre_p.y() - r, 2 * r, 2 * r))
+        else:
+            qp.drawArc(QRectF(centre_p.x() - r, centre_p.y() - r, 2 * r, 2 * r), int(sangle * 180 * 16 / math.pi), int(dangle * 180 * 16 / math.pi))
+    def updateDirection(self):
+        r, sangle, eangle, dangle = self.arcData()
+        delta = eangle - sangle
+        if delta > math.pi:
+            delta -= 2 * math.pi
+        if delta < -math.pi:
+            delta += 2 * math.pi
+        # Weird heuristic: only allow changing direction of the arc by going through the start of the arc
+        if abs(delta) < math.pi / 8:
+            new_direction = 1 if delta > 0 else -1
+            if self.can_change_direction:
+                self.arc_direction = new_direction
+            elif self.arc_direction == new_direction:
+                self.can_change_direction = True
+        else:
+            self.can_change_direction = False
+    def mouseMoveEventPos(self, e, newPos):
+        changed = False
+        if self.second_point is None:
+            changed = self.first_point != newPos
+            self.first_point = newPos
+        elif self.third_point is None:
+            changed = self.second_point != newPos
+            self.second_point = newPos
+        else:
+            changed = self.third_point != newPos
+            self.third_point = newPos
+            self.updateDirection()
+        if changed:
+            self.canvas.repaint()
+        return False
+    def mousePressEventPos(self, e, newPos):
+        if e.button() == Qt.LeftButton:
+            if self.second_point is None:
+                return self.firstClick(e, newPos)
+            if self.third_point is None:
+                return self.secondClick(e, newPos)
+            return self.thirdClick(e, newPos)
+
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
         if not self.item.closed and len(self.item.points) < 2:
