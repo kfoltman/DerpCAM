@@ -71,6 +71,10 @@ class CanvasEditor(object):
             self.apply()
         if e.key() == Qt.Key_Escape and self.can_cancel:
             self.cancel()
+        if e.text() == '=':
+            self.onEqualsKey()
+    def onEqualsKey(self):
+        pass
     def onExit(self):
         if self.item is not None and isinstance(self.item, model.DrawingItemTreeItem):
             self.item.emitPropertyChanged()
@@ -202,6 +206,13 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
         self.can_cancel = True
         self.cancel_index = None
         self.mouse_point = None
+        self.point_prompt = None
+    def onEqualsKey(self):
+        dlg = guiutils.CoordinateEntryDlg(self.parent, prompt=self.point_prompt)
+        if dlg.exec_():
+            x, y = dlg.result
+            self.mouse_point = geom.PathPoint(x, y)
+            self.pointSelected()
     def pointSelected(self):
         self.apply()
     def mousePointFromEvent(self, e):
@@ -230,6 +241,7 @@ class CanvasSetOriginEditor(CanvasEditorPickPoint):
     def __init__(self, document):
         CanvasEditorPickPoint.__init__(self, document)
         self.origin = QPointF(self.document.drawing.x_offset, self.document.drawing.y_offset)
+        self.point_prompt = "Enter drawing origin:"
     def setTitle(self):
         self.parent.setWindowTitle("Set origin point of the drawing")
     def updateLabel(self):
@@ -242,12 +254,14 @@ class CanvasSetOriginEditor(CanvasEditorPickPoint):
 
 class CanvasCopyEditor(CanvasEditorPickPoint):
     def setTitle(self):
+        self.point_prompt = "Enter reference point:"
         self.parent.setWindowTitle("Copy objects - select reference point")
     def updateLabel(self):
         self.descriptionLabel.setText("Click the reference point for the objects.")
 
 class CanvasCutEditor(CanvasCopyEditor):
     def setTitle(self):
+        self.point_prompt = "Enter reference point:"
         self.parent.setWindowTitle("Cut objects - select reference point")
 
 class CanvasPasteEditor(CanvasEditorPickPoint):
@@ -256,6 +270,7 @@ class CanvasPasteEditor(CanvasEditorPickPoint):
         self.origin = clipboard[0]
         self.objects = [model.DrawingItemTreeItem.load(self.document, item_json) for item_json in clipboard[1]]
     def setTitle(self):
+        self.point_prompt = "Enter target coordinates:"
         self.parent.setWindowTitle("Paste objects - select insertion point")
     def updateLabel(self):
         self.descriptionLabel.setText("Click the insertion point for the objects.")
@@ -278,8 +293,10 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
         self.origin_point = None
     def setTitle(self):
         if self.stage == 0:
+            self.point_prompt = "Enter origin coordinates:"
             self.parent.setWindowTitle("Move/clone objects - select origin reference point")
         else:
+            self.point_prompt = "Enter target coordinates:"
             self.parent.setWindowTitle("Move/clone objects - select target reference point")
     def updateLabel(self):
         if self.stage == 0:
@@ -387,10 +404,13 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.first_arm = None
     def setTitle(self):
         if self.stage == 0:
+            self.point_prompt = "Centre of rotation:"
             self.parent.setWindowTitle("Rotate objects - select centre of rotation")
         elif self.stage == 1:
+            self.point_prompt = "First arm:"
             self.parent.setWindowTitle("Rotate objects - set the first arm of the angle")
         else:
+            self.point_prompt = "Second arm:"
             self.parent.setWindowTitle("Rotate objects - set the second arm of the angle")
     def updateLabel(self):
         if self.stage == 0:

@@ -441,3 +441,34 @@ def incrSuffix(name):
             zeroPad = zeroPad[:-1]
         return prefix + zeroPad + newNum
     return name + "2"
+
+class CoordinateEntryDlg(QDialog):
+    def __init__(self, parent, title="Coordinate entry", prompt=None):
+        QDialog.__init__(self, parent, Qt.Popup)
+        self.title = title
+        self.prompt = prompt or "Enter coordinates"
+        self.format = format
+        self.result = None
+        self.initUI()
+    def initUI(self):
+        self.setWindowTitle(self.title)
+        self.layout = QFormLayout(self)
+        self.xEdit = QLineEdit()
+        self.yEdit = QLineEdit()
+        self.layout.addRow(QLabel(self.prompt))
+        self.layout.addRow("X", self.xEdit)
+        self.layout.addRow("Y", self.yEdit)
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.layout.addWidget(self.buttonBox)
+        self.xEdit.setFocus()
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+    def accept(self):
+        try:
+            x, unit = UnitConverter.parse(self.xEdit.text(), "mm", as_float=True)
+            y, unit = UnitConverter.parse(self.yEdit.text(), "mm", as_float=True)
+        except Exception as e:
+            QMessageBox.critical(self, None, str(e))
+            return
+        self.result = (x, y)
+        QDialog.accept(self)
