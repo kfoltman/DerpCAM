@@ -449,12 +449,15 @@ class CoordinateEntryDlg(QDialog):
         self.prompt = prompt or "Enter coordinates"
         self.format = format
         self.result = None
+        self.separator = ";" if QLocale().decimalPoint() == ',' else ","
         self.initUI()
     def initUI(self):
         self.setWindowTitle(self.title)
         self.layout = QFormLayout(self)
         self.xEdit = QLineEdit()
         self.yEdit = QLineEdit()
+        self.xEdit.installEventFilter(self)
+        self.yEdit.installEventFilter(self)
         self.layout.addRow(QLabel(self.prompt))
         self.layout.addRow("X", self.xEdit)
         self.layout.addRow("Y", self.yEdit)
@@ -472,3 +475,10 @@ class CoordinateEntryDlg(QDialog):
             return
         self.result = (x, y)
         QDialog.accept(self)
+    def eventFilter(self, src, e):
+        if src is self.xEdit and isinstance(e, QKeyEvent) and e.text() == self.separator:
+            self.yEdit.setFocus()
+            return True
+        if src is self.yEdit and isinstance(e, QKeyEvent) and e.text() == self.separator:
+            return True
+        return QDialog.eventFilter(self, src, e)
