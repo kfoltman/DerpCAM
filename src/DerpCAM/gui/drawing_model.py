@@ -175,15 +175,19 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def translate(self, dx, dy):
         old = self.points
         self.points = [p.translated(dx, dy) for p in self.points]
+        self.calcBounds()
         return old
     def restore_translate(self, points):
         self.points = points
+        self.calcBounds()
     def rotate(self, ox, oy, rotation):
         old = self.points
         self.points = [p.rotated(ox, oy, rotation) for p in self.points]
+        self.calcBounds()
         return old
     def restore_rotate(self, points):
         self.points = points
+        self.calcBounds()
     def translated(self, dx, dy):
         return DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def rotated(self, ox, oy, rotation):
