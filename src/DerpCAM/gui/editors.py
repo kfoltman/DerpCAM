@@ -10,6 +10,21 @@ from PyQt5.QtWidgets import *
 from DerpCAM.common import geom, guiutils, view
 from DerpCAM.gui import drawing_model, model
 
+class CanvasEditorEventFilter(QObject):
+    def __init__(self, editor):
+        QObject.__init__(self)
+        self.editor = editor
+        self.editor.parent.installEventFilter(self)
+    def eventFilter(self, src, e):
+        if isinstance(e, QKeyEvent):
+            if e.key() == Qt.Key_Return or e.key() == Qt.Key_Enter or e.key() == Qt.Key_Escape:
+                self.editor.keyPressEvent(e)
+                return True
+            if e.text() == '=':
+                self.editor.onEqualsKey()
+                return True
+        return False
+
 class CanvasEditor(object):
     def __init__(self, item):
         self.item = item
@@ -22,6 +37,7 @@ class CanvasEditor(object):
         self.setTitle()
         self.createControls()
         self.connectSignals()
+        self.eventFilter = CanvasEditorEventFilter(self)
     def cancel(self):
         if self.cancel_index is not None and self.item is not None:
             while self.item.document.undoStack.index() > self.cancel_index:
@@ -202,8 +218,8 @@ class CanvasEditorWithSnap(CanvasEditor):
         dlg = guiutils.CoordinateEntryDlg(self.parent, prompt=self.point_prompt)
         if dlg.exec_():
             x, y = dlg.result
-            self.pointSelected(x, y)
-    def pointSelected(self, x, y):
+            self.pointSelected(x, y, from_equals=True)
+    def pointSelected(self, x, y, from_equals):
         assert False
 
 class CanvasEditorPickPoint(CanvasEditorWithSnap):
@@ -214,7 +230,8 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
         self.cancel_index = None
         self.mouse_point = None
         self.point_prompt = None
-    def pointSelected(self, x, y):
+    def pointSelected(self, x, y, from_equals):
+        self.mouse_point = geom.PathPoint(x, y)
         self.apply()
     def mousePointFromEvent(self, e):
         pos = self.canvas.unproject(e.localPos())
@@ -226,7 +243,7 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.mousePointFromEvent(e)
-            self.pointSelected(self.mouse_point.x, self.mouse_point.y)
+            self.pointSelected(self.mouse_point.x, self.mouse_point.y, from_equals=False)
             return True
     def paint(self, e, qp):
         if self.mouse_point is not None:
@@ -338,13 +355,15 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
     def setMode(self, mode):
         CanvasMoveEditor.mode = mode
         self.updateButtons()
-    def pointSelected(self, x, y):
+    def pointSelected(self, x, y, from_equals):
         if self.stage == 0:
             self.origin_point = geom.PathPoint(x, y)
             self.stage = 1
             self.setTitle()
             self.updateLabel()
             self.updateControls()
+            if from_equals:
+                self.onEqualsKey()
         else:
             self.mouse_point = geom.PathPoint(x, y)
             self.apply()
@@ -442,19 +461,23 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     def setDeleteOriginal(self, value):
         CanvasRotateEditor.deleteOrig = value
         self.updateButtons()
-    def pointSelected(self, x, y):
+    def pointSelected(self, x, y, from_equals):
         if self.stage == 0:
             self.centre_point = geom.PathPoint(x, y)
             self.stage = 1
             self.setTitle()
             self.updateLabel()
             self.updateControls()
+            if from_equals:
+                self.onEqualsKey()
         elif self.stage == 1:
             self.first_arm = geom.PathPoint(x, y)
             self.stage = 2
             self.setTitle()
             self.updateLabel()
             self.updateControls()
+            if from_equals:
+                self.onEqualsKey()
         else:
             self.apply()
     def getTransform(self, second_arm):
@@ -754,13 +777,6 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
             qp.setBrush(brush)
         else:
             qp.fillRect(QRectF(pt - hbox, pt + hbox), color)
-    def setTitle(self):
-        self.parent.setWindowTitle("Create a text object")
-    def updateLabel(self):
-        modeText = f"""\
-Click on a drawing to create a text object.
-{self.snapInfo()}"""
-        self.descriptionLabel.setText(modeText)
     def penForPath(self, item, path):
         if self.item is not None and isinstance(self.item, model.DrawingItemTreeItem) and self.item.shape_id == item.shape_id:
             return None
@@ -774,10 +790,13 @@ class CanvasNewItemEditor(CanvasDrawingItemEditor):
         CanvasDrawingItemEditor.__init__(self, self.createItem(document))
         self.document = document
     def initUI(self, parent, canvas):
+        self.initExtraVars()
         CanvasDrawingItemEditor.initUI(self, parent, canvas)
         eLocalPos = self.canvas.mapFromGlobal(QCursor.pos())
         self.initState(self.ptFromPos(eLocalPos))
         self.canvas.repaint()
+    def initExtraVars(self):
+        pass
     def mousePressEvent(self, e):
         return self.mousePressEventPos(e, self.ptFromPos(e.localPos()))
     def mouseMoveEvent(self, e):
@@ -791,6 +810,14 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
     last_style = model.DrawingTextStyle(height=10, width=1, halign=model.DrawingTextStyleHAlign.LEFT, valign=model.DrawingTextStyleVAlign.BASELINE, angle=0, font_name="Bitstream Vera", spacing=0)
     def createItem(self, document):
         return model.DrawingTextTreeItem(document, geom.PathPoint(0, 0), 0, self.last_style.clone(), "Text")
+    def setTitle(self):
+        self.parent.setWindowTitle("Create a text object")
+        self.point_prompt = "Text coordinates:"
+    def updateLabel(self):
+        modeText = f"""\
+Click on a drawing to create a text object.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
     def createExtraControls(self):
         self.controlsLayout = QFormLayout()
         self.valueEdit = QLineEdit()
@@ -865,12 +892,14 @@ class CanvasNewTextEditor(CanvasNewItemEditor):
             self.item.origin = newPos
             self.canvas.repaint()
         return False
+    def pointSelected(self, x, y, from_equals):
+        self.last_style = self.item.style.clone()
+        self.item.origin = geom.PathPoint(x, y)
+        self.document.addShapesFromEditor([self.item])
+        self.apply()        
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            self.last_style = self.item.style.clone()
-            self.item.origin = newPos
-            self.document.addShapesFromEditor([self.item])
-            self.apply()
+            self.pointSelected(newPos.x, newPosy.y, from_equals=False)
             return True
 
 class CanvasNewRectangleEditor(CanvasNewItemEditor):
@@ -885,12 +914,21 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
         self.radiusEditor = QLineEdit()
         self.radiusEditor.setValidator(QDoubleValidator(0, 1000, 20))
         self.radiusEditor.setText(self.radiusEditor.validator().locale().toString(self.RADIUS))
-        self.controlsLayout.addWidget(QLabel("Radius"))
+        self.radiusEditor.setToolTip("Optional fillet radius of the new rectangle")
+        self.filletLabel = QLabel("Fillet &radius:")
+        self.filletLabel.setBuddy(self.radiusEditor)
+        self.controlsLayout.addWidget(self.filletLabel)
         self.controlsLayout.addWidget(self.radiusEditor)
         self.layout.addRow(self.controlsLayout)
     def setTitle(self):
         self.parent.setWindowTitle("Create a rectangle polyline object")
-        self.point_prompt = "Enter first corner:"
+        self.point_prompt = "First corner:"
+    def updateLabel(self):
+        modeText = f"""\
+Click on opposite corners to create a rectangle or use the '=' key to enter coordinates.
+Enter the fillet radius for rounded corners.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
@@ -933,13 +971,15 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
         if changed:
             self.canvas.repaint()
         return False
-    def pointSelected(self, x, y):
+    def pointSelected(self, x, y, from_equals):
         newPos = geom.PathPoint(x, y)
         if self.second_point is None:
-            self.point_prompt = "Enter second corner:"
+            self.point_prompt = "Second corner:"
             # First click
             self.first_point = newPos
             self.second_point = newPos
+            if from_equals:
+                self.onEqualsKey()
         else:
             # Second click
             self.second_point = newPos
@@ -948,7 +988,7 @@ class CanvasNewRectangleEditor(CanvasNewItemEditor):
             self.apply()
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            self.pointSelected(newPos.x, newPos.y)
+            self.pointSelected(newPos.x, newPos.y, from_equals=False)
             return True
 
 class CanvasNewCircleEditor(CanvasNewItemEditor):
@@ -956,15 +996,37 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
     lastRadius = ""
     def createItem(self, document):
         return None
+    def initExtraVars(self):
+        self.first_point = None
+        self.second_point = None
+        self.radius = None
     def initState(self, pos):
         self.first_point = pos
-        self.second_point = None
     def setTitle(self):
+        if self.radius is not None or self.second_point is None:
+            self.point_prompt = "Centre point:"
+        else:
+            self.point_prompt = "Perimeter point:"
         self.parent.setWindowTitle("Create a circle object")
+    def updateLabel(self):
+        if self.radius is None:
+            modeText = f"""\
+Click on the centre and somewhere around perimeter to create a circle or use the '=' key
+to enter coordinates of those two points.
+{self.snapInfo()}"""
+        else:
+            modeText = f"""\
+Set the radius/diameter using the text entry box below, then click on the centre point to
+create a circle or use the '=' key to enter centre coordinates.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
     def createExtraControls(self):
-        self.pointsButton = QPushButton("2 Points")
-        self.radiusButton = QPushButton("Radius")
-        self.diameterButton = QPushButton("Diameter")
+        self.pointsButton = QPushButton("2 &Points")
+        self.radiusButton = QPushButton("&Radius")
+        self.diameterButton = QPushButton("D&iameter")
+        self.pointsButton.setToolTip("Create a circle by specifying the centre point and any point on the perimeter.")
+        self.radiusButton.setToolTip("Create a circle by specifying the centre point and a radius value.")
+        self.diameterButton.setToolTip("Create a circle by specifying the centre point and a diameter value.")
         self.modeButtons = [ self.pointsButton, self.radiusButton, self.diameterButton ]
         self.modeLayout = QHBoxLayout()
         self.modeLayout.addWidget(QLabel("Mode:"))
@@ -974,6 +1036,7 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
             self.modeLayout.addWidget(button)
             button.clicked.connect(buttonHandler(i))
         self.valueEdit = QLineEdit()
+        self.valueEdit.setToolTip("Radius/diameter value.\n\nUse the '=' key to enter centre coordinates\nfor quick creation of multiple circles of\nthe same diameter.")
         self.valueEdit.setText(CanvasNewCircleEditor.lastRadius)
         self.valueEdit.setValidator(QDoubleValidator(0, 1000, 3))
         self.valueEdit.textChanged.connect(self.updateModeButtons)
@@ -997,9 +1060,15 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
                 CanvasNewCircleEditor.lastRadius = self.valueEdit.text()
             except ValueError as e:
                 pass
+        self.setTitle() # update point prompt if any
+        self.updateLabel()
     def onModeButtonClicked(self, mode):
         CanvasNewCircleEditor.drawMode = mode
         self.updateModeButtons()
+        if mode > 0:
+            self.valueEdit.setFocus()
+            # Needed again or the button state won't stick
+            self.updateModeButtons()
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
@@ -1026,27 +1095,42 @@ class CanvasNewCircleEditor(CanvasNewItemEditor):
         if changed:
             self.canvas.repaint()
         return False
+    def firstClick(self, newPos):
+        self.first_point = newPos
+        self.second_point = newPos
+    def secondClick(self, newPos):
+        self.second_point = newPos
+        self.apply()
+    def apply(self):
+        if self.second_point is None or geom.dist(self.first_point, self.second_point) < geom.epsilon():
+            return
+        # Second click (or first if radius/diameter is specified)
+        if self.radius is not None:
+            centre = self.second_point
+            r = self.radius
+        else:
+            centre = self.first_point
+            r = self.first_point.dist(self.second_point)
+        self.item = model.DrawingCircleTreeItem(self.document, centre, r)
+        self.document.addShapesFromEditor([self.item])
+        CanvasNewItemEditor.apply(self)
+    def pointSelected(self, x, y, from_equals):
+        newPos = geom.PathPoint(x, y)
+        if self.second_point is None and self.radius is None:
+            self.firstClick(newPos)
+            if from_equals:
+                self.onEqualsKey()
+        else:
+            self.secondClick(newPos)
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            if self.second_point is None and self.radius is None:
-                # First click
-                self.first_point = newPos
-                self.second_point = newPos
-            else:
-                # Second click (or first for polyline)
-                xc, yc = self.first_point.x, self.first_point.y
-                if self.radius is not None:
-                    r = self.radius
-                else:
-                    r = self.first_point.dist(self.second_point)
-                self.item = model.DrawingCircleTreeItem(self.document, self.first_point, r)
-                self.document.addShapesFromEditor([self.item])
-                self.apply()
+            self.pointSelected(newPos.x, newPos.y, from_equals=False)
             return True
 
 class CanvasNewArcEditor(CanvasNewItemEditor):
     def setTitle(self):
         self.parent.setWindowTitle("Create an arc object")
+        self.point_prompt = "Centre point:"
     def createItem(self, document):
         return None
     def initState(self, pos):
@@ -1055,25 +1139,43 @@ class CanvasNewArcEditor(CanvasNewItemEditor):
         self.third_point = None
         self.arc_direction = 1
         self.can_change_direction = True
-    def firstClick(self, e, newPos):
+    def updateLabel(self):
+        modeText = f"""\
+Select the circle centre point and the start/end points of the arc. Use '=' key to enter
+coordinates instead.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
+    def firstClick(self, newPos):
         self.first_point = newPos
         self.second_point = newPos
-        return True
-    def secondClick(self, e, newPos):
+        self.point_prompt = "Start point:"
+    def secondClick(self, newPos):
         r = self.first_point.dist(newPos)
         if r < 1.0 / geom.GeometrySettings.RESOLUTION:
-            return True
+            return
         self.second_point = newPos
         self.third_point = newPos
-        return True
-    def thirdClick(self, e, newPos):
+        self.point_prompt = "End point:"
+    def thirdClick(self, newPos):
+        self.third_point = newPos
         r, sangle, eangle, dangle = self.arcData()
         arc = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r, sangle, dangle)
         arc_points = [arc.seg_start(), arc]
         self.item = model.DrawingPolylineTreeItem(self.document, arc_points, False)
         self.document.addShapesFromEditor([self.item])
         self.apply()
-        return True
+    def pointSelected(self, x, y, from_equals):
+        if self.second_point is None:
+            self.firstClick(geom.PathPoint(x, y))
+            if from_equals:
+                self.onEqualsKey()
+            return
+        if self.third_point is None:
+            self.secondClick(geom.PathPoint(x, y))
+            if from_equals:
+                self.onEqualsKey()
+            return
+        self.thirdClick(geom.PathPoint(x, y))
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
         self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
@@ -1134,11 +1236,8 @@ class CanvasNewArcEditor(CanvasNewItemEditor):
         return False
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            if self.second_point is None:
-                return self.firstClick(e, newPos)
-            if self.third_point is None:
-                return self.secondClick(e, newPos)
-            return self.thirdClick(e, newPos)
+            self.pointSelected(newPos.x, newPos.y, from_equals=False)
+            return True
 
 class CanvasPolylineEditor(CanvasDrawingItemEditor):
     def apply(self):
@@ -1159,6 +1258,7 @@ class CanvasPolylineEditor(CanvasDrawingItemEditor):
             self.visual_feedback = None
             self.canvas.repaint()
     def setTitle(self):
+        self.point_prompt = "Point coordinates (not implemented yet):"
         self.parent.setWindowTitle("Modify a polyline")
     def createExtraControls(self):
         self.arcMode = 2
