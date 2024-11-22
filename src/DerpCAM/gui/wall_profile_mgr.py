@@ -403,7 +403,7 @@ class WallProfileManagerDlg(QDialog):
         self.shapePicture = QPicture()
         self.shapeLabel.setPicture(self.shapePicture)
         self.shapeLabel.setMargin(2)
-        renderWallProfile(self.shapePicture, None, 24, 90, 120)
+        self.renderWallProfile()
         self.hlayout.addWidget(self.shapeLabel)
         self.layout.addLayout(self.hlayout)
         self.editButtons = QHBoxLayout()
@@ -427,6 +427,14 @@ class WallProfileManagerDlg(QDialog):
         self.profileList.selectionModel().selectionChanged.connect(self.onItemActivated)
         self.profileList.cellDoubleClicked.connect(self.accept)
         self.populateList()
+    def resizeEvent(self, e):
+        QDialog.resizeEvent(self, e)
+        self.renderWallProfile()
+    def renderWallProfile(self):
+        profile = self.currentProfile()
+        size = max(120, min(240, self.profileList.height()))
+        item = profile.shape if profile else None
+        renderWallProfile(self.shapePicture, item, 24, size // 2, size)
     def currentProfileIsFromInventory(self, allow_parent=False):
         itemIdx = self.profileList.currentRow()
         if allow_parent:
@@ -447,7 +455,7 @@ class WallProfileManagerDlg(QDialog):
     def onItemActivated(self):
         profile = self.currentProfile()
         item = profile.shape if profile else None
-        renderWallProfile(self.shapePicture, item, 24, 90, 120)
+        self.renderWallProfile()
         self.shapeLabel.repaint()
         self.editButton.setEnabled(item is not None)
         self.deleteButton.setEnabled(item is not None)
