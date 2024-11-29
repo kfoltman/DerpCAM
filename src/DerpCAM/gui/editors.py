@@ -1071,7 +1071,7 @@ create a circle or use the '=' key to enter centre coordinates.
             self.updateModeButtons()
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
-        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+        self.paintPoint(qp, self.first_point if self.second_point is None or self.radius is not None else self.second_point, as_arc=False)
     def polylinePath(self):
         endp = geom.PathPoint(xc + r, yc)
         return [endp, geom.PathArc.xyra(xc, yc, r, 0, 2 * math.pi, steps = int(max(20, 10 * r)))]
@@ -1086,7 +1086,7 @@ create a circle or use the '=' key to enter centre coordinates.
         r *= self.canvas.scalingFactor()
         qp.drawEllipse(self.canvas.project(QPointF(xc, yc)), r, r)
     def mouseMoveEventPos(self, e, newPos):
-        if self.second_point is None:
+        if self.radius is not None or self.second_point is None:
             changed = self.first_point != newPos
             self.first_point = newPos
         else:
@@ -1102,15 +1102,17 @@ create a circle or use the '=' key to enter centre coordinates.
         self.second_point = newPos
         self.apply()
     def apply(self):
-        if self.second_point is None or geom.dist(self.first_point, self.second_point) < geom.epsilon():
-            return
         # Second click (or first if radius/diameter is specified)
         if self.radius is not None:
             centre = self.second_point
             r = self.radius
         else:
             centre = self.first_point
+            if self.second_point is None:
+                return
             r = self.first_point.dist(self.second_point)
+            if r < geom.epsilon():
+                return
         self.item = model.DrawingCircleTreeItem(self.document, centre, r)
         self.document.addShapesFromEditor([self.item])
         CanvasNewItemEditor.apply(self)
