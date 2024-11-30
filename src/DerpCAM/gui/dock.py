@@ -443,12 +443,21 @@ class SpecialExportDlg(QDialog):
         self.layout.addRow("Re-cut at depth", self.firstDepthSpin)
         self.extraDepthSpin = guiutils.floatSpin(0, 100, 2, 0, "Extra depth to add - full depth cuts only")
         self.layout.addRow("Extra depth", self.extraDepthSpin)
-        self.filePathEdit = QLineEdit()
+        self.filePathEdit = guiutils.FileSelectEdit(self.saveAsFunction)
+        self.filePathEdit.setMinimumWidth(500)
         self.layout.addRow("Filename", self.filePathEdit)
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         self.layout.addWidget(self.buttonBox)
+    def saveAsFunction(self):
+        dlg = QFileDialog(self, "Export special G-Code as...", filter="G-Code (*.ngc);;All files (*)")
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setFileMode(QFileDialog.AnyFile)
+        dlg.setDefaultSuffix(".ngc")
+        dlg.selectFile(self.filePathEdit.text())
+        if dlg.exec_():
+            self.filePathEdit.setText(dlg.selectedFiles()[0])
     def accept(self):
         self.filePathName = self.filePathEdit.text()
         self.firstDepth = self.firstDepthSpin.value()

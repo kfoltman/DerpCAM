@@ -482,3 +482,11 @@ class CoordinateEntryDlg(QDialog):
         if src is self.yEdit and isinstance(e, QKeyEvent) and e.text() == self.separator:
             return True
         return QDialog.eventFilter(self, src, e)
+
+class FileSelectEdit(QLineEdit):
+    def __init__(self, saveAsFunction):
+        QLineEdit.__init__(self)
+        self.selectDirAction = self.addAction(QIcon.fromTheme("document-save-as"), QLineEdit.TrailingPosition)
+        self.selectDirAction.setShortcut(QKeySequence("F2"))
+        self.selectDirAction.setToolTip("Open a file selection dialog (F2)")
+        self.selectDirAction.triggered.connect(saveAsFunction)
