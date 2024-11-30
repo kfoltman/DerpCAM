@@ -606,6 +606,42 @@ class OperationTreeItem(CAMTreeItem):
             else:
                 new_islands.append(new_shapes.boundary)
         shape.islands = new_islands
+    def createTool(self, pda, machine_params):
+        thickness = self.document.material.thickness
+        depth = self.depth if self.depth is not None else thickness
+        if depth is None or depth == 0:
+            raise ValueError("Neither material thickness nor cut depth is set")
+        start_depth = self.start_depth if self.start_depth is not None else 0
+        if self.cutter.length and depth > self.cutter.length:
+            self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than usable flute length ({self.cutter.length:0.1f} mm)")
+        # Only checking for end mills because most drill bits have a V tip and may require going slightly past
+        if thickness and isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
+            self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
+        if self.operation == OperationType.DRILLED_HOLE and self.cutter.diameter > 2 * self.orig_shape.r + 0.01:
+            self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
+        tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
+        # Leave after tab depth calculation in order to avoid making tabs too thin
+        if self.depth is None:
+            depth += machine_params.extra_depth
+        if isinstance(self.cutter, inventory.ThreadMillCutter):
+            tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, self.cutter.length, pda.rpm, pda.vfeed, pda.stepover / 100.0, self.cutter.thread_angle)
+            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+        elif isinstance(self.cutter, inventory.EndMillCutter):
+            wall_profile = self.wall_profile.shape if self.wall_profile else None
+            is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
+            tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
+                climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
+            zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
+            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
+                pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile)
+        elif isinstance(self.cutter, inventory.DrillBitCutter):
+            tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
+            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+        else:
+            assert False, f"Unknown cutter type: {type(self.cutter)}"
+        gcode_props.rpm = pda.rpm
+        gcode_props.pda = pda
+        return tool, gcode_props
     def updateCAMWork(self):
         try:
             translation = self.document.drawing.translation()
@@ -614,48 +650,19 @@ class OperationTreeItem(CAMTreeItem):
                 self.createShapeObject()
             else:
                 self.shape = None
-            thickness = self.document.material.thickness
-            depth = self.depth if self.depth is not None else thickness
-            if depth is None or depth == 0:
-                raise ValueError("Neither material thickness nor cut depth is set")
-            start_depth = self.start_depth if self.start_depth is not None else 0
-            if self.cutter.length and depth > self.cutter.length:
-                self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than usable flute length ({self.cutter.length:0.1f} mm)")
-            # Only checking for end mills because most drill bits have a V tip and may require going slightly past
-            if thickness and isinstance(self.cutter, inventory.EndMillCutter) and depth > thickness:
-                self.addWarning(f"Cut depth ({depth:0.1f} mm) greater than material thickness ({thickness:0.1f} mm)")
-            if self.operation == OperationType.DRILLED_HOLE and self.cutter.diameter > 2 * self.orig_shape.r + 0.01:
-                self.addWarning(f"Cutter diameter ({self.cutter.diameter:0.1f} mm) greater than hole diameter ({2 * self.orig_shape.r:0.1f} mm)")
-            tab_depth = max(start_depth, depth - self.tab_height) if self.tab_height is not None else start_depth
 
+            mp = self.document.gcode_machine_params
             pda = PresetDerivedAttributes(self, addError=lambda error: errors.append(error))
             pda.validate(errors)
             if errors:
                 raise ValueError("\n".join(errors))
             if pda.rpm is not None:
-                mp = self.document.gcode_machine_params
                 if mp.min_rpm is not None and pda.rpm < mp.min_rpm:
                     self.addWarning(f"Spindle speed {pda.rpm:1f} lower than the minimum of {mp.min_rpm:1f}")
                 if mp.max_rpm is not None and pda.rpm > mp.max_rpm:
                     self.addWarning(f"Spindle speed {pda.rpm:1f} higher than the maximum of {mp.max_rpm:1f}")
 
-            if isinstance(self.cutter, inventory.ThreadMillCutter):
-                tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, self.cutter.length, pda.rpm, pda.vfeed, pda.stepover / 100.0, self.cutter.thread_angle)
-                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
-            elif isinstance(self.cutter, inventory.EndMillCutter):
-                wall_profile = self.wall_profile.shape if self.wall_profile else None
-                is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
-                tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
-                    climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
-                zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
-                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
-                    pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile)
-            elif isinstance(self.cutter, inventory.DrillBitCutter):
-                tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
-                self.gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
-            else:
-                assert False, f"Unknown cutter type: {type(self.cutter)}"
-            self.gcode_props.rpm = pda.rpm
+            tool, gcode_props = self.createTool(pda, mp)
             if self.dogbones and self.operation == OperationType.SIDE_MILL and not isinstance(self.shape, list):
                 self.addDogbonesToIslands(self.shape, tool)
             if self.dogbones and self.operation not in (OperationType.ENGRAVE, OperationType.DRILLED_HOLE, OperationType.INTERPOLATED_HOLE, OperationType.SIDE_MILL):
@@ -710,24 +717,8 @@ class OperationTreeItem(CAMTreeItem):
                 self.prev_diameter = None
             if isinstance(self.shape, list) and len(self.shape) == 1:
                 self.shape = self.shape[0]
-            self.cam = self.createOpsObject(tool)
+            self.cam, self.worker = self.createAndCalcOpsObject(tool, gcode_props, self.document.gcode_machine_params)
             self.renderer = canvas.OperationsRendererWithSelection(self)
-            if self.shape:
-                if isinstance(self.shape, list):
-                    threadDataList = []
-                    for shape in self.shape:
-                        subcam = self.createOpsObject(tool)
-                        func = self.operationFunc(shape, pda, subcam)
-                        if func is not None:
-                            threadDataList.append((subcam, func))
-                    if threadDataList:
-                        self.worker = WorkerThreadPack(self, threadDataList, self.cam)
-                        self.worker.start()
-                else:
-                    threadFunc = self.operationFunc(self.shape, pda, self.cam)
-                    if threadFunc:
-                        self.worker = WorkerThread(self, threadFunc, self.cam)
-                        self.worker.start()
             self.error = None
         except Exception as e:
             self.cam = None
@@ -736,8 +727,28 @@ class OperationTreeItem(CAMTreeItem):
             self.document.operationsUpdated.emit()
             if not isinstance(e, ValueError):
                 raise
-    def createOpsObject(self, tool):
-        return gcodeops.Operations(self.document.gcode_machine_params, tool, self.gcode_props, self.document.material.thickness)
+    def createOpsObject(self, tool, gcode_props, machine_params):
+        return gcodeops.Operations(machine_params, tool, gcode_props, self.document.material.thickness)
+    def createAndCalcOpsObject(self, tool, gcode_props, machine_params):
+        cam = self.createOpsObject(tool, gcode_props, machine_params)
+        worker = None
+        if self.shape:
+            if isinstance(self.shape, list):
+                threadDataList = []
+                for shape in self.shape:
+                    subcam = self.createOpsObject(tool, gcode_props, self.document.gcode_machine_params)
+                    func = self.operationFunc(shape, gcode_props.pda, subcam)
+                    if func is not None:
+                        threadDataList.append((subcam, func))
+                if threadDataList:
+                    worker = WorkerThreadPack(self, threadDataList, cam)
+                    worker.start()
+            else:
+                threadFunc = self.operationFunc(self.shape, gcode_props.pda, cam)
+                if threadFunc:
+                    worker = WorkerThread(self, threadFunc, cam)
+                    worker.start()
+        return cam, worker
     def reorderItem(self, direction):
         index = self.reorderItemImpl(direction, self.parent())
         if index is not None:
@@ -1433,9 +1444,28 @@ class DocumentModel(QObject):
         self.update_suspended_dirty = False
         if was_suspended is not None:
             was_suspended.startUpdateCAM()
+    def defaultGcodeFileName(self, suffix):
+        if self.drawing_filename:
+            return os.path.splitext(self.drawing_filename)[0] + suffix + ".ngc"
+        elif self.filename:
+            return os.path.splitext(self.filename)[0] + suffix + ".ngc"
+        else:
+            return ''
+    def defaultGcodeFilePath(self, suffix):
+        path = self.defaultGcodeFileName(suffix)
+        output_dir = self.config_settings.gcode_directory or self.config_settings.last_gcode_directory
+        if output_dir != '':
+            old_path, gcode_filename = os.path.split(path)
+            path = os.path.join(output_dir, gcode_filename)
+        return path
     def exportGcode(self, fn):
         with Spinner():
             OpExporter(self).write(fn)
+    def operationExportSpecial(self, items, filename, first_depth, extra_depth):
+        assert len(items) == 1 # for now
+        item = items[0]
+        with Spinner():
+            OpSpecialExporter(self, items, first_depth, extra_depth).write(filename)
     def addShapesFromEditor(self, items):
         self.opAddDrawingItems(items)
         self.shapesCreated.emit(items)
@@ -1604,15 +1634,7 @@ class DocumentModel(QObject):
     def redo(self):
         self.undoStack.redo()
 
-class OpExporter(object):
-    def __init__(self, document):
-        document.waitForUpdateCAM()
-        self.machine_params = document.gcode_machine_params
-        self.operations = gcodeops.Operations(document.gcode_machine_params)
-        self.all_cutters = set([])
-        self.cutter = None
-        document.forEachOperation(self.add_cutter)
-        document.forEachOperation(self.process_operation)
+class OpExporterBase(object):
     def add_cutter(self, item):
         if item.cam:
             self.all_cutters.add(item.cutter)
@@ -1624,3 +1646,41 @@ class OpExporter(object):
             self.operations.add_all(item.cam.operations)
     def write(self, fn):
         self.operations.to_gcode_file(fn)
+
+class OpExporter(OpExporterBase):
+    def __init__(self, document):
+        document.waitForUpdateCAM()
+        self.machine_params = document.gcode_machine_params
+        self.operations = gcodeops.Operations(self.machine_params)
+        self.all_cutters = set([])
+        self.cutter = None
+        document.forEachOperation(self.add_cutter)
+        document.forEachOperation(self.process_operation)
+
+class OpSpecialExporter(OpExporterBase):
+    def __init__(self, document, ops, first_depth, extra_depth):
+        document.waitForUpdateCAM()
+        self.machine_params = document.gcode_machine_params.clone()
+        self.machine_params.first_depth = first_depth
+        self.machine_params.extra_depth = extra_depth
+        self.all_cutters = set([])
+        self.operations = gcodeops.Operations(self.machine_params)
+        self.cutter = None
+        if not ops:
+            return
+        self.add_cutter(ops[0])
+        for op in ops:
+            if op.cutter is not ops[0].cutter:
+                print ("Different cutter!")
+                return
+            errors = []
+            pda = PresetDerivedAttributes(op, addError=lambda error: errors.append(error))
+            pda.validate(errors)
+            if errors:
+                raise ValueError("\n".join(errors))
+            tool, gcode_props = op.createTool(pda, self.machine_params)
+            cam, worker = op.createAndCalcOpsObject(tool, gcode_props, self.machine_params)
+            if worker:
+                worker.join()
+            self.operations.add_all(cam.operations)
+            self.machine_params.first_depth = None

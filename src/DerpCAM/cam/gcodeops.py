@@ -20,6 +20,13 @@ class MachineParams(object):
         self.min_rpm = min_rpm
         self.max_rpm = max_rpm
         self.over_tab_safety = 0.2
+        self.first_depth = None
+        self.extra_depth = 0
+    def clone(self):
+        clone = MachineParams(self.safe_z, self.semi_safe_z, self.min_rpm, self.max_rpm)
+        clone.first_depth = self.first_depth
+        clone.extra_depth = self.extra_depth
+        return clone
 
 class OperationProps(object):
     def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None, sublayer_thickness=0.1, offset_tolerance=0.2):

@@ -21,6 +21,9 @@ class GeometrySettings:
 def epsilon():
     return 1.0 / GeometrySettings.RESOLUTION
 
+def depth_epsilon():
+    return 1.0 / 100.0
+
 def PtsToInts(points, res=None):
     res = res or GeometrySettings.RESOLUTION
     return [(round(p.x * res), round(p.y * res)) for p in points]

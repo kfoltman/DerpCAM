@@ -478,7 +478,13 @@ class LayerSchedule(object):
                 break
             layer_end_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - depth, total_depth)
             layer = self.layer_info(prev_depth, depth, OffsetRange(layer_end_offset, end_offset, stepover), False)
-            layers.append(layer)
+            # Omit layers completely above first depth, if any
+            first_depth = -(self.machine_params.first_depth or 0)
+            if self.machine_params.first_depth is None or layer.depth <= first_depth + depth_epsilon():
+                #print ("Do not skip layer at ", layer.prev_depth, " to ", layer.depth, " first_depth ", first_depth)
+                layers.append(layer)
+            #else:
+            #    print ("Skip layer at ", layer.prev_depth, " to ", layer.depth)
             if layer_end_offset < layer_start_offset:
                 raise ValueError("Wall profile undercuts are not permitted")
             prev_depth = depth

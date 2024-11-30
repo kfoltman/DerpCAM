@@ -596,16 +596,7 @@ class CAMMainWindow(QMainWindow):
             if not self.document.waitForUpdateCAM():
                 return
         dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
-        if self.document.drawing_filename:
-            path = os.path.splitext(self.document.drawing_filename)[0] + ".ngc"
-        elif self.document.filename:
-            path = os.path.splitext(self.document.filename)[0] + ".ngc"
-        else:
-            path = ''
-        output_dir = self.configSettings.gcode_directory or self.configSettings.last_gcode_directory
-        if output_dir != '':
-            old_path, gcode_filename = os.path.split(path)
-            path = os.path.join(output_dir, gcode_filename)
+        path = self.document.defaultGcodeFilePath("")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
         dlg.setDefaultSuffix(".ngc")
@@ -617,7 +608,7 @@ class CAMMainWindow(QMainWindow):
             self.configSettings.save()
             dlg = None
             self.repaint()
-            os.system(self.configSettings.run_after_export + " '" + os.path.abspath(fn) + "'")
+            self.configSettings.runAfterExport(os.path.abspath(fn))
     def fileExit(self):
         self.close()
     def handleUnsaved(self):

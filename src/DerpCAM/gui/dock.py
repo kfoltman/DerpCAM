@@ -6,6 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
+from DerpCAM.common import guiutils
 from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr, editors
 from DerpCAM.gui.wall_profile_mgr import WallProfileEditorDlg, WallProfileManagerDlg
 
@@ -134,6 +135,7 @@ class CAMObjectTreeDockWidget(QDockWidget):
                     menu.addAction("Entry/exit points").triggered.connect(self.operationEntryExitPoints)
                 elif item.areIslandsEditable():
                     menu.addAction("Islands").triggered.connect(self.operationIslands)
+                menu.addAction("Export special").triggered.connect(self.operationExportSpecial)
             elif isinstance(item, model.CycleTreeItem):
                 menu.addAction("Set as current").triggered.connect(lambda: self.cycleSetAsCurrent(item))
             elif isinstance(item, model.ToolPresetTreeItem):
@@ -371,6 +373,15 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 QMessageBox.critical(self, None, "Cannot edit islands on text - they are determined based on the holes in glyphs")
                 return
             self.editorChangeRequest.emit(editors.CanvasIslandsEditor(ops[0]))
+    def operationExportSpecial(self):
+        ops = self.operSelection()
+        if len(ops) == 1:
+            dlg = SpecialExportDlg()
+            dlg.initUI()
+            dlg.filePathEdit.setText(self.document.defaultGcodeFilePath('-special'))
+            if dlg.exec_():
+                self.document.operationExportSpecial(ops, dlg.filePathName, dlg.firstDepth, dlg.extraDepth)
+                self.document.config_settings.runAfterExport(dlg.filePathName)
     def cycleSetAsCurrent(self, item):
         self.document.selectCutterCycle(item)
 
@@ -423,3 +434,23 @@ class CAMEditorDockWidget(QDockWidget):
         else:
             self.setWidget(QWidget())
             self.setVisible(False)
+
+class SpecialExportDlg(QDialog):
+    def initUI(self):
+        self.setWindowTitle("Special G-Code export")
+        self.layout = QFormLayout(self)
+        self.firstDepthSpin = guiutils.floatSpin(0, 100, 2, 0, "Depth at which the previous cut failed (broken cutter etc.)")
+        self.layout.addRow("Re-cut at depth", self.firstDepthSpin)
+        self.extraDepthSpin = guiutils.floatSpin(0, 100, 2, 0, "Extra depth to add - full depth cuts only")
+        self.layout.addRow("Extra depth", self.extraDepthSpin)
+        self.filePathEdit = QLineEdit()
+        self.layout.addRow("Filename", self.filePathEdit)
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttonBox)
+    def accept(self):
+        self.filePathName = self.filePathEdit.text()
+        self.firstDepth = self.firstDepthSpin.value()
+        self.extraDepth = self.extraDepthSpin.value()
+        QDialog.accept(self)

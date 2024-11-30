@@ -127,6 +127,9 @@ class ConfigSettings(object):
         GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
         GeometrySettings.run_after_export = self.run_after_export
         GuiSettings.inch_mode = self.display_inches
+    def runAfterExport(self, filename):
+        if self.run_after_export:
+            os.system(self.run_after_export + " '" + os.path.abspath(filename) + "'")
 
 class DirectorySelector(QWidget):
     def __init__(self):
