@@ -446,10 +446,10 @@ class HelicalDrill(UntabbedOperation):
         shape = shapes.Shape.circle(x, y, r=0.5*self.d)
         UntabbedOperation.__init__(self, shape, tool, machine_params, props)
     def build_paths(self, margin):
-        coords = []
+        paths = []
         for cd in self.diameters():
-            coords += shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary
-        return PathOutput([toolpath.Toolpath(Path(coords, False), self.tool)], None, {})
+            paths.append(shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary)
+        return PathOutput([toolpath.Toolpath(Path(path, True), self.tool) for path in paths], None, {})
     def diameters(self):
         if self.d < self.min_dia:
             return [self.d]
