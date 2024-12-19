@@ -58,15 +58,15 @@ class WallProfileAdapter(object):
         item = item[0]
         res = []
         for profile in item.document.project_wall_profiles.values():
-            res.append((profile.id, profile.name))
+            res.append((profile.id, self.getDescription(profile)))
         res.append((NewProfileOption(), "<New wall profile>"))
         return res
     def lookupById(self, id):
         if isinstance(id, AltComboOption):
             return id
         return inventory.IdSequence.lookup(id)
-    def getDescription(self, item):
-        return item.description
+    def getDescription(self, profile):
+        return f"{profile.name} ({profile.description})"
 
 class CycleTreeItem(CAMTreeItem):
     def __init__(self, document, cutter):
