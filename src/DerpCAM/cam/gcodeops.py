@@ -163,9 +163,11 @@ class PatternFill(UntabbedOperation):
 class Pocket(UntabbedOperation):
     def build_cutpaths(self):
         return [CutPathWallProfile(self.machine_params, self.props, self.tool, None, self.subpaths_for_margin, True)]
-    def build_paths(self, margin):
+    def validate(self):
         if not self.shape.closed:
             raise ValueError("Pocket cuts are not supported for open shapes")
+    def build_paths(self, margin):
+        self.validate()
         return PathOutput(cam.pocket.contour_parallel(self.shape, self.tool, displace=self.props.margin + margin, roughing_offset=self.props.roughing_offset), None, {})
     def subpaths_for_margin(self, margin, is_sublayer):
         if is_sublayer:
@@ -181,25 +183,23 @@ class Pocket(UntabbedOperation):
 
 class AxisParallelPocket(Pocket):
     def build_paths(self, margin):
-        if not self.shape.closed:
-            raise ValueError("Pocket cuts are not supported for open shapes")
+        self.validate()
         return PathOutput(cam.pocket.axis_parallel(self.shape, self.tool, self.props.angle, self.props.margin + margin, self.props.zigzag, roughing_offset=self.props.roughing_offset), None, {})
 
-class HSMOperation(UntabbedOperation):
+class HSMPocket(Pocket):
     def __init__(self, shape, tool, machine_params, props, shape_to_refine):
-        UntabbedOperation.__init__(self, shape, tool, machine_params, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
-
-class HSMPocket(HSMOperation):
+        Pocket.__init__(self, shape, tool, machine_params, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
     def build_paths(self, margin):
-        if not self.shape.closed:
-            raise ValueError("Pocket cuts are not supported for open shapes")
+        self.validate()
         return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {})
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
         return PathOutput(cam.peel.outside_peel(self.shape, self.tool, displace=self.props.margin + margin), None, {})
 
-class OutsidePeelHSM(HSMOperation):
+class OutsidePeelHSM(UntabbedOperation):
+    def __init__(self, shape, tool, machine_params, props, shape_to_refine):
+        UntabbedOperation.__init__(self, shape, tool, machine_params, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Outside peel cuts are not supported for open shapes")

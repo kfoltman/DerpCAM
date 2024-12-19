@@ -422,9 +422,9 @@ def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
 
 def add_finishing_outlines(tps, polygon, tool, from_outside):
     if not from_outside:
-        tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+        tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True, is_edge=True))
     for h in polygon.interiors:
-        tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True))
+        tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True, is_edge=True))
 
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None, roughing_offset=0):
     already_cut = None
