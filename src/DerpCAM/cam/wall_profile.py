@@ -2,6 +2,8 @@ import math
 from DerpCAM.common.guiutils import EnumClass
 
 class BaseWallProfile(object):
+    def __init__(self):
+        self.sublayer_thickness = 0.1
     def offset_at_depth(self, z, total_depth):
         assert False
 
@@ -12,6 +14,7 @@ class PlainWallProfile(BaseWallProfile):
 
 class DraftWallProfile(BaseWallProfile):
     def __init__(self, angle_deg):
+        BaseWallProfile.__init__(self)
         self.angle_deg = angle_deg
         self.draft = math.tan(angle_deg * math.pi / 180)
     def offset_at_depth(self, depth, total_depth):
@@ -19,6 +22,7 @@ class DraftWallProfile(BaseWallProfile):
 
 class TopChamferWallProfile(BaseWallProfile):
     def __init__(self, angle_deg, length):
+        BaseWallProfile.__init__(self)
         self.angle_deg = angle_deg
         self.draft = math.tan(angle_deg * math.pi / 180)
         self.length = length
@@ -29,6 +33,7 @@ class TopChamferWallProfile(BaseWallProfile):
 
 class TopRoundoverWallProfile(BaseWallProfile):
     def __init__(self, r):
+        BaseWallProfile.__init__(self)
         self.r = r
     def offset_at_depth(self, depth, total_depth):
         if depth < self.r:
@@ -37,6 +42,7 @@ class TopRoundoverWallProfile(BaseWallProfile):
 
 class BottomRoundoverWallProfile(BaseWallProfile):
     def __init__(self, r):
+        BaseWallProfile.__init__(self)
         self.r = r
     def offset_at_depth(self, depth, total_depth):
         depth = total_depth - depth
@@ -46,6 +52,7 @@ class BottomRoundoverWallProfile(BaseWallProfile):
 
 class CompositeWallProfile(BaseWallProfile):
     def __init__(self, *args):
+        BaseWallProfile.__init__(self)
         self.args = args
     def offset_at_depth(self, depth, total_depth):
         return sum([i.offset_at_depth(depth, total_depth) for i in self.args])
@@ -97,17 +104,21 @@ class WallProfileItem:
         return self.offset == other.offset and self.height == other.height and self.shape == other.shape and (self.shape != WallProfileItemType.REBATE or self.rebate == other.rebate) and (self.shape != WallProfileItemType.TAPER or self.taper == other.taper)
 
 class UserDefinedWallProfile(BaseWallProfile):
-    def __init__(self, top=None, bottom=None, align=None):
+    def __init__(self, top=None, bottom=None, align=None, sublayer_thickness=None):
+        BaseWallProfile.__init__(self)
+        self.sublayer_thickness = sublayer_thickness or self.sublayer_thickness
         self.top = top or []
         self.bottom = bottom or []
         self.align = align if align is not None else 0
     def store(self):
-        return { "top" : [ i.store() for i in self.top ], "bottom" : [ i.store() for i in self.bottom ], "align" : self.align }
+        return { "top" : [ i.store() for i in self.top ], "bottom" : [ i.store() for i in self.bottom ], "align" : self.align, "sublayer_thickness" : self.sublayer_thickness }
     @classmethod
     def load(klass, data):
         res = klass()
         if "align" in data:
             res.align = data["align"]
+        if "sublayer_thickness" in data:
+            res.sublayer_thickness = data["sublayer_thickness"]
         for i in data["top"]:
             res.top.append(WallProfileItem.load(i))
         for i in data["bottom"]:
@@ -116,6 +127,7 @@ class UserDefinedWallProfile(BaseWallProfile):
     def clone(self):
         return self.load(self.store())
     def offset_at_depth(self, depth, total_depth):
+        # Depth, total_depth are positive values here.
         offset = 0
         pos = 0
         top_offset = 0

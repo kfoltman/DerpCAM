@@ -57,7 +57,7 @@ class WallProfileAdapter(object):
     def getLookupData(self, item):
         item = item[0]
         res = []
-        for profile in inventory.inventory.wall_profiles:
+        for profile in item.document.project_wall_profiles.values():
             res.append((profile.id, profile.name))
         res.append((NewProfileOption(), "<New wall profile>"))
         return res
@@ -316,8 +316,6 @@ class OperationTreeItem(CAMTreeItem):
         self.entry_exit = [(geom.PathPoint(i[0][0], i[0][1]), geom.PathPoint(i[1][0], i[1][1])) for i in dump.get('entry_exit', [])]
         self.active = dump.get('active', True)
         self.wall_profile = dump.get('wall_profile', None)
-        if self.wall_profile is not None:
-            self.wall_profile = inventory.IdSequence.lookup(self.wall_profile)
         self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
@@ -1160,6 +1158,13 @@ class DocumentModel(QObject):
         self.drawing.reload(data['drawing']['header'])
         for i in data['drawing']['items']:
             self.drawing.appendRow(DrawingItemTreeItem.load(self, i))
+        wall_profile_map = {}
+        if 'wall_profiles' in data:
+            for i in data['wall_profiles']:
+                wp = inventory.InvWallProfile.load(i)
+                wall_profile_map[wp.orig_id] = wp
+                self.project_wall_profiles[wp.name] = wp
+            self.refreshWallProfileList()
         if 'operations' in data:
             for i in data['operations']:
                 operation = CAMTreeItem.load(self, i)
@@ -1187,12 +1192,12 @@ class DocumentModel(QObject):
                     operation = CAMTreeItem.load(self, j)
                     operation.cutter = cutter_map[operation.cutter]
                     operation.tool_preset = preset_map[operation.tool_preset] if operation.tool_preset else None
+                    if operation.wall_profile is not None:
+                        wp = wall_profile_map.get(operation.wall_profile)
+                        if wp is None:
+                            print (f"Wall profile reference {operation.wall_profile} points at non-existent ID, clearing")
+                        operation.wall_profile = wp
                     cycle.appendRow(operation)
-        if 'wall_profiles' in data:
-            for i in data['wall_profiles']:
-                wp = inventory.InvWallProfile.load(i)
-                self.project_wall_profiles[wp.name] = wp
-            self.refreshWallProfileList()
         self.startUpdateCAM()
         if currentCutterCycle:
             self.selectCutterCycle(currentCutterCycle)

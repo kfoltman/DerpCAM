@@ -490,15 +490,16 @@ class LayerSchedule(object):
             prev_depth = depth
             layer_start_offset = layer_end_offset
         depth = self.props.depth
+        sublayer_thickness = self.props.wall_profile.sublayer_thickness
         # Refine from the bottom up
         sublayers = []
         for layer in layers[::-1]:
-            depth = round(layer.depth + self.props.sublayer_thickness, 3)
+            depth = round(layer.depth + sublayer_thickness, 3)
             prev_depth = layer.prev_depth
             layer_start_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - prev_depth, total_depth)
             if depth < prev_depth and layer_start_offset < layer_end_offset:
                 sublayer_end_offset = layer_end_offset
-                sublayer_start = round(depth + self.props.sublayer_thickness, 3)
+                sublayer_start = round(depth + sublayer_thickness, 3)
                 sublayer_end = depth
                 while sublayer_end < prev_depth:
                     sublayer_start_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - sublayer_end, total_depth)
@@ -507,7 +508,7 @@ class LayerSchedule(object):
                         sublayers.append(self.layer_info(sublayer_start, sublayer_end, offsets, True))
                         sublayer_end_offset = sublayer_start_offset
                     sublayer_end = sublayer_start
-                    sublayer_start = min(prev_depth, round(sublayer_end + self.props.sublayer_thickness, 3))
+                    sublayer_start = min(prev_depth, round(sublayer_end + sublayer_thickness, 3))
             layer_end_offset = layer_start_offset
         layers += sublayers
         return layers
