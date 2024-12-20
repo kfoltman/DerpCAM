@@ -202,6 +202,8 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, margin + roughing_offset, outer_margin)
     border_paths = [geom.IntPath(path.int_points, True) for path in boundary_transformed_nonoverlap] + [geom.IntPath(geom.ReversePath(path.int_points), True) for path in islands_transformed_nonoverlap]
     border_paths = [path for path in border_paths if path.area() != 0]
+    # Beware: path.int_points can be an ndarray here.
+    border_paths_closed = [geom.IntPath(list(path.int_points) + [path.int_points[0]], True) for path in border_paths]
 
     bounds = geom.max_bounds(*[i.bounding_box() for i in boundary_transformed])
     if not bounds:
@@ -248,7 +250,7 @@ def axis_parallel(shape, tool, angle, margin, zigzag, roughing_offset=0, finish_
                 row.add_area(geom.Path(geom.PtsFromInts(path3), True))
         #tree = geom.run_clipper_advanced(pyclipper.CT_INTERSECTION, [], [slice], [geom.IntPath(path.int_points + path.int_points[0:1], True) for path in boundary_transformed + islands_transformed_nonoverlap])
         if zigzag and border_paths:
-            trimmed3 = geom.run_clipper_openpaths(pyclipr.Intersection, [slice], border_paths)
+            trimmed3 = geom.run_clipper_openpaths(pyclipr.Intersection, [slice], border_paths_closed, fillMode=pyclipr.FillRule.NonZero)
             for path3 in trimmed3:
                 row.add_connector(geom.Path(geom.PtsFromInts(path3), False))
         rows.append(row)
