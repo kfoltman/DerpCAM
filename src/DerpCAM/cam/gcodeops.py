@@ -29,7 +29,7 @@ class MachineParams(object):
         return clone
 
 class OperationProps(object):
-    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None, offset_tolerance=0.2):
+    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None):
         self.depth = depth
         self.start_depth = start_depth
         self.tab_depth = tab_depth
@@ -40,9 +40,8 @@ class OperationProps(object):
         self.rpm = None
         self.allow_helical_entry = allow_helical_entry
         self.wall_profile = wall_profile or PlainWallProfile()
-        self.offset_tolerance = offset_tolerance
     def clone(self, **attrs):
-        res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin, self.zigzag, self.angle, self.roughing_offset, self.allow_helical_entry, self.wall_profile, self.offset_tolerance)
+        res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin, self.zigzag, self.angle, self.roughing_offset, self.allow_helical_entry, self.wall_profile)
         for k, v in attrs.items():
             assert hasattr(res, k), "Unknown attribute %s" % k
             setattr(res, k, v)

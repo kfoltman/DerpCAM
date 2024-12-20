@@ -90,7 +90,8 @@ class LayerScheduleTest(unittest.TestCase):
     def testBasicSublayers(self):
         # Test for floating point naughtiness
         for offset_tolerance, num_sublayers in [(0, 9 * 12), (0.1, 4 * 12), (0.2, 2 * 12)]:
-            props = OperationProps(depth=-12, start_depth=0, wall_profile=DraftWallProfile(30), offset_tolerance=offset_tolerance, tab_depth=-6)
+            props = OperationProps(depth=-12, start_depth=0, wall_profile=DraftWallProfile(30), tab_depth=-6)
+            props.wall_profile.offset_tolerance = offset_tolerance
             ls = LayerSchedule(machine_params, props, tool, True)
             mll = ls.major_layer_list()
             self.assertEqual(len(mll), 12 + num_sublayers)

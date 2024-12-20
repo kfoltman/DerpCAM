@@ -4,6 +4,7 @@ from DerpCAM.common.guiutils import EnumClass
 class BaseWallProfile(object):
     def __init__(self):
         self.sublayer_thickness = 0.1
+        self.offset_tolerance = 0.1
     def offset_at_depth(self, z, total_depth):
         assert False
 
@@ -111,7 +112,13 @@ class UserDefinedWallProfile(BaseWallProfile):
         self.bottom = bottom or []
         self.align = align if align is not None else 0
     def store(self):
-        return { "top" : [ i.store() for i in self.top ], "bottom" : [ i.store() for i in self.bottom ], "align" : self.align, "sublayer_thickness" : self.sublayer_thickness }
+        return { 
+            "top" : [ i.store() for i in self.top ],
+            "bottom" : [ i.store() for i in self.bottom ],
+            "align" : self.align,
+            "sublayer_thickness" : self.sublayer_thickness,
+            "offset_tolerance" : self.offset_tolerance
+        }
     @classmethod
     def load(klass, data):
         res = klass()
@@ -119,6 +126,8 @@ class UserDefinedWallProfile(BaseWallProfile):
             res.align = data["align"]
         if "sublayer_thickness" in data:
             res.sublayer_thickness = data["sublayer_thickness"]
+        if "offset_tolerance" in data:
+            res.offset_tolerance = data["offset_tolerance"]
         for i in data["top"]:
             res.top.append(WallProfileItem.load(i))
         for i in data["bottom"]:
