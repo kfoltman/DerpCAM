@@ -503,7 +503,7 @@ class LayerSchedule(object):
                 sublayer_end = depth
                 while sublayer_end < prev_depth:
                     sublayer_start_offset = self.props.wall_profile.offset_at_depth(self.props.start_depth - sublayer_end, total_depth)
-                    if sublayer_start_offset < sublayer_end_offset - self.props.offset_tolerance:
+                    if sublayer_start_offset < sublayer_end_offset - self.props.wall_profile.offset_tolerance:
                         offsets = OffsetRange(sublayer_start_offset, max(sublayer_end_offset - stepover, sublayer_start_offset), stepover)
                         sublayers.append(self.layer_info(sublayer_start, sublayer_end, offsets, True))
                         sublayer_end_offset = sublayer_start_offset
