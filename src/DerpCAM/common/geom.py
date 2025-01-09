@@ -2,6 +2,11 @@ import pyclipr
 from math import *
 import threading
 
+class GcodeVariant:
+    LINUXCNC = 0
+    GRBL = 1
+    MARLIN = 2
+
 class GeometrySettings:
     RESOLUTION = 25.0
     fillMode = pyclipr.FillRule.Positive
@@ -10,7 +15,7 @@ class GeometrySettings:
     draw_arrows = False
     dxf_inches = False
     gcode_inches = False
-    grbl_output = False
+    gcode_variant = GcodeVariant.LINUXCNC
     spindle_control = False
     spindle_fine_control = False
     spindle_warmup = 0

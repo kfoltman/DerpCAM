@@ -23,6 +23,7 @@ class Gcode(object):
         self.rpm = None
         self.last_rpm = None
         self.last_coords = None
+        self.queued_feed = None
     def add(self, line):
         self.gcode.append(line)
     def add_dedup(self, line):
@@ -31,16 +32,24 @@ class Gcode(object):
         self.gcode.append(line)
     def comment(self, comment):
         comment = comment.replace("(", "<").replace(")",">")
-        self.add(f"({comment})")
+        if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:
+            # Parentheses-based comments are an optional feature, disabled by default
+            self.add(f";{comment}")
+        else:
+            self.add(f"({comment})")
     def section_info(self, comment):
         if debug_sections:
             self.comment(comment)
     def reset(self):
         accuracy = 0.5 / GeometrySettings.RESOLUTION
         unit_mode = "G20" if self.inch_mode else "G21"
-        # Grbl doesn't understand G64
-        accuracy_mode = "" if GeometrySettings.grbl_output else f" G64 P{accuracy:0.3f} Q{accuracy:0.3f}"
-        self.add(f"G17 G90 G40 {unit_mode}{accuracy_mode}")
+        if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:
+            self.add(f"G90")
+            self.add(unit_mode)
+        else:
+            # Grbl doesn't understand G64
+            accuracy_mode = f" G64 P{accuracy:0.3f} Q{accuracy:0.3f}" if GeometrySettings.gcode_variant == GcodeVariant.LINUXCNC else ""
+            self.add(f"G17 G90 G40 {unit_mode}{accuracy_mode}")
     def spindle_start(self):
         if GeometrySettings.spindle_control:
             if self.rpm is not None:
@@ -61,7 +70,8 @@ class Gcode(object):
         self.reset()
     def finish(self):
         self.spindle_stop()
-        self.add("M2")
+        if GeometrySettings.gcode_variant != GcodeVariant.MARLIN:
+            self.add("M2")
     def begin_section(self, rpm=None):
         self.last_feed = None
         self.rpm = rpm
@@ -69,25 +79,41 @@ class Gcode(object):
             self.spindle_start()
     def feed(self, feed):
         if feed != self.last_feed:
-            if self.last_feed_index == len(self.gcode) - 1:
-                self.gcode[-1] = self.enc_feed(feed)
+            if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:
+                # Marlin doesn't accept the F-word on its own, only as part of G1
+                self.queued_feed = feed
             else:
-                self.add(self.enc_feed(feed))
-            self.last_feed = feed
-            self.last_feed_index = len(self.gcode) - 1
+                if self.last_feed_index == len(self.gcode) - 1:
+                    self.gcode[-1] = self.enc_feed(feed)
+                else:
+                    self.add(self.enc_feed(feed))
+                self.last_feed = feed
+                self.last_feed_index = len(self.gcode) - 1
     def add_dedup_g0g1(self, cmd, x=None, y=None, z=None, f=None):
         coords = self.enc_coords(x, y, z)
         if coords == self.last_coords:
             if f is not None:
                 self.feed(f)
             return
-        if f is not None and f != self.last_feed:
+        if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:
+            if f is None and self.queued_feed is not None:
+                f = self.queued_feed
+                self.queued_feed = None
+            if f is not None and f != self.last_feed:
+                cmd += " " + self.enc_feed(f)
+                self.last_feed = f
+        elif f is not None and f != self.last_feed:
             cmd += " " + self.enc_feed(f)
             self.last_feed = f
         self.add_dedup(cmd + coords)
         self.last_coords = coords
     def rapid(self, x=None, y=None, z=None):
-        self.add_dedup_g0g1("G0", x, y, z)
+        if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:
+            feed = self.queued_feed or self.last_feed
+            self.add_dedup_g0g1("G1", x, y, z, 5000)
+            self.queued_feed = feed
+        else:
+            self.add_dedup_g0g1("G0", x, y, z)
     def linear(self, x=None, y=None, z=None, f=None):
         self.add_dedup_g0g1("G1", x, y, z, f)
     def arc_cw(self, x=None, y=None, z=None, i=None, j=None, k=None):
@@ -104,6 +130,8 @@ class Gcode(object):
         if self.inch_mode:
             return f"F{feed / 25.4:0.3f}"
         else:
+            if feed == int(feed):
+                return f"F{feed:0.0f}"
             return f"F{feed:0.2f}"
     def enc_coord(self, letter, value):
         if self.inch_mode:
@@ -138,7 +166,7 @@ class Gcode(object):
         cur_z = start_z
         delta_z = end_z - start_z
         arc_dir = direction=1 if climb else -1
-        if GeometrySettings.grbl_output:
+        if GeometrySettings.gcode_variant in (GcodeVariant.GRBL, GcodeVariant.MARLIN):
             sx2 = x + i
             sy2 = y + j
             self.arc(arc_dir, x = sx2, y = sy2, i = i, j = j, z = cur_z + delta_z / 2.0)
@@ -251,7 +279,7 @@ class Gcode(object):
                 assert dist(lastpt, arc.p1) < 1 / GeometrySettings.RESOLUTION
                 cdist = PathPoint(arc.c.cx - arc.p1.x, arc.c.cy - arc.p1.y)
                 arc_dir = 1 if arc.sspan > 0 else -1
-                if GeometrySettings.grbl_output and abs(arc.sspan) >= 3 * pi / 2:
+                if GeometrySettings.gcode_variant in (GcodeVariant.GRBL, GcodeVariant.MARLIN) and abs(arc.sspan) >= 3 * pi / 2:
                     # Grbl has some issues with full circles, so replace anything longer than a
                     # 270 degree arc with two half-circles
                     subarc = arc.cut(0, 0.5)[1]

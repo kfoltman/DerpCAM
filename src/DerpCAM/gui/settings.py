@@ -51,7 +51,7 @@ class ConfigSettings(object):
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
         BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
-        BoolConfigSetting('grbl_output', 'geometry/grbl_output', GeometrySettings.grbl_output),
+        IntConfigSetting('gcode_variant', 'geometry/gcode_variant', GeometrySettings.gcode_variant),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
         BoolConfigSetting('spindle_fine_control', 'gcode/spindle_fine_control', GeometrySettings.spindle_fine_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
@@ -104,6 +104,9 @@ class ConfigSettings(object):
     def load(self):
         settings = self.settings
         settings.sync()
+        if settings.contains("grbl_mode") and not settings.contains("gcode_variant"):
+            settings.setValue("gcode_variant", GcodeVariant.GRBL if settings.value("grbl_mode") == 'true' else GcodeVariant.LINUXCNC)
+            settings.remove("grbl_mode")
         for i in self.setting_list:
             i.load(settings, self)
     def save(self):
@@ -119,7 +122,7 @@ class ConfigSettings(object):
         GeometrySettings.draw_arrows = self.draw_arrows
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
-        GeometrySettings.grbl_output = self.grbl_output
+        GeometrySettings.gcode_variant = self.gcode_variant
         GeometrySettings.spindle_control = self.spindle_control
         GeometrySettings.spindle_fine_control = self.spindle_fine_control
         GeometrySettings.spindle_warmup = self.spindle_warmup
@@ -182,9 +185,10 @@ class PreferencesDialog(QDialog):
         self.paranoidModeCheck.setToolTip("Forbid rapid Z moves into previously removed stock or outside stock boundaries")
         self.paranoidModeCheck.setChecked(self.config.paranoid_mode)
         self.formCAM.addRow(self.paranoidModeCheck)
-        self.grblOutputCheck = QCheckBox("&Output Grbl variant of G-Code")
-        self.grblOutputCheck.setChecked(self.config.grbl_output)
-        self.formCAM.addRow(self.grblOutputCheck)
+        self.gcodeVariantCombo = QComboBox()
+        self.gcodeVariantCombo.addItems(["LinuxCNC", "Grbl", "Marlin"])
+        self.gcodeVariantCombo.setCurrentIndex(self.config.gcode_variant)
+        self.formCAM.addRow("&G-Code variant:", self.gcodeVariantCombo)
         self.spindleControlCheck = QCheckBox("&Generate spindle control commands")
         self.spindleControlCheck.setChecked(self.config.spindle_control)
         self.spindleControlCheck.stateChanged.connect(self.updateControls)
@@ -273,7 +277,7 @@ class PreferencesDialog(QDialog):
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
         self.config.paranoid_mode = self.paranoidModeCheck.isChecked()
-        self.config.grbl_output = self.grblOutputCheck.isChecked()
+        self.config.gcode_variant = self.gcodeVariantCombo.currentIndex()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_fine_control = self.spindleControlCheck.isChecked() and self.spindleFineControlCheck.isChecked()
         self.config.spindle_warmup = self.warmupSpin.value()
