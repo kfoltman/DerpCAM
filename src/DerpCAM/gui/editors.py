@@ -899,7 +899,7 @@ Click on a drawing to create a text object.
         self.apply()        
     def mousePressEventPos(self, e, newPos):
         if e.button() == Qt.LeftButton:
-            self.pointSelected(newPos.x, newPosy.y, from_equals=False)
+            self.pointSelected(newPos.x, newPos.y, from_equals=False)
             return True
 
 class CanvasNewRectangleEditor(CanvasNewItemEditor):
