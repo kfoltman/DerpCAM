@@ -66,7 +66,7 @@ class WallProfileItemType(EnumClass):
 
     descriptions = [
         (REBATE, "Rebate/Rabbet"),
-        (TAPER, "Taper/Draft \ /"),
+        (TAPER, "Taper/Draft \\ /"),
         (ROUND_H2V, "Round H to V \u25DD \u25DC"),
         (ROUND_V2H, "Round V to H \u25DF \u25DE"),
     ]
