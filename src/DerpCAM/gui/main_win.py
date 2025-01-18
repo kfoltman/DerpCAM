@@ -429,6 +429,8 @@ class CAMMainWindow(QMainWindow):
             QMessageBox.critical(self, None, "No objects selected")
             return
         shapeIds, selectionsUsed, warningsList = self.document.drawing.parseSelection(selection, operType)
+        if len(warningsList) > 10:
+            warningsList = warningsList[:10] + [f"{len(warningsList)-10} errors omitted for brievity"]
         warningsText = "\n".join(warningsList)
         if not shapeIds:
             QMessageBox.warning(self, None, f"None of the selected objects are suitable for the operation:\n{warningsText}")
