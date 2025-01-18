@@ -897,11 +897,13 @@ class ModifyPolylineUndoCommand(QUndoCommand):
         self.polyline.points = self.orig_points
         self.polyline.closed = self.orig_closed
         self.polyline.calcBounds()
+        self.document.startUpdateCAMForShapes({self.polyline.shape_id})
         self.document.shapesUpdated.emit()
     def redo(self):
         self.polyline.points = self.new_points
         self.polyline.closed = self.new_closed
         self.polyline.calcBounds()
+        self.document.startUpdateCAMForShapes({self.polyline.shape_id})
         self.document.shapesUpdated.emit()
 
 class ModifyPolylinePointUndoCommand(QUndoCommand):
@@ -919,6 +921,7 @@ class ModifyPolylinePointUndoCommand(QUndoCommand):
             assert self.position > 0
             self.polyline.points[self.position - 1] = self.orig_location.p1
         self.polyline.calcBounds()
+        self.document.startUpdateCAMForShapes({self.polyline.shape_id})
         self.document.shapesUpdated.emit()
     def redo(self):
         self.polyline.points[self.position] = self.new_location
@@ -926,6 +929,7 @@ class ModifyPolylinePointUndoCommand(QUndoCommand):
             assert self.position > 0
             self.polyline.points[self.position - 1] = self.new_location.p1
         self.polyline.calcBounds()
+        self.document.startUpdateCAMForShapes({self.polyline.shape_id})
         self.document.shapesUpdated.emit()
     def id(self):
         return 1000
