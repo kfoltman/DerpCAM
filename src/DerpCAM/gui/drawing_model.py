@@ -420,15 +420,20 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         res = []
         last_bounds = None
         if self.paths:
-            for i, path in enumerate(sorted(self.paths, key=lambda path: path.bounds()[0])):
-                path_bounds = path.bounds()
-                if len(res) and geom.inside_bounds(path_bounds, last_bounds):
-                    res[-1].add_island(path.nodes)
-                else:
-                    shape = shapes.Shape(path.nodes, path.closed)
-                    last_bounds = path_bounds
-                    res.append(shape)
-        res = list(sorted(res, key=lambda item: item.bounds[0]))
+            items = [DrawingPolylineTreeItem(self.document, path.nodes, path.closed, shape_id=-index) for index, path in enumerate(self.paths)]
+            items_by_id = { item.shape_id : item for item in items }
+            translation = self.document.drawing.translation()
+            outsides = contour_nesting(items, translation)
+            for outside_id, islands in outsides.items():
+                outside = items_by_id[outside_id]
+                shape = shapes.Shape(outside.points, outside.closed)
+                for island_id in islands:
+                    island = items_by_id[island_id]
+                    shape.add_island(island.points)
+                res.append(shape)
+        res = list(sorted(res, key=lambda item: item.rotated(-math.pi * self.style.angle / 180, self.origin.x, self.origin.y).bounds[0]))
+        for i in res:
+            print (i.bounds)
         return res
     def renderTo(self, path, editor):
         for i in self.paths:
@@ -637,7 +642,6 @@ class DrawingTreeItem(CAMListTreeItem):
                 found.append(item)
         return found
     def parseSelection(self, selection, operType):
-        translation = self.translation()
         warnings = []
         def pickObjects(selector):
             matched = []
@@ -655,44 +659,15 @@ class DrawingTreeItem(CAMListTreeItem):
             selection, warnings = pickObjects(lambda i: isinstance(i, DrawingTextTreeItem) or i.toShape().closed or "%s is not a closed shape")
         if not OperationType.has_islands(operType):
             return {i.shape_id: set() for i in selection}, selection, warnings
-        nonzeros = set()
-        zeros = set()
+        translation = self.translation()
         texts = [ i for i in selection if isinstance(i, DrawingTextTreeItem) ]
-        selectionId = [ i.shape_id for i in selection if not isinstance(i, DrawingTextTreeItem) ]
-        selectionTrans = [ geom.IntPath(i.translated(*translation).toShape().boundary) for i in selection if not isinstance(i, DrawingTextTreeItem) ]
-        for i in range(len(selectionTrans)):
-            isi = selectionId[i]
-            for j in range(len(selectionTrans)):
-                if i == j:
-                    continue
-                jsi = selectionId[j]
-                if not geom.run_clipper_simple(pyclipr.Difference, subject_polys=[selectionTrans[i]], clipper_polys=[selectionTrans[j]], bool_only=True, fillMode=pyclipr.FillRule.NonZero):
-                    zeros.add((isi, jsi))
-        outsides = { i.shape_id: set() for i in selection }
-        for isi, jsi in zeros:
-            # i minus j = empty set, i.e. i wholly contained in j
-            if isi in outsides:
-                del outsides[isi]
-        for isi, jsi in zeros:
-            # i minus j = empty set, i.e. i wholly contained in j
-            if jsi in outsides:
-                outsides[jsi].add(isi)
+        outsides = contour_nesting([i for i in selection if not isinstance(i, DrawingTextTreeItem)], translation)
         allObjects = set(outsides.keys())
-        for outside in outsides:
-            islands = outsides[outside]
-            redundant = set()
-            for i1 in islands:
-                for i2 in islands:
-                    if i1 != i2 and (i1, i2) in zeros:
-                        redundant.add(i1)
-            for i in redundant:
-                islands.remove(i)
+        for islands in outsides.values():
             allObjects |= islands
         for i in texts:
-            #glyphs = i.translated(*translation).toShape()
             outsides[i.shape_id] = set()
-            allObjects.add(i.shape_id)
-        selection = [i for i in selection if i.shape_id in allObjects]
+        selection = [i for i in selection if i.shape_id in allObjects] + texts
         return outsides, selection, warnings
     def properties(self):
         return [self.prop_x_offset, self.prop_y_offset]
@@ -964,3 +939,34 @@ class ModifyPolylinePointUndoCommand(QUndoCommand):
         self.new_location = other.new_location
         return True
 
+def contour_nesting(contours, translation):
+    contoursId = [ i.shape_id for i in contours ]
+    contoursTrans = [ geom.IntPath(i.translated(*translation).toShape().boundary) for i in contours if not isinstance(i, DrawingTextTreeItem) ]
+    zeros = set()
+    for i in range(len(contoursTrans)):
+        isi = contoursId[i]
+        for j in range(len(contoursTrans)):
+            if i == j:
+                continue
+            jsi = contoursId[j]
+            if not geom.run_clipper_simple(pyclipr.Difference, subject_polys=[contoursTrans[i]], clipper_polys=[contoursTrans[j]], bool_only=True, fillMode=pyclipr.FillRule.NonZero):
+                zeros.add((isi, jsi))
+    outsides = { i.shape_id: set() for i in contours }
+    for isi, jsi in zeros:
+        # i minus j = empty set, i.e. i wholly contained in j
+        if isi in outsides:
+            del outsides[isi]
+    for isi, jsi in zeros:
+        # i minus j = empty set, i.e. i wholly contained in j
+        if jsi in outsides:
+            outsides[jsi].add(isi)
+    for outside in outsides:
+        islands = outsides[outside]
+        redundant = set()
+        for i1 in islands:
+            for i2 in islands:
+                if i1 != i2 and (i1, i2) in zeros:
+                    redundant.add(i1)
+        for i in redundant:
+            islands.remove(i)
+    return outsides
