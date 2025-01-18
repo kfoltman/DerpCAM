@@ -432,8 +432,6 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
                     shape.add_island(island.points)
                 res.append(shape)
         res = list(sorted(res, key=lambda item: item.rotated(-math.pi * self.style.angle / 180, self.origin.x, self.origin.y).bounds[0]))
-        for i in res:
-            print (i.bounds)
         return res
     def renderTo(self, path, editor):
         for i in self.paths:
