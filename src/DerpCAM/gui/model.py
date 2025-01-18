@@ -963,13 +963,19 @@ class MoveDrawingItemsUndoCommand(QUndoCommand):
         self.dy = dy
         self.undo_data = None
     def undo(self):
+        shape_ids = set()
         for i, old_data in self.undo_data:
             i.restore_translate(old_data)
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
         self.document.shapesUpdated.emit()
     def redo(self):
+        shape_ids = set()
         self.undo_data = []
         for i in self.items:
             self.undo_data.append((i, i.translate(self.dx, self.dy)))
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
         self.document.shapesUpdated.emit()
 
 class RotateDrawingItemsUndoCommand(QUndoCommand):
@@ -982,13 +988,19 @@ class RotateDrawingItemsUndoCommand(QUndoCommand):
         self.rotation = rotation
         self.undo_data = None
     def undo(self):
+        shape_ids = set()
         for i, old_data in self.undo_data:
             i.restore_rotate(old_data)
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
         self.document.shapesUpdated.emit()
     def redo(self):
         self.undo_data = []
+        shape_ids = set()
         for i in self.items:
             self.undo_data.append((i, i.rotate(self.ox, self.oy, self.rotation)))
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
         self.document.shapesUpdated.emit()
 
 class DocumentModel(QObject):
@@ -1319,6 +1331,9 @@ class DocumentModel(QObject):
             prev_diameter, prev_operation, islands = self.largerDiameterForShape(operation.orig_shape, diameter_plus)
             if prev_diameter != operation.prev_diameter:
                 operation.startUpdateCAM()
+    def startUpdateCAMForShapes(self, shape_ids):
+        self.makeMachineParams()
+        self.forEachOperation(lambda item: item.startUpdateCAM() if item.shape_id in shape_ids else None)
     def startUpdateCAM(self, subset=None):
         self.makeMachineParams()
         if subset is None:
