@@ -138,6 +138,7 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
     res_out = geom.run_clipper_offset(geom.PtsToInts(shape.boundary), True, dist2 if is_outside else -dist2, scaleFactor=scaleFactor)
     if not res_out:
         return None
+    res_out = [path.tolist() for path in res_out]
     outside = shapely.geometry.MultiLineString([[(pt.x, pt.y) for pt in geom.PtsFromInts(path + path[0:1])] for path in res_out])
 
     res = []
