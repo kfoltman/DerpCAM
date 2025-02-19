@@ -374,6 +374,7 @@ class PropertySheetWidget(QTableWidget):
     def __init__(self, properties, document):
         QTableWidget.__init__(self, 0, 1)
         self.document = document
+        self.settingProperty = False
         self.updating = False
         self.objects = None
         self.setHorizontalHeaderLabels(['Value'])
@@ -389,7 +390,10 @@ class PropertySheetWidget(QTableWidget):
         self.cellChanged.connect(self.onCellChanged)
     def setProperties(self, properties):
         self.properties = properties
-        self.delegate = PropertySheetItemDelegate(properties, self)
+        if not self.settingProperty:
+            self.updatePropertyRows()
+    def updatePropertyRows(self):
+        self.delegate = PropertySheetItemDelegate(self.properties, self)
         self.setRowCount(0)
         self.setItemDelegate(self.delegate)
         if self.properties:
@@ -402,6 +406,7 @@ class PropertySheetWidget(QTableWidget):
         prop = self.properties[row]
         changes = []
         try:
+            self.settingProperty = True
             value, unit = prop.validateString(newValueText)
             for o in self.objects:
                 if value != prop.getData(o):
@@ -412,6 +417,8 @@ class PropertySheetWidget(QTableWidget):
             box.exec_()
             self.setFocus()
         finally:
+            self.settingProperty = False
+            self.updatePropertyRows()
             #self.refreshRow(row)
             self.refreshAll()
     def onCellChanged(self, row, column):
