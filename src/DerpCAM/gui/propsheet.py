@@ -370,12 +370,16 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
             return QStyledItemDelegate.setModelData(self, editor, model, index)
         #self.props_widget.itemFromIndex(index).prop.setData(value)
 
+class DeferredUpdateEvent(QEvent):
+    EVENT_TYPE = QEvent.registerEventType()
+    def __init__(self, func):
+        QEvent.__init__(self, self.EVENT_TYPE)
+        self.func = func
+
 class PropertySheetWidget(QTableWidget):
     def __init__(self, properties, document):
         QTableWidget.__init__(self, 0, 1)
         self.document = document
-        self.settingProperty = False
-        self.deferredUpdate = False
         self.updating = False
         self.objects = None
         self.setHorizontalHeaderLabels(['Value'])
@@ -389,13 +393,14 @@ class PropertySheetWidget(QTableWidget):
         self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
         self.setCurrentCell(0, 0)
         self.cellChanged.connect(self.onCellChanged)
+    def event(self, ev):
+        if isinstance(ev, DeferredUpdateEvent):
+            ev.func()
+            return True
+        else:
+            return QTableWidget.event(self, ev)
     def setProperties(self, properties):
         self.properties = properties
-        if not self.settingProperty:
-            self.updatePropertyRows()
-        else:
-            self.deferredUpdate = True
-    def updatePropertyRows(self):
         self.delegate = PropertySheetItemDelegate(self.properties, self)
         self.setRowCount(0)
         self.setItemDelegate(self.delegate)
@@ -409,7 +414,6 @@ class PropertySheetWidget(QTableWidget):
         prop = self.properties[row]
         changes = []
         try:
-            self.settingProperty = True
             value, unit = prop.validateString(newValueText)
             for o in self.objects:
                 if value != prop.getData(o):
@@ -420,18 +424,13 @@ class PropertySheetWidget(QTableWidget):
             box.exec_()
             self.setFocus()
         finally:
-            self.settingProperty = False
-            if self.deferredUpdate:
-                self.deferredUpdate = False
-                if not self.properties:
-                    self.updatePropertyRows()
             #self.refreshRow(row)
             self.refreshAll()
     def onCellChanged(self, row, column):
         if self.objects and not self.updating:
             item = self.item(row, column)
             newValueText = item.data(Qt.EditRole)
-            self.setCellValue(row, newValueText)
+            QCoreApplication.postEvent(self, DeferredUpdateEvent(lambda: self.setCellValue(row, newValueText)))
     def refreshRow(self, row):
         if self.objects is None:
             self.setItem(row, 0, None)
