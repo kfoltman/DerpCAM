@@ -6,7 +6,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from DerpCAM.common import guiutils
+from DerpCAM.common import geom, guiutils
 from DerpCAM.gui import propsheet, canvas, model, inventory, cutter_mgr, editors
 from DerpCAM.gui.wall_profile_mgr import WallProfileEditorDlg, WallProfileManagerDlg
 
@@ -451,10 +451,11 @@ class SpecialExportDlg(QDialog):
         self.buttonBox.rejected.connect(self.reject)
         self.layout.addWidget(self.buttonBox)
     def saveAsFunction(self):
-        dlg = QFileDialog(self, "Export special G-Code as...", filter="G-Code (*.ngc);;All files (*)")
+        ext = geom.gcodeSuffix()
+        dlg = QFileDialog(self, "Export special G-Code as...", filter=f"G-Code ({ext});;All files (*)")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
-        dlg.setDefaultSuffix(".ngc")
+        dlg.setDefaultSuffix(ext)
         dlg.selectFile(self.filePathEdit.text())
         if dlg.exec_():
             self.filePathEdit.setText(dlg.selectedFiles()[0])

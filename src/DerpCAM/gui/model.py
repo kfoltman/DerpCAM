@@ -1465,10 +1465,11 @@ class DocumentModel(QObject):
         if was_suspended is not None:
             was_suspended.startUpdateCAM()
     def defaultGcodeFileName(self, suffix):
+        ext = geom.gcodeSuffix()
         if self.drawing_filename:
-            return os.path.splitext(self.drawing_filename)[0] + suffix + ".ngc"
+            return os.path.splitext(self.drawing_filename)[0] + suffix + ext
         elif self.filename:
-            return os.path.splitext(self.filename)[0] + suffix + ".ngc"
+            return os.path.splitext(self.filename)[0] + suffix + ext
         else:
             return ''
     def defaultGcodeFilePath(self, suffix):

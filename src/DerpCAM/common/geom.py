@@ -23,6 +23,9 @@ class GeometrySettings:
     spindle_max_rpm = None
     paranoid_mode = False
 
+def gcodeSuffix():
+    return ".ngc" if GeometrySettings.gcode_variant == GcodeVariant.LINUXCNC else ".gcode"
+
 def epsilon():
     return 1.0 / GeometrySettings.RESOLUTION
 

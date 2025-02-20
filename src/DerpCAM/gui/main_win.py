@@ -597,11 +597,12 @@ class CAMMainWindow(QMainWindow):
             self.document.startUpdateCAM()
             if not self.document.waitForUpdateCAM():
                 return
-        dlg = QFileDialog(self, "Export the G-Code", filter="G-Code (*.ngc);;All files (*)")
+        ext = geom.gcodeSuffix()
+        dlg = QFileDialog(self, "Export the G-Code", filter=f"G-Code ({ext});;All files (*)")
         path = self.document.defaultGcodeFilePath("")
         dlg.setAcceptMode(QFileDialog.AcceptSave)
         dlg.setFileMode(QFileDialog.AnyFile)
-        dlg.setDefaultSuffix(".ngc")
+        dlg.setDefaultSuffix(ext)
         dlg.selectFile(path)
         if dlg.exec_():
             fn = dlg.selectedFiles()[0]
