@@ -169,7 +169,7 @@ class MainWidget(QOpenGLWidget):
         bounds = stock.bounds
         self.translatex = -(bounds[0] + bounds[2])
         self.translatey = (bounds[1] + bounds[3])
-        self.max_depth = (bounds[2] - bounds[0]) * 2
+        self.translatez = -100
         self.click_data = None
         self.updateProjection()
 
@@ -201,7 +201,7 @@ class MainWidget(QOpenGLWidget):
         projection.scale(1, self.aspect_ratio, 1)
         self.program.setUniformValue('projection', projection)
         projection = QMatrix4x4()
-        projection.translate(self.translatex / 2, self.translatey / 2, -self.max_depth)
+        projection.translate(self.translatex, self.translatey, self.translatez)
         projection.rotate(self.rotatex, 1, 0, 0)
         projection.rotate(self.rotatey, 0, 1, 0)
         self.program.setUniformValue('mapping', projection)
@@ -214,9 +214,9 @@ class MainWidget(QOpenGLWidget):
         else:
             pos = e.posF()
         if delta > 0:
-            self.zoom *= 1.1
+            self.translatez += 10
         else:
-            self.zoom /= 1.1
+            self.translatez -= 10
         self.repaint()
     def mousePressEvent(self, e):
         b = e.button()
@@ -227,8 +227,8 @@ class MainWidget(QOpenGLWidget):
     def mouseMoveEvent(self, e):
         if self.click_data:
             if self.click_data[3] == 0:
-                self.rotatex = self.click_data[0] + (e.localPos().y() - self.click_data[2].y())
-                self.rotatey = self.click_data[1] + (e.localPos().x() - self.click_data[2].x())
+                self.rotatex = self.click_data[0] - (e.localPos().y() - self.click_data[2].y())
+                self.rotatey = self.click_data[1] - (e.localPos().x() - self.click_data[2].x())
             elif self.click_data[3] == 1:
                 self.translatex = self.click_data[0] + (e.localPos().x() - self.click_data[2].x())
                 self.translatey = self.click_data[1] + (e.localPos().y() - self.click_data[2].y())
