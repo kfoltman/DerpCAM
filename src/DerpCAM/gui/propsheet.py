@@ -305,13 +305,15 @@ class StringEditableProperty(EditableProperty):
         return value, None
 
 class MultipleItem(object):
+    def __init__(self, values):
+        self.values = values
     @staticmethod
     def __str__(self):
         return "(multiple)"
 
 class PropertyTableWidgetItem(QTableWidgetItem):
     def __init__(self, table, prop, value, def_value = None, valid_values = None):
-        if value is MultipleItem:
+        if isinstance(value, MultipleItem):
             QTableWidgetItem.__init__(self, "")
         else:
             QTableWidgetItem.__init__(self, prop.toEditString(value))
@@ -331,14 +333,21 @@ class PropertyTableWidgetItem(QTableWidgetItem):
                 return QBrush(QColor("black"))
             if role == Qt.BackgroundRole:
                 return QBrush(QColor("lightgray"))
-        if self.value is MultipleItem:
+        if isinstance(self.value, MultipleItem):
+            if role == Qt.ToolTipRole:
+                if isinstance(self.def_value, MultipleItem) and len(self.def_value.values) == len(self.value.values):
+                    return ";".join(self.prop.toDisplayString(self.value.values[i] if self.value.values[i] is not None else self.def_value.values[i]) for i in range(len(self.value.values)))
+                else:
+                    return ";".join(self.prop.toDisplayString(value if value is not None else self.def_value) for value in self.value.values)
             if role == Qt.DisplayRole:
                 return "(multiple)"
             if role == Qt.ForegroundRole:
                 return QBrush(QColor("gray"))
         elif self.value is None:
+            if role == Qt.ToolTipRole and isinstance(self.def_value, MultipleItem):
+                return ";".join(self.prop.toDisplayString(value) for value in self.def_value.values)
             if role == Qt.DisplayRole:
-                if self.def_value is MultipleItem:
+                if isinstance(self.def_value, MultipleItem):
                     return "(multiple)"
                 return self.prop.toDisplayString(self.def_value)
             if role == Qt.ForegroundRole:
@@ -460,13 +469,13 @@ class PropertySheetWidget(QTableWidget):
         if any([v2 is None for v2 in values]):
             defValues = [prop.getDefaultPropertyValue(o) for o in self.objects if prop.getData(o) is None]
             if any([v2 != defValues[0] for v2 in defValues[1:]]):
-                defValue = MultipleItem
+                defValue = MultipleItem(defValues)
             else:
                 defValue = defValues[0]
         i = self.item(row, 0)
         if len(values):
             if any([v2 != values[0] for v2 in values[1:]]):
-                v = MultipleItem
+                v = MultipleItem(values)
             else:
                 v = values[0]
             try:
