@@ -223,6 +223,10 @@ class FloatEditableProperty(EditableProperty):
             return ""
         return EditableProperty.toEditString(self, value)
     def toTextColor(self, value):
+        if self.min is not None and value < self.min:
+            return "red"
+        if self.max is not None and value > self.max:
+            return "red"
         return "gray" if value is None else None
     def toDisplayString(self, value):
         if value is None:

@@ -168,6 +168,7 @@ class CAMMainWindow(QMainWindow):
         self.viewer.coordsUpdated.connect(self.canvasMouseMove)
         self.viewer.coordsInvalid.connect(self.canvasMouseLeave)
         self.viewer.selectionChanged.connect(self.viewerSelectionChanged)
+        self.setModelLimitsFromPreferences()
         self.updateOperations()
         self.updateWindowTitle()
         self.updateFileMenu()
@@ -398,6 +399,10 @@ class CAMMainWindow(QMainWindow):
             self.viewer.repaint()
             #self.viewer.majorUpdate()
             self.configSettings.save()
+            self.setModelLimitsFromPreferences()
+    def setModelLimitsFromPreferences(self):
+        model.OperationTreeItem.prop_rpm.min = geom.GeometrySettings.spindle_min_rpm
+        model.OperationTreeItem.prop_rpm.max = geom.GeometrySettings.spindle_max_rpm
     def drawArc(self):
         self.switchToEditor(editors.CanvasNewArcEditor(self.document))
     def drawCircle(self):
