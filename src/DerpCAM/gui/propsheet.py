@@ -171,7 +171,11 @@ class EnumEditableProperty(EditableProperty):
     def getEditorData(self, editor):
         if self.allow_none and editor.currentRow() == 0:
             return None
-        return editor.currentItem().data(Qt.DisplayRole)
+        currentItem = editor.currentItem()
+        if currentItem is None:
+            # Current value has become invalid for some reason
+            raise ValueError("Nothing is selected")
+        return currentItem.data(Qt.DisplayRole)
     def setEditorData(self, editor, value):
         if value is None and self.allow_none:
             editor.setCurrentRow(0)
@@ -364,8 +368,11 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         row = index.row()
         if hasattr(self.properties[row], 'getEditorData'):
-            value = self.properties[row].getEditorData(editor)
-            model.setData(index, value)
+            try:
+                value = self.properties[row].getEditorData(editor)
+                model.setData(index, value)
+            except ValueError:
+                pass
         else:
             return QStyledItemDelegate.setModelData(self, editor, model, index)
         #self.props_widget.itemFromIndex(index).prop.setData(value)
@@ -377,6 +384,7 @@ class DeferredUpdateEvent(QEvent):
         self.func = func
 
 class PropertySheetWidget(QTableWidget):
+    reselectRequest = pyqtSignal([list])
     def __init__(self, properties, document):
         QTableWidget.__init__(self, 0, 1)
         self.document = document
@@ -426,11 +434,15 @@ class PropertySheetWidget(QTableWidget):
         finally:
             #self.refreshRow(row)
             self.refreshAll()
+    def setCellValueAndReselect(self, row, newValueText, objects):
+        self.setCellValue(row, newValueText)
+        self.reselectRequest.emit(objects)
     def onCellChanged(self, row, column):
         if self.objects and not self.updating:
             item = self.item(row, column)
             newValueText = item.data(Qt.EditRole)
-            QCoreApplication.postEvent(self, DeferredUpdateEvent(lambda: self.setCellValue(row, newValueText)))
+            objects = self.objects
+            QCoreApplication.postEvent(self, DeferredUpdateEvent(lambda: self.setCellValueAndReselect(row, newValueText, objects)))
     def refreshRow(self, row):
         if self.objects is None:
             self.setItem(row, 0, None)

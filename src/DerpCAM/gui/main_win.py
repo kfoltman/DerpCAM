@@ -96,6 +96,7 @@ class CAMMainWindow(QMainWindow):
         self.document.projectLoaded.connect(self.onDrawingImportedOrProjectLoaded)
 
         self.propsDW = dock.CAMPropertiesDockWidget(self.document)
+        self.propsDW.propsheet.reselectRequest.connect(self.onPropsReselectRequest)
         self.addDockWidget(Qt.RightDockWidgetArea, self.propsDW)
 
         self.editorDW = dock.CAMEditorDockWidget(self.document)
@@ -212,6 +213,9 @@ class CAMMainWindow(QMainWindow):
             subset = list(self.newCAMNeeded)
             self.resetCAMNeeded()
             self.document.startUpdateCAM(subset)
+    def onPropsReselectRequest(self, objects):
+        indexes = [i.index() for i in objects]
+        self.projectDW.operationReselect(indexes)
     def resetCAMNeeded(self):
         self.newCAMNeeded = set()
     def scheduleCAMUpdate(self, item):

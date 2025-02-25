@@ -201,7 +201,7 @@ class PreferencesDialog(QDialog):
         self.minRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_min_rpm, "Minimum spindle speed (that still provides usable torque) in revolutions per minute.")
         self.formCAM.addRow("&Minimum RPM:", self.minRPMSpin)
         self.maxRPMSpin = floatSpin(1, 60000, 1, self.config.spindle_max_rpm, "Maximum spindle speed in revolutions per minute.")
-        self.formCAM.addRow("&Maximum RPM:", self.maxRPMSpin)
+        self.formCAM.addRow("Ma&ximum RPM:", self.maxRPMSpin)
         self.runAfterExportEdit = QLineEdit()
         self.runAfterExportEdit.setText(self.config.run_after_export)
         self.formCAM.addRow("&Run after G-Code export:", self.runAfterExportEdit)

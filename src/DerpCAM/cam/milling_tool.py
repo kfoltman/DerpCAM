@@ -165,7 +165,10 @@ carbide_AlTiN = CutterMaterial("AlTiN coated carbide", "C-AlTiN", 1.3)
 min_rpm = 2800
 max_rpm = 24000
 
-def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None, is_drill=False):
+def fmtrpm(rpm):
+    return f"{rpm:0.1f}" if rpm != int(rpm) else str(int(rpm))
+
+def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None, is_drill=False, rpm_override=None):
     eff_diameter = diameter
     is_vbit = False
     if inv_tool is not None:
@@ -178,11 +181,15 @@ def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, s
         msfm = material.sfm_hss if is_hss else material.sfm_carbide
         sfm_scale = material.sfm_hss_scale if is_hss else material.sfm_carbide_scale
     sfm = msfm * coating.sfm_multiplier * sfm_factor
-    rpm = 12 * sfm / (pi * eff_diameter / 25.4)
+    rpm = rpm_override if rpm_override else 12 * sfm / (pi * eff_diameter / 25.4)
+    rpmstr = fmtrpm(rpm)
     if machine_params:
         if machine_params.min_rpm is not None and rpm < machine_params.min_rpm:
-            raise ValueError(f"Calculated spindle speed of {rpm:0.1f} is below the spindle minimum of {machine_params.min_rpm:0.1f}")
+            source = "Override" if rpm_override else "Calculated"
+            raise ValueError(f"{source} spindle speed of {rpmstr} RPM is below the spindle minimum of {fmtrpm(machine_params.min_rpm)} RPM")
         if machine_params.max_rpm is not None and rpm > machine_params.max_rpm:
+            if rpm_override:
+                raise ValueError(f"Override spindle speed of {rpmstr} RPM is above the spindle maximum of {fmtrpm(machine_params.max_rpm)} RPM")
             if not is_drill:
                 # Recalculate scale to keep the previous min_rpm if possible
                 sfm_scale = min(1, (rpm * sfm_scale) / machine_params.max_rpm)

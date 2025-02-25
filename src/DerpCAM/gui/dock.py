@@ -89,12 +89,18 @@ class CAMObjectTreeDockWidget(QDockWidget):
         if item:
             self.operationTouched.emit(item)
     def updateOperationIcons(self):
-        if any(self.document.checkCAMErrors()):
+        errors = self.document.checkCAMErrors()
+        warnings = self.document.checkCAMWarnings()
+        if any(errors):
             self.tabs.setTabIcon(1, self.tabs.style().standardIcon(QStyle.SP_MessageBoxCritical))
-        elif any(self.document.checkCAMWarnings()):
+        elif any(warnings):
             self.tabs.setTabIcon(1, self.tabs.style().standardIcon(QStyle.SP_MessageBoxWarning))
         else:
             self.tabs.setTabIcon(1, QIcon())
+        if errors or warnings:
+            self.tabs.setTabToolTip(1, "\n".join([msg for msg in errors+warnings if msg is not None]))
+        else:
+            self.tabs.setTabToolTip(1, "")
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
             self.returnKeyPressed(self.activeSelection())
@@ -337,6 +343,8 @@ class CAMObjectTreeDockWidget(QDockWidget):
         indexes = self.document.opMoveItems(items, direction)
         if not indexes:
             return
+        self.operationReselect(indexes)
+    def operationReselect(self, indexes):
         newSelection = QItemSelection()
         for index in indexes:
             newSelection.select(index, index)

@@ -73,9 +73,7 @@ class PresetDerivedAttributes(object):
                         f = 1
                         if operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR):
                             f = 0.6
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params)
-                        if self.rpm is None:
-                            self.rpm = st.rpm
+                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), f, flute_length=t.length, machine_params=operation.document.gcode_machine_params, rpm_override=self.rpm)
                         if self.hfeed is None:
                             self.hfeed = st.hfeed * f
                         if self.vfeed is None:
@@ -86,18 +84,14 @@ class PresetDerivedAttributes(object):
                             self.stepover = st.stepover * 100
                 elif isinstance(operation.cutter, inventory.DrillBitCutter):
                     if not all([self.rpm, self.vfeed, self.doc]):
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
-                        if self.rpm is None:
-                            self.rpm = st.rpm
+                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
                         if self.vfeed is None:
                             self.vfeed = st.vfeed
                         if self.doc is None:
                             self.doc = st.maxdoc
                 elif isinstance(operation.cutter, inventory.ThreadMillCutter):
                     if not all([self.rpm, self.vfeed, self.stepover]):
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True)
-                        if self.rpm is None:
-                            self.rpm = st.rpm
+                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
                         if self.vfeed is None:
                             self.vfeed = st.vfeed
                         if self.stepover is None:
