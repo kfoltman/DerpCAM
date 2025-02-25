@@ -348,7 +348,7 @@ class PropertyTableWidgetItem(QTableWidgetItem):
                 return ";".join(self.prop.toDisplayString(value) for value in self.def_value.values)
             if role == Qt.DisplayRole:
                 if isinstance(self.def_value, MultipleItem):
-                    return "(multiple)"
+                    return "(multiple defaults)"
                 return self.prop.toDisplayString(self.def_value)
             if role == Qt.ForegroundRole:
                 return QBrush(QColor("gray"))
