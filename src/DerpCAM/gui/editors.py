@@ -1139,11 +1139,19 @@ create a circle or use the '=' key to enter centre coordinates.
             return True
 
 class CanvasNewArcEditor(CanvasNewItemEditor):
+    lastSlotWidth = 0
     def setTitle(self):
-        self.parent.setWindowTitle("Create an arc object")
+        self.parent.setWindowTitle("Create an arc or an arc slot object")
         self.point_prompt = "Centre point:"
     def createItem(self, document):
         return None
+    def createExtraControls(self):
+        self.diamEdit = QLineEdit()
+        self.diamEdit.setToolTip("Creates a slot of a given width if non-zero, or a single arc otherwise.")
+        self.diamEdit.setText(str(CanvasNewArcEditor.lastSlotWidth))
+        self.diamEdit.setValidator(QDoubleValidator(0, 1000, 3))
+        self.diamEdit.textChanged.connect(lambda: self.canvas.repaint())
+        self.layout.addRow("&Slot width:", self.diamEdit)
     def initState(self, pos):
         self.first_point = pos
         self.second_point = None
@@ -1170,9 +1178,23 @@ coordinates instead.
     def thirdClick(self, newPos):
         self.third_point = newPos
         r, sangle, eangle, dangle = self.arcData()
-        arc = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r, sangle, dangle)
-        arc_points = [arc.seg_start(), arc]
-        self.item = model.DrawingPolylineTreeItem(self.document, arc_points, False)
+        width = self.slotWidth()
+        closed = False
+        if width:
+            arc = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r, sangle, dangle)
+            start = arc.seg_start()
+            end = arc.seg_end()
+            alen = math.pi if dangle > 0 else -math.pi
+            arc1 = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r - width / 2, sangle, dangle)
+            arc2 = geom.PathArc.xyra(end.x, end.y, width / 2, eangle + math.pi, -alen)
+            arc3 = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r + width / 2, eangle, -dangle)
+            arc4 = geom.PathArc.xyra(start.x, start.y, width / 2, sangle, -alen)
+            arc_points = [arc1.seg_start(), arc1, arc2.seg_start(), arc2, arc3.seg_start(), arc3, arc4.seg_start(), arc4]
+            closed = True
+        else:
+            arc = geom.PathArc.xyra(self.first_point.x, self.first_point.y, r, sangle, dangle)
+            arc_points = [arc.seg_start(), arc]
+        self.item = model.DrawingPolylineTreeItem(self.document, arc_points, closed)
         self.document.addShapesFromEditor([self.item])
         self.apply()
     def pointSelected(self, x, y, from_equals):
@@ -1189,7 +1211,7 @@ coordinates instead.
         self.thirdClick(geom.PathPoint(x, y))
     def drawCursorPoint(self, qp):
         qp.setPen(QColor(0, 0, 0, 128))
-        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+        self.paintPoint(qp, self.third_point if self.third_point is not None else (self.second_point if self.second_point is not None else self.first_point), as_arc=False)
     def arcData(self):
         r = self.first_point.dist(self.second_point)
         sangle = self.first_point.angle_to(self.second_point)
@@ -1203,17 +1225,47 @@ coordinates instead.
         if dangle > 0 and self.arc_direction == -1:
             dangle -= 2 * math.pi
         return r, sangle, eangle, dangle
+    def slotWidth(self):
+        try:
+            width = float(self.diamEdit.text())
+            CanvasNewArcEditor.lastSlotWidth = width
+            if self.second_point is not None:
+                maxr = self.first_point.dist(self.second_point)
+                if width >= 2 * maxr + 1 / geom.GeometrySettings.RESOLUTION:
+                    return 0.0
+            return width
+        except ValueError:
+            return 0.0
     def drawPreview(self, qp, item, ox, oy):
         if self.second_point is None:
             return
         r, sangle, eangle, dangle = self.arcData()
         centre = QPointF(self.first_point.x + ox, self.first_point.y + oy)
         centre_p = self.canvas.project(centre)
+        arc_circle = geom.CandidateCircle(centre.x(), centre.y(), r)
         r *= self.canvas.scalingFactor()
+        width = self.slotWidth() * self.canvas.scalingFactor()
+        r1 = r - width / 2
+        r2 = r + width / 2
         if self.third_point is None:
-            qp.drawEllipse(QRectF(centre_p.x() - r, centre_p.y() - r, 2 * r, 2 * r))
+            qp.drawEllipse(QRectF(centre_p.x() - r1, centre_p.y() - r1, 2 * r1, 2 * r1))
+            if width:
+                qp.drawEllipse(QRectF(centre_p.x() - r2, centre_p.y() - r2, 2 * r2, 2 * r2))
         else:
-            qp.drawArc(QRectF(centre_p.x() - r, centre_p.y() - r, 2 * r, 2 * r), int(sangle * 180 * 16 / math.pi), int(dangle * 180 * 16 / math.pi))
+            qp.drawArc(QRectF(centre_p.x() - r1, centre_p.y() - r1, 2 * r1, 2 * r1), int(sangle * 180 * 16 / math.pi), int(dangle * 180 * 16 / math.pi))
+            if width:
+                qp.drawArc(QRectF(centre_p.x() - r, centre_p.y() - r, 2 * r, 2 * r), int(sangle * 180 * 16 / math.pi), int(dangle * 180 * 16 / math.pi))
+                qp.drawArc(QRectF(centre_p.x() - r2, centre_p.y() - r2, 2 * r2, 2 * r2), int(sangle * 180 * 16 / math.pi), int(dangle * 180 * 16 / math.pi))
+                alen = 180 * 16
+                if dangle < 0:
+                    alen = -alen
+                dr = width / 2
+                start = arc_circle.at_angle(sangle)
+                start_p = self.canvas.project(QPointF(start.x, start.y))
+                qp.drawArc(QRectF(start_p.x() - dr, start_p.y() - dr, 2 * dr, 2 * dr), int(sangle * 180 * 16 / math.pi) + 180 * 16, alen)
+                end = arc_circle.at_angle(sangle + dangle)
+                end_p = self.canvas.project(QPointF(end.x, end.y))
+                qp.drawArc(QRectF(end_p.x() - dr, end_p.y() - dr, 2 * dr, 2 * dr), int(eangle * 180 * 16 / math.pi), alen)
     def updateDirection(self):
         r, sangle, eangle, dangle = self.arcData()
         delta = eangle - sangle

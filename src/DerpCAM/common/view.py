@@ -365,7 +365,7 @@ class PathViewer(QWidget):
 
     def project(self, qpf):
         scale = self.scalingFactor()
-        qpf -= self.zero
+        qpf = qpf - self.zero
         return QPointF(qpf.x() * scale + self.cx, -qpf.y() * scale + self.cy)
 
     def unproject(self, qpf):
