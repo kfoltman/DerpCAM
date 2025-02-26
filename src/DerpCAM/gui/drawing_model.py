@@ -683,11 +683,27 @@ class DrawingTreeItem(CAMListTreeItem):
         for item in self.items():
             if isinstance(item, DrawingCircleTreeItem):
                 points.add(item.centre)
+            if isinstance(item, DrawingPolylineTreeItem):
+                for p in item.points:
+                    if isinstance(p, geom.PathArc):
+                        points.add(p.c.centre())
+        return points
+    def snapMidPoints(self):
+        points = set()
+        for item in self.items():
+            if isinstance(item, DrawingPolylineTreeItem):
+                for start, end in geom.PathSegmentIterator(geom.Path(item.points, item.closed)):
+                    if isinstance(end, geom.PathArc):
+                        points.add(end.at_fraction(0.5))
+                    else:
+                        points.add(geom.weighted(start, end, 0.5))
         return points
     def snapEndPoints(self):
         points = set()
         for item in self.items():
             if isinstance(item, DrawingPolylineTreeItem):
+                if item.points:
+                    points.add(item.points[0].seg_start())
                 for p in item.points:
                     points.add(p.seg_end())
         return points

@@ -136,21 +136,25 @@ class TempRenderer:
         qp.setPen(oldPen)
 
 class CanvasEditorWithSnap(CanvasEditor):
-    snapMode = 7
+    snapMode = 15
     def createSnapMode(self):
-        self.snapGroup = QGroupBox("Snap mode")
+        self.snapGroup = QGroupBox()
+        self.snapGroup.setFlat(False)
         self.snapLayout = QHBoxLayout()
         self.snapButtons = []
+        self.snapLayout.addWidget(QLabel("Snap mode:"))
         def mkButton(idx, mode):
-            btn = QPushButton(mode)
+            btn = QToolButton()
+            btn.setText(mode)
             btn.setCheckable(True)
             btn.setChecked((self.snapMode & (1 << idx)) != 0)
             btn.clicked.connect(lambda: self.onSnapButtonClicked(idx))
             return btn
-        for idx, mode in enumerate(["Grid", "Endpoints", "Centre"]):
+        for idx, mode in enumerate(["Grid", "Endpoints", "Centre", "Midpoint"]):
             btn = mkButton(idx, mode)
             self.snapButtons.append(btn)
             self.snapLayout.addWidget(btn)
+        self.snapLayout.addStretch(1)
         self.snapGroup.setLayout(self.snapLayout)
         self.layout.addRow(self.snapGroup)
     def onSnapButtonClicked(self, which):
@@ -176,15 +180,20 @@ class CanvasEditorWithSnap(CanvasEditor):
     def excludeSnapPoints(self):
         return None
     def snapCoords(self, pt):
-        threshold = 10 / self.canvas.scalingFactor()
+        threshold = 20 / self.canvas.scalingFactor()
+        if self.snapMode & 1:
+            # Increase threshold significantly because of the 'snap noise' from the grid
+            threshold *= 1.5
         drawing = self.document.drawing
         pt2 = geom.PathPoint(pt.x + drawing.x_offset, pt.y + drawing.y_offset)
-        if self.snapMode & 6:
+        if self.snapMode & 14:
             points = set()
             if self.snapMode & 2:
                 points |= drawing.snapEndPoints()
             if self.snapMode & 4:
                 points |= drawing.snapCentrePoints()
+            if self.snapMode & 8:
+                points |= drawing.snapMidPoints()
             excluded = self.excludeSnapPoints()
             if excluded:
                 points -= excluded
