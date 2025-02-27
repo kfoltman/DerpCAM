@@ -226,12 +226,13 @@ class MainWidget(QOpenGLWidget):
             self.click_data = (self.translatex, self.translatey, e.localPos(), 1)
     def mouseMoveEvent(self, e):
         if self.click_data:
+            speed = -self.translatez / self.size().width()
             if self.click_data[3] == 0:
-                self.rotatex = self.click_data[0] - (e.localPos().y() - self.click_data[2].y())
-                self.rotatey = self.click_data[1] - (e.localPos().x() - self.click_data[2].x())
+                self.rotatex = self.click_data[0] - (e.localPos().y() - self.click_data[2].y()) * speed
+                self.rotatey = self.click_data[1] - (e.localPos().x() - self.click_data[2].x()) * speed
             elif self.click_data[3] == 1:
-                self.translatex = self.click_data[0] + (e.localPos().x() - self.click_data[2].x())
-                self.translatey = self.click_data[1] + (e.localPos().y() - self.click_data[2].y())
+                self.translatex = self.click_data[0] + (e.localPos().x() - self.click_data[2].x()) * speed
+                self.translatey = self.click_data[1] + (e.localPos().y() - self.click_data[2].y()) * speed
             self.repaint()
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton and self.click_data and self.click_data[3] == 0:
