@@ -73,34 +73,28 @@ just fine in many cases.
 
 ## Requirements and installation
 
-A Python 3 interpreter (minimum version 3.9) is necessary to run DerpCAM. The following third-party Python 3 packages are also required:
+The following dependencies are needed:
 
-* PyQt5
-* EZDXF
-* PyClipper
-* PyVoronoi
-* Shapely
+* Python 3.9 or newer
+* Qt5 libraries
+* CMake (may be needed to build one of the Python libraries used)
+* Eigen3 library (libeigen3-dev or similar, may be needed to build one of the Python libraries used)
 
 The current method of installing DerpCAM is to download it from github:
 
         git clone https://github.com/kfoltman/DerpCAM/
         cd DerpCAM
 
-Then, the required Python packages can be installed using the following command:
+Then, create the virtual Python environment by running the preparation script:
 
-        pip3 install -r requirements.txt
+        ./prepare.sh
 
-Additionally, it is highly recommended to obtain the HSM library by running the
-following command from the DerpCAM directory:
-
-        ./get-hsm.sh
+This will download, build and install the required Python packages in a local
+directory. Check for any package download/installation errors at this stage.
 
 To launch the application, use the following command from the DerpCAM directory:
 
-        ./DerpCAM
-
-No installation is needed, the application can run from the directory it has
-been downloaded to.
+        ./run.sh
 
 ## License
 
