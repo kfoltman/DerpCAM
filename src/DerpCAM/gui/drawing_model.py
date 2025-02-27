@@ -544,6 +544,13 @@ class DrawingTreeItem(CAMListTreeItem):
                 if itemStr not in existing:
                     itemsToAdd.append(item)
         self.document.opAddDrawingItems(itemsToAdd)
+        if geom.GeometrySettings.auto_join_polylines:
+            itemsToJoin = set()
+            for i in itemsToAdd:
+                if isinstance(i, DrawingPolylineTreeItem) and not i.closed:
+                    itemsToJoin.add(i)
+            if itemsToJoin:
+                self.document.opJoin(itemsToJoin)
         self.document.drawingImported.emit()
     def importDrawingEntity(self, entity):
         dxftype = entity.dxftype()

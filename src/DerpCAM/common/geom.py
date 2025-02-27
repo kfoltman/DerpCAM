@@ -22,6 +22,7 @@ class GeometrySettings:
     spindle_min_rpm = None
     spindle_max_rpm = None
     paranoid_mode = False
+    auto_join_polylines = False
 
 def gcodeSuffix():
     return ".ngc" if GeometrySettings.gcode_variant == GcodeVariant.LINUXCNC else ".gcode"
@@ -188,7 +189,7 @@ class PathArc(PathNode):
         return abs(abs(self.sspan) - 2 * pi) < 0.001
     def __eq__(self, other):
         angle_eps = 1e-4
-        return self.p1 == other.p1 and self.p2 == other.p2 and self.c == other.c and self.steps == other.steps and abs(self.sstart - other.sstart) < angle_eps and abs(self.sspan - other.sspan) < angle_eps
+        return isinstance(other, PathArc) and self.p1 == other.p1 and self.p2 == other.p2 and self.c == other.c and self.steps == other.steps and abs(self.sstart - other.sstart) < angle_eps and abs(self.sspan - other.sspan) < angle_eps
     def seg_start(self):
         return self.p1
     def seg_end(self):

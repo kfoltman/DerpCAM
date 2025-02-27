@@ -52,6 +52,7 @@ class ConfigSettings(object):
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
         BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
         IntConfigSetting('gcode_variant', 'geometry/gcode_variant', GeometrySettings.gcode_variant),
+        BoolConfigSetting('auto_join_polylines', 'import/auto_join_polylines', GeometrySettings.auto_join_polylines),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
         BoolConfigSetting('spindle_fine_control', 'gcode/spindle_fine_control', GeometrySettings.spindle_fine_control),
         FloatConfigSetting('spindle_warmup', 'gcode/spindle_warmup', 0, 1),
@@ -129,6 +130,7 @@ class ConfigSettings(object):
         GeometrySettings.spindle_min_rpm = self.spindle_min_rpm
         GeometrySettings.spindle_max_rpm = self.spindle_max_rpm
         GeometrySettings.run_after_export = self.run_after_export
+        GeometrySettings.auto_join_polylines = self.auto_join_polylines
         GuiSettings.inch_mode = self.display_inches
     def runAfterExport(self, filename):
         if self.run_after_export:
@@ -231,6 +233,9 @@ class PreferencesDialog(QDialog):
         self.formDefaults.addRow("&Clearance Z (mm):", self.clearanceZSpin)
         self.safeEntryZSpin = floatSpin(-100, 100, 2, self.config.safe_entry_z, "Z coordinate above which vertical rapid moves are safe, slightly above the top of the material")
         self.formDefaults.addRow("&Safe entry Z (mm):", self.safeEntryZSpin)
+        self.autoImportJoinCheck = QCheckBox("Automatically join DXF lines/arcs into polylines")
+        self.autoImportJoinCheck.setChecked(self.config.auto_join_polylines)
+        self.formDefaults.addRow(self.autoImportJoinCheck)
 
         self.widgetUnits = QWidget()
         self.formUnits = QFormLayout(self.widgetUnits)
@@ -291,6 +296,7 @@ class PreferencesDialog(QDialog):
         self.config.gcode_directory = self.gcodeDirEdit.value()
         self.config.clearance_z = self.clearanceZSpin.value()
         self.config.safe_entry_z = self.safeEntryZSpin.value()
+        self.config.auto_join_polylines = self.autoImportJoinCheck.isChecked()
         self.config.dxf_inches = self.dxfInchesCheck.isChecked()
         self.config.gcode_inches = self.gcodeInchesCheck.isChecked()
         self.config.display_inches = self.displayInchesCheck.isChecked()
