@@ -122,6 +122,9 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def rotated(self, ox, oy, rotation):
         cti = DrawingCircleTreeItem(self.document, self.centre.rotated(ox, oy, rotation), self.r, self.untransformed, shape_id=self.shape_id)
         return cti
+    def mirrored(self, p1, p2):
+        cti = DrawingCircleTreeItem(self.document, self.centre.mirrored(p1, p2), self.r, self.untransformed, shape_id=self.shape_id)
+        return cti
     def scaled(self, cx, cy, scale):
         return DrawingCircleTreeItem(self.document, self.centre.scaled(cx, cy, scale), self.r * scale, self.untransformed)
     def translate(self, dx, dy):
@@ -135,6 +138,12 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         self.centre = self.centre.rotated(ox, oy, rotation)
         return old
     def restore_rotate(self, old):
+        self.centre = old
+    def mirror(self, p1, p2):
+        old = self.centre
+        self.centre = self.centre.mirrored(p1, p2)
+        return old
+    def restore_mirror(self, old):
         self.centre = old
     def store(self):
         res = DrawingItemTreeItem.store(self)
@@ -188,10 +197,20 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
     def restore_rotate(self, points):
         self.points = points
         self.calcBounds()
+    def mirror(self, p1, p2):
+        old = self.points
+        self.points = [p.mirrored(p1, p2) for p in self.points]
+        self.calcBounds()
+        return old
+    def restore_mirror(self, points):
+        self.points = points
+        self.calcBounds()
     def translated(self, dx, dy):
         return DrawingPolylineTreeItem(self.document, [p.translated(dx, dy) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def rotated(self, ox, oy, rotation):
         return DrawingPolylineTreeItem(self.document, [p.rotated(ox, oy, rotation) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
+    def mirrored(self, p1, p2):
+        return DrawingPolylineTreeItem(self.document, [p.mirrored(p1, p2) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def scaled(self, cx, cy, scale):
         return DrawingPolylineTreeItem(self.document, [p.scaled(cx, cy, scale) for p in self.points], self.closed, self.untransformed, shape_id=self.shape_id)
     def renderTo(self, path, editor):

@@ -488,6 +488,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
             if from_equals:
                 self.onEqualsKey()
         else:
+            self.mouse_point = geom.PathPoint(x, y)
             self.apply()
     def getTransform(self, second_arm):
         ox = self.centre_point.x
@@ -512,18 +513,19 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         CanvasEditorPickPoint.paint(self, e, qp)
         if self.centre_point is not None:
             first_arm = self.first_arm if self.first_arm is not None else self.mouse_point
-            pen = qp.pen()
-            qp.setPen(QPen(QColor(255, 0, 0), 0))
-            qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
-            if self.first_arm is not None:
-                second_arm = self.mouse_point
-                qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
-            qp.setPen(pen)
-            if self.first_arm is not None:
-                ox, oy, rotation = self.getTransform(self.mouse_point)
-                for i in range(self.arrayCount.value()):
-                    for item in self.objects:
-                        self.drawPreview(qp, item, ox, oy, rotation * (i + 1))
+            if first_arm is not None:
+                pen = qp.pen()
+                qp.setPen(QPen(QColor(255, 0, 0), 0))
+                qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
+                if self.first_arm is not None and self.mouse_point is not None:
+                    second_arm = self.mouse_point
+                    qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
+                qp.setPen(pen)
+                if self.first_arm is not None and self.mouse_point is not None:
+                    ox, oy, rotation = self.getTransform(self.mouse_point)
+                    for i in range(self.arrayCount.value()):
+                        for item in self.objects:
+                            self.drawPreview(qp, item, ox, oy, rotation * (i + 1))
     def apply(self):
         if self.stage == 2:
             second_arm = self.mouse_point
@@ -542,6 +544,92 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
             for i in range(start, self.count):
                 items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed().reset_id() for item in self.objects]
             self.document.opAddDrawingItems(items)
+            CanvasEditorPickPoint.apply(self)
+
+class CanvasMirrorEditor(CanvasEditorPickPoint):
+    deleteOrig = True
+    count = 1
+    def __init__(self, document, objects):
+        CanvasEditorPickPoint.__init__(self, document)
+        self.objects = objects
+        self.stage = 0
+        self.first_point = None
+        self.second_point = None
+    def setTitle(self):
+        if self.stage == 0:
+            self.point_prompt = "First point:"
+            self.parent.setWindowTitle("Mirror objects - select the first point of the mirror line")
+        elif self.stage == 1:
+            self.point_prompt = "Second point:"
+            self.parent.setWindowTitle("Mirror objects - select the second point of the mirror line")
+    def updateLabel(self):
+        if self.stage == 0:
+            self.descriptionLabel.setText("Click the first point.")
+        else:
+            self.descriptionLabel.setText("Click to determine the second (target) arm of rotation angle.")
+    def updateControls(self):
+        self.updateButtons()
+    def updateButtons(self):
+        self.applyButton.setText("Mirror")
+        self.applyButton.setEnabled(self.stage == 1)
+        self.deleteOriginalButton.setChecked(self.deleteOrig)
+    def createExtraControls(self):
+        self.deleteOriginalButton = QCheckBox("&Delete original")
+        self.optionsLayout = QVBoxLayout()
+        self.optionsLayout.addWidget(self.deleteOriginalButton)
+        self.layout.addRow(self.optionsLayout)
+        self.deleteOriginalButton.clicked.connect(lambda: self.setDeleteOriginal(self.deleteOriginalButton.isChecked()))
+    def setDeleteOriginal(self, value):
+        CanvasMirrorEditor.deleteOrig = value
+        self.updateButtons()
+    def pointSelected(self, x, y, from_equals):
+        if self.stage == 0:
+            self.first_point = geom.PathPoint(x, y)
+            self.stage = 1
+            self.setTitle()
+            self.updateLabel()
+            self.updateControls()
+            if from_equals:
+                self.onEqualsKey()
+        elif self.stage == 1:
+            self.second_point = geom.PathPoint(x, y)
+            self.apply()
+    def drawPreview(self, qp, item, p1, p2):
+        item.createPaths()
+        oldTransform = qp.transform()
+        transform = self.canvas.drawingTransform()
+        qp.setTransform(transform)
+        qp.setPen(QPen(QColor(0, 0, 0, 128), 1.0 / self.canvas.scalingFactor()))
+        tempRenderer = TempRenderer(self.canvas)
+        ox2 = self.document.drawing.x_offset
+        oy2 = self.document.drawing.y_offset
+        item.mirrored(p1, p2).translated(-ox2, -oy2).renderTo(tempRenderer, None)
+        tempRenderer.paint(qp, self.canvas)
+        qp.setTransform(oldTransform)
+    def paint(self, e, qp):
+        CanvasEditorPickPoint.paint(self, e, qp)
+        if self.first_point is not None:
+            second_point = self.second_point if self.second_point is not None else self.mouse_point
+            if second_point is not None:
+                pen = qp.pen()
+                qp.setPen(QPen(QColor(255, 0, 0), 0))
+                qp.drawLine(self.canvas.project(QPointF(self.first_point.x, self.first_point.y)), self.canvas.project(QPointF(second_point.x, second_point.y)))
+                qp.setPen(pen)
+                if self.first_point is not None and second_point != self.first_point:
+                    for item in self.objects:
+                        self.drawPreview(qp, item, self.first_point, second_point)
+    def apply(self):
+        if self.stage == 1:
+            p1 = self.first_point
+            p2 = self.second_point
+            if p1 == p2:
+                return
+            if self.deleteOrig:
+                # Mirror existing
+                self.document.opMirrorDrawingItems(self.objects, self.first_point, self.second_point)
+            else:
+                items = [model.DrawingItemTreeItem.load(self.document, item.store()).mirrored(p1, p2).reset_untransformed().reset_id() for item in self.objects]
+                self.document.opAddDrawingItems(items)
             CanvasEditorPickPoint.apply(self)
 
 class CanvasTabsEditor(CanvasEditor):

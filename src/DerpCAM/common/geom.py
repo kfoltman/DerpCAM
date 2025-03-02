@@ -144,6 +144,13 @@ class PathPoint(PathNode):
         x = ox + (self.x - ox) * cosv - (self.y - oy) * sinv
         y = oy + (self.x - ox) * sinv + (self.y - oy) * cosv
         return PathPoint(x, y)
+    def mirrored(self, p1, p2):
+        angle = atan2(p2.y - p1.y, p2.x - p1.x)
+        cos2v, sin2v = cos(2 * angle), sin(2 * angle)
+        ox, oy = p1.x, p1.y
+        x = p1.x + (self.x - p1.x) * cos2v + (self.y - p1.y) * sin2v
+        y = p1.y + (self.x - p1.x) * sin2v - (self.y - p1.y) * cos2v
+        return PathPoint(x, y)
     def with_speed_hint(self, speed_hint):
         return PathPoint(self.x, self.y, speed_hint)
     def __eq__(self, other):
@@ -218,6 +225,9 @@ class PathArc(PathNode):
         return PathArc(self.p1.translated(dx, dy), self.p2.translated(dx, dy), self.c.translated(dx, dy), self.steps, self.sstart, self.sspan, self.speed_hint)
     def rotated(self, ox, oy, rotation):
         return PathArc(self.p1.rotated(ox, oy, rotation), self.p2.rotated(ox, oy, rotation), self.c.rotated(ox, oy, rotation), self.steps, self.sstart + rotation, self.sspan, self.speed_hint)
+    def mirrored(self, p1, p2):
+        rotation = atan2(p2.y - p1.y, p2.x - p1.x)
+        return PathArc(self.p1.mirrored(p1, p2), self.p2.mirrored(p1, p2), self.c.mirrored(p1, p2), self.steps, self.sstart + 2 * rotation, -self.sspan, self.speed_hint)
     def scaled(self, cx, cy, scale):
         return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan, self.speed_hint)
     def cut(self, alpha, beta):
@@ -655,6 +665,9 @@ class CandidateCircle(object):
         return CandidateCircle(self.cx + dx, self.cy + dy, self.r)
     def rotated(self, ox, oy, rotation):
         newc = PathPoint(self.cx, self.cy).rotated(ox, oy, rotation)
+        return CandidateCircle(newc.x, newc.y, self.r)
+    def mirrored(self, p1, p2):
+        newc = PathPoint(self.cx, self.cy).mirrored(p1, p2)
         return CandidateCircle(newc.x, newc.y, self.r)
     def scaled(self, cx, cy, scale):
         return CandidateCircle(*self.centre().scaled(cx, cy, scale).as_tuple(), self.r * scale)

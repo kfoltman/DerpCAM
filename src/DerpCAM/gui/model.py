@@ -1003,6 +1003,30 @@ class RotateDrawingItemsUndoCommand(QUndoCommand):
         self.document.startUpdateCAMForShapes(shape_ids)
         self.document.shapesUpdated.emit()
 
+class MirrorDrawingItemsUndoCommand(QUndoCommand):
+    def __init__(self, document, items, p1, p2):
+        QUndoCommand.__init__(self, "Mirror geometry item" if len(items) == 1 else "Mirror {len(items)} geometry items")
+        self.document = document
+        self.items = items
+        self.p1 = p1
+        self.p2 = p2
+        self.undo_data = None
+    def undo(self):
+        shape_ids = set()
+        for i, old_data in self.undo_data:
+            i.restore_mirror(old_data)
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
+        self.document.shapesUpdated.emit()
+    def redo(self):
+        self.undo_data = []
+        shape_ids = set()
+        for i in self.items:
+            self.undo_data.append((i, i.mirror(self.p1, self.p2)))
+            shape_ids.add(i.shape_id)
+        self.document.startUpdateCAMForShapes(shape_ids)
+        self.document.shapesUpdated.emit()
+
 class DocumentModel(QObject):
     propertyChanged = pyqtSignal([CAMTreeItem, str])
     cutterSelected = pyqtSignal([CycleTreeItem])
@@ -1569,6 +1593,8 @@ class DocumentModel(QObject):
         self.undoStack.push(MoveDrawingItemsUndoCommand(self, items, dx, dy))
     def opRotateDrawingItems(self, items, ox, oy, rotation):
         self.undoStack.push(RotateDrawingItemsUndoCommand(self, items, ox, oy, rotation))
+    def opMirrorDrawingItems(self, items, p1, p2):
+        self.undoStack.push(MirrorDrawingItemsUndoCommand(self, items, p1, p2))
     def opDeletePreset(self, preset):
         self.undoStack.beginMacro(f"Delete preset: {preset.name}")
         try:
