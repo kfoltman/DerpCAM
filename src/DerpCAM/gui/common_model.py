@@ -220,8 +220,10 @@ class PropertySetUndoCommand(QUndoCommand):
         self.new_value = new_value
     def undo(self):
         self.property.setData(self.subject, self.old_value)
+        self.subject.emitPropertyChanged(self.property.name)
     def redo(self):
         self.property.setData(self.subject, self.new_value)
+        self.subject.emitPropertyChanged(self.property.name)
 
 class MultipleItemUndoContext(object):
     def __init__(self, document, items, title_func):
