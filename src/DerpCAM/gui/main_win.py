@@ -135,10 +135,11 @@ class CAMMainWindow(QMainWindow):
             MenuItem("P&references...", self.editPreferences, None, "Set application preferences"),
         ])
         self.drawMenu = self.addMenu("&Draw", [
+            MenuItem("&Line/slot", self.drawLine, None, "Add a straight line or a straight slot to the drawing"),
             MenuItem("&Circle", self.drawCircle, None, "Add a circle to the drawing"),
             MenuItem("&Rectangle", self.drawRectangle, None, "Add a rectangle to the drawing"),
             MenuItem("&Polyline", self.drawPolyline, None, "Add a polyline to the drawing"),
-            MenuItem("&Arc", self.drawArc, None, "Add an arc to the drawing"),
+            MenuItem("&Arc/slot", self.drawArc, None, "Add an arc or an arc slotto the drawing"),
             MenuItem("&Text", self.drawText, None, "Add a text to the drawing"),
             None,
             MenuItem("&Set origin", self.drawSetOrigin, None, "Set the origin point of the drawing"),
@@ -410,22 +411,12 @@ class CAMMainWindow(QMainWindow):
         model.OperationTreeItem.prop_rpm.max = geom.GeometrySettings.spindle_max_rpm
     def drawArc(self):
         self.switchToEditor(editors.CanvasNewArcEditor(self.document))
+    def drawLine(self):
+        self.switchToEditor(editors.CanvasNewLineEditor(self.document))
     def drawCircle(self):
-        if True:
-            self.switchToEditor(editors.CanvasNewCircleEditor(self.document))
-        else:
-            dlg = draw.DrawCircleDialog(self, self.document)
-            if dlg.exec():
-                self.document.opAddDrawingItems([dlg.result])
-                self.scheduleMajorRedraw(True)
+        self.switchToEditor(editors.CanvasNewCircleEditor(self.document))
     def drawRectangle(self):
-        if True:
-            self.switchToEditor(editors.CanvasNewRectangleEditor(self.document))
-        else:
-            dlg = draw.DrawRectangleDialog(self, self.document)
-            if dlg.exec():
-                self.document.opAddDrawingItems([dlg.result])
-                self.scheduleMajorRedraw(True)
+        self.switchToEditor(editors.CanvasNewRectangleEditor(self.document))
     def drawPolyline(self):
         polyline = model.DrawingPolylineTreeItem(self.document, [], False)
         cancel_index = self.document.undoStack.index()

@@ -1088,6 +1088,93 @@ Enter the fillet radius for rounded corners.
             self.pointSelected(newPos.x, newPos.y, from_equals=False)
             return True
 
+class CanvasNewLineEditor(CanvasNewItemEditor):
+    WIDTH = 0
+    def createItem(self, document):
+        return None
+    def initState(self, pos):
+        self.first_point = pos
+        self.second_point = None
+    def createExtraControls(self):
+        self.controlsLayout = QHBoxLayout()
+        self.widthEditor = QLineEdit()
+        self.widthEditor.setValidator(QDoubleValidator(0, 1000, 20))
+        self.widthEditor.setText(self.widthEditor.validator().locale().toString(self.WIDTH))
+        self.widthEditor.setToolTip("Optional slot width (use 0 for a basic line)")
+        self.widthLabel = QLabel("Slot &width:")
+        self.widthLabel.setBuddy(self.widthEditor)
+        self.controlsLayout.addWidget(self.widthLabel)
+        self.controlsLayout.addWidget(self.widthEditor)
+        self.layout.addRow(self.controlsLayout)
+    def setTitle(self):
+        self.parent.setWindowTitle("Create a straight line or a slot")
+        self.point_prompt = "Start:"
+    def updateLabel(self):
+        modeText = f"""\
+Click on start and end points.
+Enter the slot width for linear slots or use 0 for a basic straight line.
+{self.snapInfo()}"""
+        self.descriptionLabel.setText(modeText)
+    def drawCursorPoint(self, qp):
+        qp.setPen(QColor(0, 0, 0, 128))
+        self.paintPoint(qp, self.first_point if self.second_point is None else self.second_point, as_arc=False)
+    def polylinePath(self):
+        x1, y1 = self.first_point.x, self.first_point.y
+        x2, y2 = self.second_point.x, self.second_point.y
+        width, ok = self.widthEditor.validator().locale().toDouble(self.widthEditor.text())
+        if width <= 0 or not ok:
+            return [geom.PathPoint(x1, y1), geom.PathPoint(x2, y2)], False
+        else:
+            p1 = self.first_point
+            p2 = self.second_point
+            a = p1.angle_to(p2)
+            r = width / 2
+            arc1 = geom.PathArc.xyra(p1.x, p1.y, r, a + math.pi / 2, math.pi)
+            arc2 = geom.PathArc.xyra(p2.x, p2.y, r, a - math.pi / 2, math.pi)
+            return [arc1.p1, arc1, arc2.p1, arc2], True
+    def drawPreview(self, qp, item, ox, oy):
+        if self.second_point is None:
+            return
+        path = geom.Path(*self.polylinePath()).interpolated()
+        for start, end in geom.PathSegmentIterator(path):
+            qs = self.canvas.project(QPointF(start.x + ox, start.y + oy))
+            qe = self.canvas.project(QPointF(end.x + ox, end.y + oy))
+            qp.drawLine(qs, qe)
+    def apply(self):
+        width, ok = self.widthEditor.validator().locale().toDouble(self.widthEditor.text())
+        if ok:
+            CanvasNewLineEditor.WIDTH = width
+        CanvasNewItemEditor.apply(self)
+    def mouseMoveEventPos(self, e, newPos):
+        if self.second_point is None:
+            changed = self.first_point != newPos
+            self.first_point = newPos
+        else:
+            changed = self.second_point != newPos
+            self.second_point = newPos
+        if changed:
+            self.canvas.repaint()
+        return False
+    def pointSelected(self, x, y, from_equals):
+        newPos = geom.PathPoint(x, y)
+        if self.second_point is None:
+            self.point_prompt = "Second point:"
+            # First click
+            self.first_point = newPos
+            self.second_point = newPos
+            if from_equals:
+                self.onEqualsKey()
+        else:
+            # Second click
+            self.second_point = newPos
+            self.item = model.DrawingPolylineTreeItem(self.document, *self.polylinePath())
+            self.document.addShapesFromEditor([self.item])
+            self.apply()
+    def mousePressEventPos(self, e, newPos):
+        if e.button() == Qt.LeftButton:
+            self.pointSelected(newPos.x, newPos.y, from_equals=False)
+            return True
+
 class CanvasNewCircleEditor(CanvasNewItemEditor):
     drawMode = 0
     lastRadius = ""
