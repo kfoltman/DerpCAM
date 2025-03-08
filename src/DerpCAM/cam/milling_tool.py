@@ -168,7 +168,9 @@ max_rpm = 24000
 def fmtrpm(rpm):
     return f"{rpm:0.1f}" if rpm != int(rpm) else str(int(rpm))
 
-def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, sfm_factor=1, flute_length=None, machine_params=None, is_drill=False, rpm_override=None):
+def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, flute_length=None, machine_params=None, is_drill=False, rpm_override=None, is_slotting=False):
+    sfm_factor = 0.8 if is_slotting else 1
+    chipload_factor = 0.8 if is_slotting else 1
     eff_diameter = diameter
     is_vbit = False
     if inv_tool is not None:
@@ -195,7 +197,7 @@ def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, s
                 sfm_scale = min(1, (rpm * sfm_scale) / machine_params.max_rpm)
             rpm = machine_params.max_rpm
     dia_factor = log(eff_diameter / 3) / log (10 / 3)
-    chipload = material.chipload_3mm * pow(material.chipload_10mm / material.chipload_3mm, dia_factor)
+    chipload = material.chipload_3mm * pow(material.chipload_10mm / material.chipload_3mm, dia_factor) * chipload_factor
     if is_drill:
         plunge = feed = chipload * rpm
     else:
@@ -215,6 +217,8 @@ def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, s
             doc = 5 * diameter
     else:
         doc = material.depth_factor * eff_diameter
+        if is_slotting:
+            doc *= 0.5
     if flute_length is not None:
         doc = min(doc, flute_length)
     if is_drill:
