@@ -11,8 +11,8 @@ if ! pkg-config 'eigen3 >= 3.0'; then
   echo 'Warning: Eigen3 library (libeigen3-dev or similar) may be needed to build the required pyclipr library.'
   sleep 1
 fi
-virtualenv venv
-source ./venv/bin/activate
+virtualenv venv || exit 1
+source ./venv/bin/activate || exit 1
 pip3 install -r requirements.txt || exit 1
 touch venv/probably_complete
 echo ''
