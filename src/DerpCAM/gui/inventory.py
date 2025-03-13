@@ -278,13 +278,14 @@ class EndMillCutter(CutterBase):
     cutter_type_name = "End mill"
     cutter_type_priority = 1
     preset_type = EndMillPreset
-    properties = CutterBase.properties + ['shape', 'angle', 'tip_diameter']
+    properties = CutterBase.properties + ['shape', 'angle', 'tip_diameter', 'max_doc']
     @classmethod
-    def new(klass, id, name, material, diameter, length, flutes, shape, angle, tip_diameter):
+    def new(klass, id, name, material, diameter, length, flutes, shape, angle, tip_diameter, max_doc):
         res = klass.new_impl(id, name, material, diameter, length, int(flutes))
         res.shape = shape
         res.angle = angle
         res.tip_diameter = tip_diameter
+        res.max_doc = max_doc
         res.update_defaults()
         return res
     def update_defaults(self):
@@ -458,16 +459,16 @@ class Inventory(object):
         HSS = self.materialByName('HSS')
         carbide = self.materialByName('carbide')
         self.toolbits = [
-            EndMillCutter.new(1, "cheapo 2F 3.2/15", carbide, 3.2, 15, 2, EndMillShape.FLAT, 0, 0)
+            EndMillCutter.new(1, "cheapo 2F 3.2/15", carbide, 3.2, 15, 2, EndMillShape.FLAT, 0, 0, None)
                 .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1)
                 .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1),
-            EndMillCutter.new(2, "cheapo 2F 2.5/12", carbide, 2.5, 12, 2, EndMillShape.FLAT, 0, 0)
+            EndMillCutter.new(2, "cheapo 2F 2.5/12", carbide, 2.5, 12, 2, EndMillShape.FLAT, 0, 0, None)
                 .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1)
                 .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1),
-            EndMillCutter.new(3, "cheapo 1F 3.2/15", carbide, 3.2, 15, 1, EndMillShape.FLAT, 0, 0)
+            EndMillCutter.new(3, "cheapo 1F 3.2/15", carbide, 3.2, 15, 1, EndMillShape.FLAT, 0, 0, None)
                 .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_HELIX, 0.15),
-            EndMillCutter.new(4, "cheapo 1F 2/8", carbide, 2, 8, 1, EndMillShape.FLAT, 0, 0),
-            EndMillCutter.new(5, "30\u00b0 0.3mm V-bit, 3.2mm shank", carbide, 3.2, None, 1, EndMillShape.TAPERED, 30, 0.3),
+            EndMillCutter.new(4, "cheapo 1F 2/8", carbide, 2, 8, 1, EndMillShape.FLAT, 0, 0, None),
+            EndMillCutter.new(5, "30\u00b0 0.3mm V-bit, 3.2mm shank", carbide, 3.2, None, 1, EndMillShape.TAPERED, 30, 0.3, None),
             DrillBitCutter.new(50, "2mm HSS", HSS, 2, 25)
                 .addPreset(200, "Wood-untested", 10000, 100, 6),
             DrillBitCutter.new(51, "3mm HSS", HSS, 3, 41)

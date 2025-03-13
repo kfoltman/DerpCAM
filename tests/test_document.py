@@ -340,7 +340,7 @@ class DocumentTest(unittest.TestCase):
     def testAddCutter(self):
         doc = self.document
         self.verifyAnyDocument()
-        cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None)
+        cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None, None)
         self.verifyCutter(cutter, "added cutter: 3F \u23004 L15 HSS flat end mill")
         cutter = gui.inventory.DrillBitCutter.new(None, "added drill bit", gui.inventory.CutterMaterial.HSS, 3.175, 33)
         self.verifyCutter(cutter, "added drill bit: 3.175 mm HSS drill bit, L=33 mm")
@@ -348,7 +348,7 @@ class DocumentTest(unittest.TestCase):
         doc.cancelAllWorkers()
         doc.waitForUpdateCAM()
         self.verifyAnyDocument()
-        cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None)
+        cutter = gui.inventory.EndMillCutter.new(None, "added cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None, None)
         self.verifyCutter(cutter, "added cutter: 3F \u23004 L15 HSS flat end mill")
         cutter = gui.inventory.DrillBitCutter.new(None, "added drill bit", gui.inventory.CutterMaterial.HSS, 3.3, 33)
         self.verifyCutter(cutter, "added drill bit: 3.3 mm HSS drill bit, L=33 mm")
@@ -522,7 +522,7 @@ class PDATest(unittest.TestCase):
         self.document = gui.model.DocumentModel(config_settings)
     def testToPresetEM(self):
         op = gui.model.OperationTreeItem(self.document)
-        op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None)
+        op.cutter = gui.inventory.EndMillCutter.new(None, "test cutter", gui.inventory.CutterMaterial.HSS, 4, 15, 3, gui.inventory.EndMillShape.FLAT, None, None, None)
         self.verifyOpBlank(op)
         op.rpm = 18000
         op.vfeed = 200

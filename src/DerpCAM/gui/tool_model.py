@@ -71,7 +71,8 @@ class PresetDerivedAttributes(object):
                     if not all([self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover]):
                         # Slotting penalty
                         is_slotting = operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.ENGRAVE)
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), flute_length=t.length, machine_params=operation.document.gcode_machine_params, rpm_override=self.rpm, is_slotting=is_slotting)
+                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 
+                            flute_length=t.length, machine_params=operation.document.gcode_machine_params, rpm_override=self.rpm, is_slotting=is_slotting, max_doc=t.max_doc)
                         if self.rpm is None:
                             self.rpm = st.rpm
                         if self.hfeed is None:
@@ -173,7 +174,8 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
     prop_name = StringEditableProperty("Name", "name", False)
     prop_flutes = IntEditableProperty("# flutes", "flutes", "%d", min=1, max=100, allow_none=False)
     prop_diameter = FloatDistEditableProperty("Diameter", "diameter", Format.cutter_dia, unit="mm", min=0, max=100, allow_none=False)
-    prop_length = FloatDistEditableProperty("Flute length", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
+    prop_length = FloatDistEditableProperty("Max safe depth", "length", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
+    prop_max_doc = FloatDistEditableProperty("Max depth per pass (Ap)", "max_doc", Format.cutter_length, unit="mm", min=0.1, max=100, allow_none=True)
     prop_material = MaterialEnumEditableProperty("Material", "material", inventory.CutterMaterial, allow_none=False)
     prop_shape = EnumEditableProperty("Shape", "shape", inventory.EndMillShape, allow_none=False)
     prop_angle = FloatDistEditableProperty("Tip angle", "angle", format=Format.angle, unit='\u00b0', min=1, max=179, allow_none=False)
@@ -205,7 +207,7 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         return ToolPresetTreeItem(self.document, data)
     def properties(self):
         if isinstance(self.inventory_tool, inventory.EndMillCutter):
-            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_material, self.prop_shape, self.prop_angle, self.prop_tip_diameter]
+            return [self.prop_name, self.prop_diameter, self.prop_flutes, self.prop_length, self.prop_max_doc, self.prop_material, self.prop_shape, self.prop_angle, self.prop_tip_diameter]
         elif isinstance(self.inventory_tool, inventory.DrillBitCutter):
             return [self.prop_name, self.prop_diameter, self.prop_length, self.prop_material]
         elif isinstance(self.inventory_tool, inventory.ThreadMillCutter):
@@ -213,6 +215,8 @@ class ToolTreeItem(CAMListTreeItemWithChildren):
         return []
     def isPropertyValid(self, name):
         if (not isinstance(self.inventory_tool, inventory.EndMillCutter) or self.inventory_tool.shape != inventory.EndMillShape.TAPERED) and name in ['angle', 'tip_diameter']:
+            return False
+        if not isinstance(self.inventory_tool, inventory.EndMillCutter) and name == 'max_doc':
             return False
         if not isinstance(self.inventory_tool, inventory.ThreadMillCutter) and name in ['min_pitch', 'max_pitch', 'thread_angle']:
             return False

@@ -168,7 +168,7 @@ max_rpm = 24000
 def fmtrpm(rpm):
     return f"{rpm:0.1f}" if rpm != int(rpm) else str(int(rpm))
 
-def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, flute_length=None, machine_params=None, is_drill=False, rpm_override=None, is_slotting=False):
+def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, flute_length=None, machine_params=None, is_drill=False, rpm_override=None, is_slotting=False, max_doc=None):
     sfm_factor = 0.8 if is_slotting else 1
     chipload_factor = 0.8 if is_slotting else 1
     eff_diameter = diameter
@@ -219,6 +219,8 @@ def standard_tool(diameter, inv_tool, flutes, material, coating, is_hss=False, f
         doc = material.depth_factor * eff_diameter
         if is_slotting:
             doc *= 0.5
+        if max_doc:
+            doc = min(doc, max_doc)
     if flute_length is not None:
         doc = min(doc, flute_length)
     if is_drill:

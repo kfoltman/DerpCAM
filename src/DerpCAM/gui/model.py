@@ -632,6 +632,8 @@ class OperationTreeItem(CAMTreeItem):
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
                 pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile)
+            if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
+                self.addWarning(f"Specified depth of cut per pass is larger than the maximum of {Format.cutter_length(self.cutter.max_doc)}")
         elif isinstance(self.cutter, inventory.DrillBitCutter):
             tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
@@ -1130,8 +1132,8 @@ class DocumentModel(QObject):
             # Old style singleton tool
             material = MaterialType.toTuple(self.material.material)[2] if self.material.material is not None else material_plastics
             tool = data['tool']
-            prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'], inventory.EndMillShape.FLAT, 0, 0)
-            std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter, prj_cutter.flutes, material, milling_tool.carbide_uncoated, rpm_override=tool['rpm']).clone_with_overrides(
+            prj_cutter = inventory.EndMillCutter.new(None, "Project tool", inventory.CutterMaterial.carbide, tool['diameter'], tool['cel'], tool['flutes'], inventory.EndMillShape.FLAT, 0, 0, None)
+            std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter, prj_cutter.flutes, material, milling_tool.carbide_uncoated, rpm_override=tool['rpm'], max_doc=tool['depth']).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
