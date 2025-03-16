@@ -8,4 +8,4 @@ if [ ! -f venv/probably_complete ]; then
   exit 1
 fi
 source ./venv/bin/activate
-./DerpCAM
+./DerpCAM $*
