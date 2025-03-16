@@ -1221,6 +1221,9 @@ class DocumentModel(QObject):
                     cycle.appendRow(operation)
         elif 'operation_cycles' in data:
             for i in data['operation_cycles']:
+                if i['tool_id'] not in cutter_map:
+                    print (f"Warning: dangling reference to cutter {i['tool_id']} with {len(i['operations'])} operations in it.")
+                    continue
                 cycle = CycleTreeItem(self, cutter_map[i['tool_id']])
                 cycleForCutter[orig_id] = cycle
                 self.operModel.appendRow(cycle)
