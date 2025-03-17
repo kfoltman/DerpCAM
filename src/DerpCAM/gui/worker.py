@@ -32,7 +32,8 @@ class WorkerThread(threading.Thread):
             self.exception_text = errorText
             if self.parent_operation and not self.parent_operation.error:
                 self.parent_operation.error = errorText
-            traceback.print_exc()
+            if not isinstance(e, ValueError):
+                traceback.print_exc()
 
 class WorkerThreadPack(object):
     def __init__(self, parentOp, threadDataList, parentCAM):
