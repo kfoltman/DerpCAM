@@ -781,6 +781,13 @@ class OperationTreeItem(CAMTreeItem):
             return pda.direction == inventory.MillDirection.CONVENTIONAL
         else:
             return pda.direction == inventory.MillDirection.CLIMB
+    def toTextColor(self, property):
+        if property is self.prop_doc:
+            pda = PresetDerivedAttributes(self)
+            if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
+                return "red"
+            return None
+        return None
 
 class OperationsModel(QStandardItemModel):
     def __init__(self, document):

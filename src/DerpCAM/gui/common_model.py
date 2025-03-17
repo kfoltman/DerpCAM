@@ -184,7 +184,7 @@ class OperationType(EnumClass):
         return value in (OperationType.POCKET, OperationType.SIDE_MILL, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE, OperationType.INSIDE_THREAD, OperationType.V_CARVE)
     @staticmethod
     def has_entry_helix(value):
-        return value in (OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
+        return value in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
 
 class FillType(EnumClass):
     LINES = 1

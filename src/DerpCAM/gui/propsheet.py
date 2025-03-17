@@ -34,7 +34,15 @@ class EditableProperty(object):
         setattr(item, self.attribute, value)
         if hasattr(item, "onPropertyValueSet"):
             item.onPropertyValueSet(self.attribute)
-    def toTextColor(self, value):
+    def toTextColor(self, value_or_values, objects):
+        colors = set()
+        for item in objects:
+            if hasattr(item, "toTextColor"):
+                tc = item.toTextColor(self)
+                if tc is not None:
+                    colors.add(tc)
+        if len(colors) == 1:
+            return next(iter(colors))
         return None
     def toEditString(self, value):
         return useFormat(self.format, value)
@@ -214,20 +222,32 @@ class FloatEditableProperty(EditableProperty):
         self.max = max
         self.allow_none = allow_none
         self.none_value = none_value
-        self.default_value = default_value
         self.computed = computed
+        self.default_value = default_value
         assert isinstance(unit, str)
         self.unit = unit
     def toEditString(self, value):
         if value is None:
             return ""
         return EditableProperty.toEditString(self, value)
-    def toTextColor(self, value):
-        if self.min is not None and value < self.min:
-            return "red"
-        if self.max is not None and value > self.max:
-            return "red"
-        return "gray" if value is None else None
+    def toTextColor(self, value_or_values, objects):
+        if isinstance(value_or_values, MultipleItem):
+            values = value_or_values.values
+        else:
+            values = [value_or_values]
+        for value in values:
+            if value is not None:
+                if self.min is not None and value < self.min:
+                    return "red"
+                if self.max is not None and value > self.max:
+                    return "red"
+        item_override = EditableProperty.toTextColor(self, value_or_values, objects)
+        if item_override is not None:
+            return item_override
+        for value in values:
+            if value is None:
+                return "gray"
+        return None
     def toDisplayString(self, value):
         if value is None:
             return self.none_value
@@ -342,6 +362,9 @@ class PropertyTableWidgetItem(QTableWidgetItem):
             if role == Qt.DisplayRole:
                 return "(multiple)"
             if role == Qt.ForegroundRole:
+                color = self.prop.toTextColor(self.value, self.table.objects)
+                if color is not None:
+                    return QBrush(QColor(color))
                 return QBrush(QColor("gray"))
         elif self.value is None:
             if role == Qt.ToolTipRole and isinstance(self.def_value, MultipleItem):
@@ -351,12 +374,15 @@ class PropertyTableWidgetItem(QTableWidgetItem):
                     return "(multiple defaults)"
                 return self.prop.toDisplayString(self.def_value)
             if role == Qt.ForegroundRole:
+                color = self.prop.toTextColor(None, self.table.objects)
+                if color is not None:
+                    return QBrush(QColor(color))
                 return QBrush(QColor("gray"))
         else:
             if role == Qt.DisplayRole or role == Qt.ToolTipRole:
                 return self.prop.toDisplayString(self.value)
             if role == Qt.ForegroundRole:
-                color = self.prop.toTextColor(self.value)
+                color = self.prop.toTextColor(self.value, self.table.objects)
                 if color is not None:
                     return QBrush(QColor(color))
         return QTableWidgetItem.data(self, role)
