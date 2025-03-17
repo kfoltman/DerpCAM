@@ -251,6 +251,8 @@ class CutterListDialogTest(CutterMgrTestBase):
             self.assertEqual(content.flutes, 4)
             self.assertEqual(content.length, 8)
             self.assertIn(expected_str, content.description())
+            if variant == 'project':
+                self.document.opDeleteCycle(cycle)
     def testDeleteCutterEM(self):
         self.verifyDeleteCutter("cheapo 2F 3.2/15", "Wood-finishing", gui.inventory.EndMillCutter)
     def testDeleteCutterDB(self):
@@ -344,6 +346,9 @@ class CutterListDialogTest(CutterMgrTestBase):
             gui.cutter_mgr.CreateEditPresetDialog.exec_ = fakeExecPreset
             QTest.keyClick(dlg.newButton, Qt.Key.Key_Space)
             del gui.cutter_mgr.CreateEditPresetDialog.exec_
+            if variant == 'project':
+                cycle = self.document.cycleForCutter(tool_item.content.cutter)
+                self.document.opDeleteCycle(cycle)
             
     def findCutterItem(self, parent, cutter_name):
         for i in range(parent.childCount()):

@@ -445,7 +445,8 @@ class ModifyToolUndoCommand(QUndoCommand):
     def updateTo(self, data):
         cutter = self.item.inventory_tool
         cutter.resetTo(data)
-        cutter.name = data.name
+        if cutter.name != data.name:
+            self.item.document.updateCutterName(cutter, data.name)
         self.item.emitDataChanged()
         self.item.document.refreshToolList()
     def undo(self):

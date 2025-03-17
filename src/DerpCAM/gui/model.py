@@ -1526,6 +1526,11 @@ class DocumentModel(QObject):
     def addShapesFromEditor(self, items):
         self.opAddDrawingItems(items)
         self.shapesCreated.emit(items)
+    def updateCutterName(self, cutter, new_name):
+        assert new_name not in self.project_toolbits
+        del self.project_toolbits[cutter.name]
+        cutter.name = new_name
+        self.project_toolbits[cutter.name] = cutter
     def opAddCutter(self, cutter: inventory.CutterBase):
         cycle = CycleTreeItem(self, cutter)
         self.undoStack.push(AddOperationUndoCommand(self, cycle, self.operModel.invisibleRootItem(), self.operModel.rowCount()))
