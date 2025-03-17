@@ -67,7 +67,8 @@ class CutterListWidget(QTreeWidget):
                 currentItem = self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item) or currentItem
             #self.addVirtualToolbit(self.project_toolbits, "Create a new cutter for this project only")
         for tb in self.toolbits_func():
-            currentItem = self.addToolbit(self.inventory_toolbits, tb, tb, current_item) or currentItem
+            if tb.name not in self.document.project_toolbits:
+                currentItem = self.addToolbit(self.inventory_toolbits, tb, tb, current_item) or currentItem
         #self.addVirtualToolbit(self.inventory_toolbits, "Create a new cutter in the inventory")
         self.expandAll()
         if currentItem:
