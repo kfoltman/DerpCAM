@@ -784,7 +784,7 @@ class OperationTreeItem(CAMTreeItem):
     def toTextColor(self, property):
         if property is self.prop_doc:
             pda = PresetDerivedAttributes(self)
-            if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
+            if self.cutter.max_doc and pda.doc and pda.doc > self.cutter.max_doc:
                 return "red"
             return None
         return None
