@@ -423,6 +423,10 @@ def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
     return gen_path, was_previously_cut, None
 
 def add_finishing_outlines(tps, polygon, tool, from_outside):
+    if isinstance(polygon, MultiPolygon):
+        for geom in polygon.geoms:
+            add_finishing_outlines(tps, geom, tool, from_outside)
+        return
     if not from_outside:
         tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True, is_edge=True))
     for h in polygon.interiors:
@@ -482,6 +486,12 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         else:
             already_cut_for_this = already_cut.intersection(polygon) if already_cut else None
         #polygon = polygon.difference(already_cut_for_this)
+        if isinstance(already_cut_for_this, GeometryCollection):
+            geoms = [g for g in already_cut_for_this.geoms if not isinstance(g, (LineString, Point))]
+            if len(geoms) == 1:
+                already_cut_for_this = geoms[0]
+            else:
+                already_cut_for_this = MultiPolygon(geoms)
         with pyvlock:
             tp = hsm_nibble.geometry.Pocket(polygon, step, arc_dir, generate=True, already_cut=already_cut_for_this, starting_point_tactic=tactic, starting_radius=tool.min_helix_diameter/2)
         has_entry_circle = tp.starting_angle is not None

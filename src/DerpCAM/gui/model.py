@@ -1569,6 +1569,8 @@ class DocumentModel(QObject):
                 item.cutter = cycle.cutter
                 item.tool_preset = self.default_preset_by_tool.get(item.cutter, None)
                 item.islands = shapeIds[i]
+                if operationType == OperationType.SIDE_MILL:
+                    item.pocket_strategy = inventory.PocketStrategy.HSM_PEEL
                 item.startUpdateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
