@@ -906,6 +906,10 @@ class BaseCut2D(BaseCutLayered):
         assert isinstance(self.lastpt, PathPoint)
         self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
         assert isinstance(self.lastpt, PathNode)
+        if isinstance(subpath.helical_entry, toolpath.PlungeEntry) and subpath.path.closed:
+            plunge_entry = subpath.helical_entry
+            gcode.linear(x = plunge_entry.start.x, y = plunge_entry.start.y)
+            self.lastpt = plunge_entry.start
 
     def enter_or_leave_cut(self, gcode, cutpath, layer, subpath, newz):
         if newz != self.curz:
