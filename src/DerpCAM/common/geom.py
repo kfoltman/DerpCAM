@@ -22,6 +22,7 @@ class GeometrySettings:
     spindle_min_rpm = None
     spindle_max_rpm = None
     paranoid_mode = False
+    rapid_entry_into_finish_pass = False
     auto_join_polylines = False
 
 def gcodeSuffix():

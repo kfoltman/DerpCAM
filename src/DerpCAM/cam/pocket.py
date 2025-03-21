@@ -4,7 +4,8 @@ from DerpCAM.common import geom, guiutils
 from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipr
-from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point
+from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point, MultiLineString
+from shapely.ops import nearest_points
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace)
@@ -422,15 +423,29 @@ def finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp):
         was_previously_cut = True
     return gen_path, was_previously_cut, None
 
-def add_finishing_outlines(tps, polygon, tool, from_outside):
+def add_toolpath_to_finish_pass(tps, path, tool, safe_entry):
+    if not path.nodes:
+        return
+    plunge = None
+    if safe_entry:
+        path_start = path.seg_start().seg_start()
+        nearest = nearest_points(Point(path_start.x, path_start.y), safe_entry)
+        if nearest:
+            safe_point = nearest[1]
+            #print (nearest, nearest[0].distance(nearest[1]))
+            if nearest[0].distance(nearest[1]) < 2 * tool.diameter * tool.stepover:
+                plunge = toolpath.PlungeEntry(geom.PathPoint(safe_point.x, safe_point.y), 0.2)
+    tps.append(toolpath.Toolpath(path, tool, was_previously_cut=True, is_cleanup=True, is_edge=True, helical_entry=plunge))
+
+def add_finishing_outlines(tps, polygon, tool, from_outside, safe_entry):
     if isinstance(polygon, MultiPolygon):
         for geom in polygon.geoms:
-            add_finishing_outlines(tps, geom, tool, from_outside)
+            add_finishing_outlines(tps, geom, tool, from_outside, safe_entry)
         return
     if not from_outside:
-        tps.append(toolpath.Toolpath(linestring2path(polygon.exterior, tool.climb), tool, was_previously_cut=True, is_cleanup=True, is_edge=True))
+        add_toolpath_to_finish_pass(tps, linestring2path(polygon.exterior, tool.climb), tool, safe_entry)
     for h in polygon.interiors:
-        tps.append(toolpath.Toolpath(linestring2path(h, not tool.climb), tool, was_previously_cut=True, is_cleanup=True, is_edge=True))
+        add_toolpath_to_finish_pass(tps, linestring2path(h, not tool.climb), tool, safe_entry)
 
 def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refine=None, roughing_offset=0):
     already_cut = None
@@ -509,6 +524,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         hsm_path = tp.path
         if not hsm_path:
             continue
+        safe_entry = tp.cut_area_total.buffer(-2 * abs(displace)) if geom.GeometrySettings.rapid_entry_into_finish_pass else None
         gen_path = []
         lastpt = None
         was_previously_cut = from_outside
@@ -527,13 +543,13 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         gen_path, was_previously_cut, tp = finalize_cut(tps, gen_path, was_previously_cut, tool, already_cut, tp)
         # Add a final pass around the perimeter
         if not roughing_offset:
-            add_finishing_outlines(tps, polygon, tool, from_outside)
+            add_finishing_outlines(tps, polygon, tool, from_outside, safe_entry)
         else:
             if from_outside:
                 for i in islands:
-                    add_finishing_outlines(tps, i.buffer(-roughing_offset), tool, False)
+                    add_finishing_outlines(tps, i.buffer(-roughing_offset), tool, False, None)
             else:
-                add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside)
+                add_finishing_outlines(tps, polygon.buffer(roughing_offset), tool, from_outside, safe_entry)
         alltps += tps
         outer_progress += 1000
     return alltps

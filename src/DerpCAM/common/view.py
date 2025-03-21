@@ -94,7 +94,7 @@ class OperationsRenderer(object):
             for i in op.cutpaths:
                 last_depth = self.operations.machine_params.safe_z
                 for depth, subpath in i.to_preview():
-                    lastpt = self.addRapids(owner, pen, subpath, lastpt, op, depth < last_depth)
+                    lastpt = self.addRapids(owner, pen, subpath, lastpt, op, depth <= last_depth)
                     last_depth = depth
         return lastpt
     def renderShapes(self, owner):
@@ -110,6 +110,7 @@ class OperationsRenderer(object):
         self.renderRapids(owner)
         self.renderShapes(owner)
     def addRapids(self, owner, pen, path, lastpt, op, is_descend):
+        thispt = path.path.seg_start()
         if is_descend:
             if path.helical_entry:
                 he = path.helical_entry
@@ -125,6 +126,8 @@ class OperationsRenderer(object):
                     sp = he.start
                     d = path.tool.diameter / (2 * sqrt(2))
                     owner.addLines(pen, circle(sp.x, sp.y, path.tool.diameter / 2, None, 5 * pi / 4, 13 * pi / 4) + [PathPoint(sp.x - d, sp.y - d), PathPoint(sp.x + d, sp.y + d), sp, PathPoint(sp.x - d, sp.y + d), PathPoint(sp.x + d, sp.y - d)], False, darken=False)
+                    # this is the real rapid target
+                    thispt = sp
             else:
                 pt = path.path.seg_start()
                 brush = QBrush(pen.color())
@@ -133,8 +136,10 @@ class OperationsRenderer(object):
                     brush = QBrush(QColor(255, 0, 255))
                 r = 8
                 owner.addScaledPolygon(brush, [pt, pt.translated(r, r), pt.translated(-r, r), pt], QPointF(pt.x, pt.y), r)
-        if lastpt != path.path.seg_start():
-            owner.addRapidLine(pen, lastpt, path.path.seg_start())
+        if lastpt != thispt:
+            owner.addRapidLine(pen, lastpt, thispt)
+            if thispt != path.path.seg_start().seg_start():
+                owner.addRapidLine(QPen(QColor(64, 0, 0), 0), thispt, path.path.seg_start().seg_start())
         return path.path.seg_end()
     def pen2brush(self, owner, path, pen):
         if not isinstance(pen, QPen):

@@ -108,8 +108,9 @@ class TabMaker(object):
         return paths_withtabs
 
 class PlungeEntry(object):
-    def __init__(self, point):
+    def __init__(self, point, extra_z=0):
         self.start = point
+        self.extra_z = extra_z
 
 class HelicalEntry(object):
     def __init__(self, point, r, angle=0, climb=True):

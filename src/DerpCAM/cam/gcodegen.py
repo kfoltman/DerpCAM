@@ -931,7 +931,10 @@ class BaseCut2D(BaseCutLayered):
             assert subpath.was_previously_cut
             plunge_entry = subpath.helical_entry
             self.lastpt = plunge_entry.start
-            gcode.rapid(z=newz)
+            gcode.rapid(z=newz + plunge_entry.extra_z)
+            if plunge_entry.extra_z > 0:
+                gcode.feed(subpath.tool.vfeed)
+                gcode.linear(z=newz)
             gcode.feed(subpath.tool.hfeed)
         else:
             z_already_cut_here = cutpath.z_already_cut_here(layer, subpath)

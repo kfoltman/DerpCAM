@@ -51,6 +51,7 @@ class ConfigSettings(object):
         BoolConfigSetting('simplify_arcs', 'geometry/simplify_arcs', GeometrySettings.simplify_arcs),
         BoolConfigSetting('simplify_lines', 'geometry/simplify_lines', GeometrySettings.simplify_lines),
         BoolConfigSetting('paranoid_mode', 'gcode/paranoid_mode', GeometrySettings.paranoid_mode),
+        BoolConfigSetting('rapid_entry_into_finish_pass', 'gcode/rapid_entry_into_finish_pass', GeometrySettings.rapid_entry_into_finish_pass),
         IntConfigSetting('gcode_variant', 'geometry/gcode_variant', GeometrySettings.gcode_variant),
         BoolConfigSetting('auto_join_polylines', 'import/auto_join_polylines', GeometrySettings.auto_join_polylines),
         BoolConfigSetting('spindle_control', 'gcode/spindle_control', GeometrySettings.spindle_control),
@@ -120,6 +121,7 @@ class ConfigSettings(object):
         GeometrySettings.simplify_arcs = self.simplify_arcs
         GeometrySettings.simplify_lines = self.simplify_lines
         GeometrySettings.paranoid_mode = self.paranoid_mode
+        GeometrySettings.rapid_entry_into_finish_pass = self.rapid_entry_into_finish_pass
         GeometrySettings.draw_arrows = self.draw_arrows
         GeometrySettings.dxf_inches = self.dxf_inches
         GeometrySettings.gcode_inches = self.gcode_inches
@@ -187,6 +189,10 @@ class PreferencesDialog(QDialog):
         self.paranoidModeCheck.setToolTip("Forbid rapid Z moves into previously removed stock or outside stock boundaries")
         self.paranoidModeCheck.setChecked(self.config.paranoid_mode)
         self.formCAM.addRow(self.paranoidModeCheck)
+        self.recklessModeCheck = QCheckBox("Reckless mode: use rapids before HSM finish pass")
+        self.recklessModeCheck.setToolTip("Allow rapid Z moves into already cut pocket for finish pass")
+        self.recklessModeCheck.setChecked(self.config.rapid_entry_into_finish_pass)
+        self.formCAM.addRow(self.recklessModeCheck)
         self.gcodeVariantCombo = QComboBox()
         self.gcodeVariantCombo.addItems(["LinuxCNC", "Grbl", "Marlin"])
         self.gcodeVariantCombo.setCurrentIndex(self.config.gcode_variant)
@@ -282,6 +288,7 @@ class PreferencesDialog(QDialog):
         self.config.simplify_arcs = self.simplifyArcsCheck.isChecked()
         self.config.simplify_lines = self.simplifyLinesCheck.isChecked()
         self.config.paranoid_mode = self.paranoidModeCheck.isChecked()
+        self.config.rapid_entry_into_finish_pass = self.recklessModeCheck.isChecked()
         self.config.gcode_variant = self.gcodeVariantCombo.currentIndex()
         self.config.spindle_control = self.spindleControlCheck.isChecked()
         self.config.spindle_fine_control = self.spindleControlCheck.isChecked() and self.spindleFineControlCheck.isChecked()
