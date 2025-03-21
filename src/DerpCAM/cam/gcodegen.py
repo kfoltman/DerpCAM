@@ -263,10 +263,17 @@ class Gcode(object):
         self.section_info("End v-carve subpath")
         return lastpt
 
-    def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None, subject=None):
+    def apply_subpath(self, subpath, lastpt, new_z=None, old_z=None, tlength=None, subject=None, helical_entry=None):
         self.section_info("Start subpath" if not subject else f"Start {subject} subpath")
         assert isinstance(lastpt, PathPoint)
-        assert dist(lastpt, subpath.seg_start()) < 1 / GeometrySettings.RESOLUTION, f"lastpt={lastpt} != firstpt={subpath.seg_start()}"
+        eps = 1 / GeometrySettings.RESOLUTION
+        if helical_entry and isinstance(helical_entry, toolpath.PlungeEntry):
+            start = subpath.seg_start()
+            start2 = helical_entry.start
+            assert dist(lastpt, start) < eps or dist(lastpt, start2) < eps, f"lastpt={lastpt} != firstpt={start} or {start2}"
+        else:
+            start = subpath.seg_start()
+            assert dist(lastpt, subpath.seg_start()) < eps, f"lastpt={lastpt} != firstpt={start}"
         tdist = 0
         for lastpt, pt in PathSegmentIterator(subpath):
             if new_z is not None:
@@ -904,7 +911,7 @@ class BaseCut2D(BaseCutLayered):
         self.enter_or_leave_cut(gcode, cutpath, layer, subpath, newz)
         assert self.lastpt is not None
         assert isinstance(self.lastpt, PathPoint)
-        self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None)
+        self.lastpt = gcode.apply_subpath(subpath.path, self.lastpt, subject="tab" if subpath.is_tab else None, helical_entry=subpath.helical_entry)
         assert isinstance(self.lastpt, PathNode)
         if isinstance(subpath.helical_entry, toolpath.PlungeEntry) and subpath.path.closed:
             plunge_entry = subpath.helical_entry
