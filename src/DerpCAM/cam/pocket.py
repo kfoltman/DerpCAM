@@ -512,7 +512,7 @@ def hsm_peel(shape, tool, zigzag, displace=0, from_outside=False, shape_to_refin
         has_entry_circle = tp.starting_angle is not None
         if already_cut_for_this and already_cut_for_this.contains(tp.start_point):
             has_entry_circle = False
-        if has_entry_circle and tp.max_starting_radius < tool.min_helix_diameter / 2:
+        elif tp.max_starting_radius < tool.min_helix_diameter / 2:
             raise ValueError(f"Entry location smaller than safe minimum of {guiutils.Format.cutter_dia(tool.min_helix_diameter + tool.diameter)}")
         generator = tp.get_arcs(100)
         try:
