@@ -427,6 +427,8 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     deleteOrig = True
     translateOnly = False
     count = 1
+    mode = 0
+    angle = 60
     def __init__(self, document, objects):
         CanvasEditorPickPoint.__init__(self, document)
         self.objects = objects
@@ -457,6 +459,9 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.applyButton.setEnabled(self.stage == 2)
         self.deleteOriginalButton.setChecked(self.deleteOrig)
         self.translateOnlyButton.setChecked(self.translateOnly)
+        self.modeButton3P.setChecked(self.mode == 0)
+        self.modeButton2P.setChecked(self.mode == 1)
+        self.angleSpin.setEnabled(self.mode == 1)
     def createExtraControls(self):
         self.optionsLayout = QVBoxLayout()
         self.deleteOriginalButton = QCheckBox("&Delete original")
@@ -465,6 +470,25 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.translateOnlyButton = QCheckBox("&Preserve orientation")
         self.translateOnlyButton.setToolTip("Apply rotation to object positions only, based on the specified anchor/reference point.")
         self.optionsLayout.addWidget(self.translateOnlyButton)
+        self.modeGroup = QGroupBox()
+        self.modeGroupLayout = QHBoxLayout()
+        self.modeGroup.setLayout(self.modeGroupLayout)
+        self.modeButton3P = QRadioButton("&3 points")
+        self.modeGroupLayout.addWidget(self.modeButton3P)
+        self.modeButton2P = QRadioButton("&2 points+angle")
+        self.modeGroupLayout.addWidget(self.modeButton2P)
+        self.angleSpin = guiutils.floatSpin(-360, 360, 1, self.angle, "Rotation angle per rotated copy")
+        self.angleSpinLabel = QLabel("&Angle:")
+        self.angleSpinLabel.setBuddy(self.angleSpin)
+        self.angleSpin.valueChanged.connect(lambda value: self.setAngle(value))
+        self.modeGroupLayout.addWidget(self.angleSpinLabel)
+        self.modeGroupLayout.addWidget(self.angleSpin)
+        self.modeGroupLayout.addStretch()
+        self.optionsLayout.addWidget(self.modeGroup)
+
+        self.modeButton3P.clicked.connect(lambda: self.setMode(0))
+        self.modeButton2P.clicked.connect(lambda: self.setMode(1))
+
         self.arrayLayout = QHBoxLayout()
         self.arrayCount = guiutils.intSpin(1, 100, self.count, "Number of copies added")
         self.arrayLayout.addWidget(QLabel("Copies:"))
@@ -480,6 +504,17 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     def setTranslateOnly(self, value):
         CanvasRotateEditor.translateOnly = value
         self.updateButtons()
+    def setMode(self, value):
+        CanvasRotateEditor.mode = value
+        self.updateButtons()
+    def setValue(self, value):
+        # XXXKF use formats later
+        try:
+            angle = float(value)
+        except ValueError:
+            return
+        CanvasRotateEditor.angle = value
+        self.updateButtons()
     def pointSelected(self, x, y, from_equals):
         if self.stage == 0:
             self.centre_point = geom.PathPoint(x, y)
@@ -491,6 +526,10 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
                 self.onEqualsKey()
         elif self.stage == 1:
             self.first_arm = geom.PathPoint(x, y)
+            if self.mode == 1:
+                self.mouse_point = geom.PathPoint(x, y) # just in case
+                self.apply()
+                return
             self.stage = 2
             self.setTitle()
             self.updateLabel()
@@ -504,9 +543,13 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         ox = self.centre_point.x
         oy = self.centre_point.y
         angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
-        angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
-        rotation = angle2 - angle1
-        return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
+        if self.mode == 1:
+            rotation = self.angle * math.pi / 180
+            return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
+        else:
+            angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
+            rotation = angle2 - angle1
+            return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
     def drawPreview(self, qp, item, ox, oy, rotation, orig_rotation, radius):
         item.createPaths()
         oldTransform = qp.transform()
@@ -542,7 +585,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
                         for item in self.objects:
                             self.drawPreview(qp, item, ox, oy, rotation * (i + 1), orig_rotation, radius)
     def apply(self):
-        if self.stage == 2:
+        if self.stage == 2 or (self.stage == 1 and self.mode == 1):
             second_arm = self.mouse_point
             ox, oy, rotation, orig_rotation, radius = self.getTransform(second_arm)
             CanvasRotateEditor.count = self.arrayCount.value()
