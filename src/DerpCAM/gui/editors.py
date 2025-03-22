@@ -425,6 +425,7 @@ class CanvasMoveEditor(CanvasEditorPickPoint):
 
 class CanvasRotateEditor(CanvasEditorPickPoint):
     deleteOrig = True
+    translateOnly = False
     count = 1
     def __init__(self, document, objects):
         CanvasEditorPickPoint.__init__(self, document)
@@ -455,10 +456,15 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.applyButton.setText("Rotate")
         self.applyButton.setEnabled(self.stage == 2)
         self.deleteOriginalButton.setChecked(self.deleteOrig)
+        self.translateOnlyButton.setChecked(self.translateOnly)
     def createExtraControls(self):
-        self.deleteOriginalButton = QCheckBox("&Delete original")
         self.optionsLayout = QVBoxLayout()
+        self.deleteOriginalButton = QCheckBox("&Delete original")
+        self.deleteOriginalButton.setToolTip("Create rotated copy/copies but delete the original object.")
         self.optionsLayout.addWidget(self.deleteOriginalButton)
+        self.translateOnlyButton = QCheckBox("&Preserve orientation")
+        self.translateOnlyButton.setToolTip("Apply rotation to object positions only, based on the specified anchor/reference point.")
+        self.optionsLayout.addWidget(self.translateOnlyButton)
         self.arrayLayout = QHBoxLayout()
         self.arrayCount = guiutils.intSpin(1, 100, self.count, "Number of copies added")
         self.arrayLayout.addWidget(QLabel("Copies:"))
@@ -467,8 +473,12 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.optionsLayout.addLayout(self.arrayLayout)
         self.layout.addRow(self.optionsLayout)
         self.deleteOriginalButton.clicked.connect(lambda: self.setDeleteOriginal(self.deleteOriginalButton.isChecked()))
+        self.translateOnlyButton.clicked.connect(lambda: self.setTranslateOnly(self.translateOnlyButton.isChecked()))
     def setDeleteOriginal(self, value):
         CanvasRotateEditor.deleteOrig = value
+        self.updateButtons()
+    def setTranslateOnly(self, value):
+        CanvasRotateEditor.translateOnly = value
         self.updateButtons()
     def pointSelected(self, x, y, from_equals):
         if self.stage == 0:
@@ -496,8 +506,8 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
         angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
         rotation = angle2 - angle1
-        return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation
-    def drawPreview(self, qp, item, ox, oy, rotation):
+        return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
+    def drawPreview(self, qp, item, ox, oy, rotation, orig_rotation, radius):
         item.createPaths()
         oldTransform = qp.transform()
         transform = self.canvas.drawingTransform()
@@ -506,7 +516,12 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         tempRenderer = TempRenderer(self.canvas)
         ox2 = self.document.drawing.x_offset
         oy2 = self.document.drawing.y_offset
-        item.rotated(ox, oy, rotation).translated(-ox2, -oy2).renderTo(tempRenderer, None)
+        if self.translateOnly:
+            tx = radius * (math.cos(rotation) - math.cos(orig_rotation))
+            ty = radius * (math.sin(rotation) - math.sin(orig_rotation))
+            item.translated(tx-ox2, ty-oy2).renderTo(tempRenderer, None)
+        else:
+            item.rotated(ox, oy, rotation).translated(-ox2, -oy2).renderTo(tempRenderer, None)
         tempRenderer.paint(qp, self.canvas)
         qp.setTransform(oldTransform)
     def paint(self, e, qp):
@@ -522,27 +537,38 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
                     qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
                 qp.setPen(pen)
                 if self.first_arm is not None and self.mouse_point is not None:
-                    ox, oy, rotation = self.getTransform(self.mouse_point)
+                    ox, oy, rotation, orig_rotation, radius = self.getTransform(self.mouse_point)
                     for i in range(self.arrayCount.value()):
                         for item in self.objects:
-                            self.drawPreview(qp, item, ox, oy, rotation * (i + 1))
+                            self.drawPreview(qp, item, ox, oy, rotation * (i + 1), orig_rotation, radius)
     def apply(self):
         if self.stage == 2:
             second_arm = self.mouse_point
-            ox, oy, rotation = self.getTransform(second_arm)
+            ox, oy, rotation, orig_rotation, radius = self.getTransform(second_arm)
             CanvasRotateEditor.count = self.arrayCount.value()
             items = []
             count = self.count
             start = 0
             if self.deleteOrig:
                 # Rotate existing
-                self.document.opRotateDrawingItems(self.objects, ox, oy, rotation)
+                if self.translateOnly:
+                    tx = radius * (math.cos(rotation) - math.cos(orig_rotation))
+                    ty = radius * (math.sin(rotation) - math.sin(orig_rotation))
+                    self.document.opMoveDrawingItems(self.objects, tx, ty)
+                else:
+                    self.document.opRotateDrawingItems(self.objects, ox, oy, rotation)
                 if count <= 1:
                     CanvasEditorPickPoint.apply(self)
                     return
                 start += 1
+                orig_rotation = rotation
             for i in range(start, self.count):
-                items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed().reset_id() for item in self.objects]
+                if self.translateOnly:
+                    tx = radius * (math.cos(rotation * (i + 1)) - math.cos(orig_rotation))
+                    ty = radius * (math.sin(rotation * (i + 1)) - math.sin(orig_rotation))
+                    items += [model.DrawingItemTreeItem.load(self.document, item.store()).translated(tx, ty).reset_untransformed().reset_id() for item in self.objects]
+                else:
+                    items += [model.DrawingItemTreeItem.load(self.document, item.store()).rotated(ox, oy, rotation * (i + 1)).reset_untransformed().reset_id() for item in self.objects]
             self.document.opAddDrawingItems(items)
             CanvasEditorPickPoint.apply(self)
 
