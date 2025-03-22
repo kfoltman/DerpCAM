@@ -449,23 +449,29 @@ class HelicalDrill(UntabbedOperation):
             paths.append(shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary)
         return PathOutput([toolpath.Toolpath(Path(path, True), self.tool) for path in paths], None, {})
     def diameters(self):
+        ro = self.props.roughing_offset if self.props.roughing_offset is not None and self.props.roughing_offset > 0 else 0
         if self.d < self.min_dia:
+            if ro:
+                return [self.d - ro, self.d]
             return [self.d]
         else:
             dias = []
             d = self.min_dia
+            final_d = self.d - ro
             step = self.tool.diameter * self.tool.stepover
             # XXXKF adjust stepover to make the last pass same as the previous ones
-            while d < self.d:
+            while d < final_d:
                 dias.append(d)
                 d += step
             # If the last diameter is very close to the final diameter, just replace it with
             # final diameter instead of making the last pass nearly a spring pass. Now, a spring
             # pass or a finishing pass would be a nice feature to have, but done in a predictable
             # manner and not for some specific diameters and not others.
-            if len(dias) and dias[-1] > self.d - self.tool.diameter * self.tool.stepover / 10:
-                dias[-1] = self.d
+            if len(dias) and dias[-1] > final_d - self.tool.diameter * self.tool.stepover / 10:
+                dias[-1] = final_d
             else:
+                dias.append(final_d)
+            if ro:
                 dias.append(self.d)
             return dias
 
