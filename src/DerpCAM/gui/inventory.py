@@ -1,4 +1,5 @@
 from DerpCAM.common.guiutils import EnumClass, Format, UnitConverter
+from DerpCAM.cam.milling_tool import carbide_uncoated
 from DerpCAM.cam.wall_profile import UserDefinedWallProfile, WallProfileItem, WallProfileItemType
 import os
 import json
@@ -149,6 +150,9 @@ class CutterMaterial(Serializable):
         return CutterMaterial.values[name]
     def is_carbide(self):
         return 'carbide' in self.name
+    def coating_type(self):
+        # XXXKF account for coatings (probably irrelevant in hobby machines)
+        return carbide_uncoated
 
 class CutterBase(Serializable):
     properties = [ MaterialProperty('material'), 'diameter', 'length', 'flutes' ]
@@ -206,6 +210,18 @@ class PocketStrategy(EnumClass):
         (HSM_PEEL_ZIGZAG, "Arc peel w/zig-zag (HSM)"),
     ]
 
+class CoolantMode(EnumClass):
+    UNSPECIFIED = 0
+    OFF = 1
+    FLOOD = 2
+    MIST = 3
+    descriptions = [
+        (UNSPECIFIED, "Keep as-is"),
+        (OFF, "No coolant"),
+        (FLOOD, "Flood coolant"),
+        (MIST, "Mist coolant"),
+    ]
+
 class EntryMode(EnumClass):
     PREFER_RAMP = 1
     PREFER_HELIX = 2
@@ -226,9 +242,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode', 'roughing_offset', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode', 'roughing_offset', 'coolant_mode', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -245,6 +261,7 @@ class EndMillPreset(PresetBase):
         res.eh_diameter = eh_diameter
         res.entry_mode = entry_mode
         res.roughing_offset = roughing_offset
+        res.coolant_mode = coolant_mode
         return res
     def description_only(self):
         res = []
@@ -299,8 +316,8 @@ class EndMillCutter(CutterBase):
         return self.shape == EndMillShape.TAPERED
     def eff_diameter(self):
         return max(0.1, self.tip_diameter) if self.shape == EndMillShape.TAPERED else self.diameter
-    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset):
-        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset))
+    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode):
+        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode))
         return self
     def description_only(self):
         form = EndMillShape.toString(self.shape).lower() + " end mill"
@@ -312,14 +329,15 @@ class EndMillCutter(CutterBase):
             return f"{self.flutes}F \u2300{Format.cutter_length(self.diameter, brief=True)} {self.material.name} {form}"
         
 class DrillBitPreset(PresetBase):
-    properties = [ 'rpm', 'vfeed', 'maxdoc', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'vfeed', 'maxdoc', 'coolant_mode', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, vfeed, maxdoc):
+    def new(klass, id, name, toolbit, rpm, vfeed, maxdoc, coolant_mode):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
         res.vfeed = vfeed
         res.maxdoc = maxdoc
+        res.coolant_mode = coolant_mode
         return res
     def description_only(self):
         res = []
@@ -338,21 +356,22 @@ class DrillBitCutter(CutterBase):
     @classmethod
     def new(klass, id, name, material, diameter, length, flutes=2):
         return klass.new_impl(id, name, material, diameter, length, flutes)
-    def addPreset(self, id, name, rpm, vfeed, maxdoc):
-        self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc))
+    def addPreset(self, id, name, rpm, vfeed, maxdoc, coolant_mode):
+        self.presets.append(DrillBitPreset.new(id, name, self, rpm, vfeed, maxdoc, coolant_mode))
         return self
     def description_only(self):
         return f"{Format.cutter_dia(self.diameter)} {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
     
 class ThreadMillPreset(PresetBase):
-    properties = [ 'rpm', 'vfeed', 'stepover', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'vfeed', 'stepover', 'coolant_mode', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, vfeed, stepover):
+    def new(klass, id, name, toolbit, rpm, vfeed, stepover, coolant_mode):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
         res.vfeed = vfeed
         res.stepover = stepover
+        res.coolant_mode = coolant_mode
         return res
     def description_only(self):
         res = []
@@ -376,6 +395,9 @@ class ThreadMillCutter(CutterBase):
         res.max_pitch = max_pitch
         res.thread_angle = thread_angle or 60
         return res
+    def addPreset(self, id, name, rpm, vfeed, stepover, coolant_mode):
+        self.presets.append(ThreadMillPreset.new(id, name, self, rpm, vfeed, stepover, coolant_mode))
+        return self
     def description_only(self):
         if self.min_pitch == self.max_pitch:
             return f"{Format.cutter_dia(self.diameter)} {self.material.name} thread mill, P={Format.thread_pitch(self.min_pitch)}" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
@@ -460,25 +482,25 @@ class Inventory(object):
         carbide = self.materialByName('carbide')
         self.toolbits = [
             EndMillCutter.new(1, "cheapo 2F 3.2/15", carbide, 3.2, 15, 2, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1)
-                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1),
+                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
+                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(2, "cheapo 2F 2.5/12", carbide, 2.5, 12, 2, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1)
-                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1),
+                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
+                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(3, "cheapo 1F 3.2/15", carbide, 3.2, 15, 1, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_HELIX, 0.15),
+                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_HELIX, 0.15, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(4, "cheapo 1F 2/8", carbide, 2, 8, 1, EndMillShape.FLAT, 0, 0, None),
             EndMillCutter.new(5, "30\u00b0 0.3mm V-bit, 3.2mm shank", carbide, 3.2, None, 1, EndMillShape.TAPERED, 30, 0.3, None),
             DrillBitCutter.new(50, "2mm HSS", HSS, 2, 25)
-                .addPreset(200, "Wood-untested", 10000, 100, 6),
+                .addPreset(200, "Wood-untested", 10000, 100, 6, CoolantMode.UNSPECIFIED),
             DrillBitCutter.new(51, "3mm HSS", HSS, 3, 41)
-                .addPreset(201, "Wood-untested", 7000, 100, 6),
+                .addPreset(201, "Wood-untested", 7000, 100, 6, CoolantMode.UNSPECIFIED),
             DrillBitCutter.new(52, "4mm HSS", HSS, 4, 54)
-                .addPreset(202, "Wood-untested", 5000, 100, 6),
+                .addPreset(202, "Wood-untested", 5000, 100, 6, CoolantMode.UNSPECIFIED),
             DrillBitCutter.new(53, "5mm HSS", HSS, 5, 62)
-                .addPreset(203, "Wood-untested", 4000, 100, 6),
+                .addPreset(203, "Wood-untested", 4000, 100, 6, CoolantMode.UNSPECIFIED),
             DrillBitCutter.new(54, "6mm HSS", HSS, 6, 70)
-                .addPreset(204, "Wood-untested", 3000, 100, 6),
+                .addPreset(204, "Wood-untested", 3000, 100, 6, CoolantMode.UNSPECIFIED),
         ]
     def createStdWallProfiles(self):
         self.wall_profiles = [

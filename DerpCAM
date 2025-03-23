@@ -115,7 +115,7 @@ else:
     if not args.close or res:
         retcode = res
     del w
-    del app
     cutter_mgr.saveInventory()
+    del app
 
 sys.exit(retcode)

@@ -24,6 +24,7 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('rpm'),
         PresetDerivedAttributeItem('vfeed'),
         PresetDerivedAttributeItem('doc', preset_name='maxdoc'),
+        PresetDerivedAttributeItem('coolant_mode', def_value=inventory.CoolantMode.UNSPECIFIED),
     ]
     attrs_endmill = [
         PresetDerivedAttributeItem('hfeed'),
@@ -46,6 +47,7 @@ class PresetDerivedAttributes(object):
     attrs_thread = attrs_thread_only + [
         PresetDerivedAttributeItem('rpm'),
         PresetDerivedAttributeItem('stepover', preset_scale=100),
+        PresetDerivedAttributeItem('coolant_mode', def_value=inventory.CoolantMode.UNSPECIFIED),
     ]
     attrs = {
         inventory.EndMillCutter : {i.name : i for i in attrs_all},
@@ -66,12 +68,13 @@ class PresetDerivedAttributes(object):
         if operation.document.material.material is not None and operation.cutter is not None:
             m = MaterialType.toTuple(operation.document.material.material)[2]
             t = operation.cutter
+            coating = t.material.coating_type()
             try:
                 if isinstance(operation.cutter, inventory.EndMillCutter):
                     if not all([self.rpm, self.hfeed, self.vfeed, self.doc, self.stepover]):
                         # Slotting penalty
                         is_slotting = operation.operation in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.ENGRAVE)
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 
+                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, material=m, coating=coating, is_hss=not operation.cutter.material.is_carbide(), 
                             flute_length=t.length, machine_params=operation.document.gcode_machine_params, rpm_override=self.rpm, is_slotting=is_slotting, max_doc=t.max_doc)
                         if self.rpm is None:
                             self.rpm = st.rpm
@@ -85,7 +88,7 @@ class PresetDerivedAttributes(object):
                             self.stepover = st.stepover * 100
                 elif isinstance(operation.cutter, inventory.DrillBitCutter):
                     if not all([self.rpm, self.vfeed, self.doc]):
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
+                        st = milling_tool.standard_tool(t.diameter, t, flutes=t.flutes or 2, material=m, coating=coating, is_hss=not operation.cutter.material.is_carbide(), flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
                         if self.rpm is None:
                             self.rpm = st.rpm
                         if self.vfeed is None:
@@ -94,7 +97,7 @@ class PresetDerivedAttributes(object):
                             self.doc = st.maxdoc
                 elif isinstance(operation.cutter, inventory.ThreadMillCutter):
                     if not all([self.rpm, self.vfeed, self.stepover]):
-                        st = milling_tool.standard_tool(t.diameter, t, t.flutes or 2, m, milling_tool.carbide_uncoated, not operation.cutter.material.is_carbide(), 1.0, flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
+                        st = milling_tool.standard_tool(t.diameter, t, flutes=t.flutes or 2, material=m, coating=coating, is_hss=not operation.cutter.material.is_carbide(), flute_length=t.length, machine_params=operation.document.gcode_machine_params, is_drill=True, rpm_override=self.rpm)
                         if self.rpm is None:
                             self.rpm = st.rpm
                         if self.vfeed is None:
@@ -304,6 +307,7 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatDistEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
+    prop_coolant_mode = EnumEditableProperty("Coolant mode", "coolant_mode", inventory.CoolantMode, allow_none=True)
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True)
@@ -346,13 +350,13 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter, klass.prop_entry_mode]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter, klass.prop_entry_mode, klass.prop_coolant_mode]
     @classmethod
     def properties_drillbit(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
+        return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode]
     @classmethod
     def properties_threadmill(klass):
-        return [klass.prop_name, klass.prop_vfeed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload]
+        return [klass.prop_name, klass.prop_vfeed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]

@@ -162,6 +162,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True, none_value="(use preset value)")
+    prop_coolant_mode = EnumEditableProperty("Coolant mode", "coolant_mode", inventory.CoolantMode, allow_none=True, none_value="(use preset value)")
 
     prop_hfeed = FloatDistEditableProperty("Horizontal feed rate", "hfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
     prop_vfeed = FloatDistEditableProperty("Vertical feed rate", "vfeed", Format.feed, unit="mm/min", min=0.1, max=10000, allow_none=True)
@@ -330,7 +331,8 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
             self.prop_stepover, self.prop_thread_pitch, self.prop_eh_diameter, self.prop_entry_mode,
-            self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm]
+            self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm,
+            self.prop_coolant_mode]
     def setPropertyValue(self, name, value):
         if name == 'tool_preset':
             if isinstance(value, SavePresetOption):
@@ -623,7 +625,7 @@ class OperationTreeItem(CAMTreeItem):
             depth += machine_params.extra_depth
         if isinstance(self.cutter, inventory.ThreadMillCutter):
             tool = milling_tool.ThreadCutter(self.cutter.diameter, self.cutter.min_pitch, self.cutter.max_pitch, self.cutter.flutes, self.cutter.length, pda.rpm, pda.vfeed, pda.stepover / 100.0, self.cutter.thread_angle)
-            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0, coolant_mode=pda.coolant_mode)
         elif isinstance(self.cutter, inventory.EndMillCutter):
             wall_profile = self.wall_profile.shape if self.wall_profile else None
             is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
@@ -631,12 +633,12 @@ class OperationTreeItem(CAMTreeItem):
                 climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
-                pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile)
+                pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile, pda.coolant_mode)
             if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
                 self.addWarning(f"Specified depth of cut per pass is larger than the maximum of {Format.cutter_length(self.cutter.max_doc)}")
         elif isinstance(self.cutter, inventory.DrillBitCutter):
             tool = milling_tool.Tool(self.cutter.diameter, 0, pda.vfeed, pda.doc)
-            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0)
+            gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, 0, coolant_mode=pda.coolant_mode)
         else:
             assert False, f"Unknown cutter type: {type(self.cutter)}"
         gcode_props.rpm = pda.rpm
@@ -1144,7 +1146,7 @@ class DocumentModel(QObject):
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None, 0, 0.5, inventory.EntryMode.PREFER_RAMP, 0)
+                tool.get('direction', 0), 0, 0, None, 0, 0.5, inventory.EntryMode.PREFER_RAMP, 0, inventory.CoolantMode.UNSPECIFIED)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset

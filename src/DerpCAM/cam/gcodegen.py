@@ -24,6 +24,7 @@ class Gcode(object):
         self.last_rpm = None
         self.last_coords = None
         self.queued_feed = None
+        self.last_coolant_mode = 0
     def add(self, line):
         self.gcode.append(line)
     def add_dedup(self, line):
@@ -70,13 +71,36 @@ class Gcode(object):
         self.reset()
     def finish(self):
         self.spindle_stop()
+        if self.last_coolant_mode > 1: # CoolantMode.OFF
+            self.coolant_off()
         if GeometrySettings.gcode_variant != GcodeVariant.MARLIN:
+            self.comment("End program")
             self.add("M2")
-    def begin_section(self, rpm=None):
+    def coolant_off(self):
+        self.comment("Coolant off")
+        self.add("M9")
+        self.last_coolant_mode = 1 # CoolantMode.OFF
+    def coolant_flood(self):
+        self.comment("Flood coolant")
+        self.add("M8")
+        self.last_coolant_mode = 2 # CoolantMode.FLOOD
+    def coolant_mist(self):
+        self.comment("Mist coolant")
+        self.add("M7")
+        self.last_coolant_mode = 3 # CoolantMode.MIST
+    def begin_section(self, rpm=None, coolant_mode=None):
         self.last_feed = None
         self.rpm = rpm
+        self.coolant_mode = coolant_mode
         if self.rpm is not None:
             self.spindle_start()
+        if self.coolant_mode and self.coolant_mode != self.last_coolant_mode:
+            if self.coolant_mode == 1: # CoolantMode.OFF
+                self.coolant_off()
+            elif self.coolant_mode == 2: # CoolantMode.FLOOD
+                self.coolant_flood()
+            elif self.coolant_mode == 3: # CoolantMode.MIST
+                self.coolant_mist()
     def feed(self, feed):
         if feed != self.last_feed:
             if GeometrySettings.gcode_variant == GcodeVariant.MARLIN:

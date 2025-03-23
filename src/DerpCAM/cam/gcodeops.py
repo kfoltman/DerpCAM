@@ -29,7 +29,7 @@ class MachineParams(object):
         return clone
 
 class OperationProps(object):
-    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None):
+    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None, coolant_mode=None):
         self.depth = depth
         self.start_depth = start_depth
         self.tab_depth = tab_depth
@@ -40,8 +40,9 @@ class OperationProps(object):
         self.rpm = None
         self.allow_helical_entry = allow_helical_entry
         self.wall_profile = wall_profile or PlainWallProfile()
+        self.coolant_mode = coolant_mode
     def clone(self, **attrs):
-        res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin, self.zigzag, self.angle, self.roughing_offset, self.allow_helical_entry, self.wall_profile)
+        res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin, self.zigzag, self.angle, self.roughing_offset, self.allow_helical_entry, self.wall_profile, self.coolant_mode)
         for k, v in attrs.items():
             assert hasattr(res, k), "Unknown attribute %s" % k
             setattr(res, k, v)
@@ -684,7 +685,8 @@ class Operations(object):
         gcode.rapid(x=0, y=0)
         for operation in self.operations:
             gcode.section_info(f"Start operation: {type(operation).__name__}")
-            gcode.begin_section(operation.rpm)
+            props = self.props or operation.props
+            gcode.begin_section(operation.rpm, props.coolant_mode if props else 0)
             operation.to_gcode(gcode)
             gcode.section_info(f"End operation: {type(operation).__name__}")
         gcode.rapid(x=0, y=0)
