@@ -392,7 +392,7 @@ class Path(object):
                 arc = pt2
                 if mindist is None or dist1 < mindist:
                     mindist = dist1
-                    closest = lengths[i - 1]
+                    closest = lengths[i]
                 dx = pt.x - arc.c.cx
                 dy = pt.y - arc.c.cy
                 angle = atan2(dy, dx) - arc.sstart
