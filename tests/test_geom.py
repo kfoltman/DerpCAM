@@ -211,11 +211,21 @@ class GeomTest(unittest.TestCase):
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(-10, -10)), (0, 10 * sqrt(2)))
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(110, -10)), (100, 10 * sqrt(2)))
 
-        p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0) ], True)
-        self.assertCloseEnoughTuple(p.closest_point(PathPoint(20, 0)), (p.length(), 10))
+        p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0)], True)
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(20, 0)), (0, 10))
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(0, 20)), (2 * pi * 10 / 4, 10))
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2)), (2 * pi * 10 / 8, 0))
         self.assertCloseEnoughTuple(p.closest_point(PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
+
+        p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2), PathPoint(0, 0)], False)
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(20, 0)), (0, 10))
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(-10, 0)), (p.length(), 10))
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(0, 20)), (2 * pi * 10 / 4, 10))
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2)), (2 * pi * 10 / 8, 0))
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(10, 10)), (2 * pi * 10 / 8, PathPoint(10, 10).dist(PathPoint(10 * sqrt(2) / 2, 10 * sqrt(2) / 2))))
+
+        p = Path([ PathPoint(10, 0), PathArc(PathPoint(10, 0), PathPoint(0, 10), CandidateCircle(0, 0, 10), 10, 0, pi / 2)], False)
+        self.assertCloseEnoughTuple(p.closest_point(PathPoint(20, 0)), (0, 10))
 
     def testSubpath(self):
         path = Path([PathPoint(0, 0), PathPoint(10, 0, 1), PathPoint(20, 0, 2), PathPoint(20, 0, 3), PathPoint(30, 0, 4)], False)
