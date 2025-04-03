@@ -841,10 +841,11 @@ class PathOutput(object):
         self.piggybacked_paths_dict = piggybacked_paths_dict
     def to_contours(self):
         contours = []
-        for path in self.paths:
-            contours.append(PathContour([path.optimize()]))
-            for pbpath in self.piggybacked_paths_dict.get(path, []):
-                contours.append(PathContour([pbpath.optimize()]))
+        if self.paths:
+            for path in self.paths:
+                contours.append(PathContour([path.optimize()]))
+                for pbpath in self.piggybacked_paths_dict.get(path, []):
+                    contours.append(PathContour([pbpath.optimize()]))
         return contours
 
 class BaseCut(object):

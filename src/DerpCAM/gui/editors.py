@@ -507,7 +507,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     def setMode(self, value):
         CanvasRotateEditor.mode = value
         self.updateButtons()
-    def setValue(self, value):
+    def setAngle(self, value):
         # XXXKF use formats later
         try:
             angle = float(value)
