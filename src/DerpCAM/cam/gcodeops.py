@@ -19,7 +19,8 @@ class MachineParams(object):
         self.semi_safe_z = semi_safe_z
         self.min_rpm = min_rpm
         self.max_rpm = max_rpm
-        self.over_tab_safety = 0.2
+        self.over_tab_safety = 0.2 # margin for not rubbing against the top of a holding tab
+        self.exit_safety = 0.5 # the upward/Z part of the exit from a hole to prevent rubbing against the sides or the bottom
         self.first_depth = None
         self.extra_depth = 0
     def clone(self):
@@ -481,8 +482,10 @@ class HelicalDrill(UntabbedOperation):
 
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
+        prevd = None
         for d in self.diameters():
-            self.to_gcode_ring(gcode, d, self.tool.hfeed * (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
+            self.to_gcode_ring(gcode, d, prevd, self.tool.hfeed * (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
+            prevd = d
             first = False
         gcode.feed(self.tool.hfeed)
         # Do not rub against the walls
@@ -491,7 +494,7 @@ class HelicalDrill(UntabbedOperation):
         gcode.rapid(x=self.x, y=self.y, z=self.machine_params.safe_z)
         gcode.section_info(f"End helical drill")
 
-    def to_gcode_ring(self, gcode, d, feed, machine_params, first):
+    def to_gcode_ring(self, gcode, d, prevd, feed, machine_params, first):
         r = (d - self.tool.diameter) / 2
         gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
         curz = machine_params.semi_safe_z + self.props.start_depth
@@ -501,11 +504,19 @@ class HelicalDrill(UntabbedOperation):
         gcode.feed(feed)
         dist = 2 * pi * r
         doc = min(self.tool.maxdoc, dist / self.tool.slope())
+        no_linear = False
+        exitz = min(curz, self.props.depth + self.machine_params.exit_safety)
         while curz > self.props.depth:
             nextz = max(curz - doc, self.props.depth)
-            gcode.helix_turn(self.x, self.y, r, curz, nextz)
+            gcode.helix_turn(self.x, self.y, r, curz, nextz, no_linear=no_linear)
             curz = nextz
-        gcode.helix_turn(self.x, self.y, r, curz, curz)
+            no_linear = True
+        gcode.helix_turn(self.x, self.y, r, curz, curz, no_linear=no_linear)
+        if prevd is not None:
+            prevr = (prevd - self.tool.diameter) / 2
+            gcode.linear(x=self.x + prevr, y=self.y, z=exitz)
+        else:
+            gcode.linear(x=self.x, y=self.y)
         gcode.section_info("End ring")
 
 # First make a helical entry and then enlarge to the target diameter
@@ -515,20 +526,22 @@ class HelicalDrillFullDepth(HelicalDrill):
         # Do the first pass at a slower rate because of full radial engagement downwards
         rate_factor = self.tool.full_plunge_feed_ratio
         if self.d < self.min_dia:
-            self.to_gcode_ring(gcode, self.d, self.tool.hfeed * rate_factor, self.machine_params, True)
+            self.to_gcode_ring(gcode, self.d, None, self.tool.hfeed * rate_factor, self.machine_params, True)
         else:
             # Mill initial hole by helical descent into desired depth
             d = self.min_dia
-            self.to_gcode_ring(gcode, d, self.tool.hfeed * rate_factor, self.machine_params, True)
+            prevd = None
+            self.to_gcode_ring(gcode, d, prevd, self.tool.hfeed * rate_factor, self.machine_params, True)
             gcode.feed(self.tool.hfeed)
+            no_linear = False
             # Bore it out at full depth to the final diameter
-            while d < self.d:
+            for d in self.diameters():
                 r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
-                gcode.linear(x=self.x + r, y=self.y)
-                gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
+                gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, no_linear=no_linear)
                 d += self.tool.diameter * self.tool.stepover_fulldepth
+                no_linear = True
             r = max(0, (self.d - self.tool.diameter) / 2)
-            gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, False)
+            gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, no_linear=no_linear)
         gcode.rapid(z=self.machine_params.safe_z)
 
 class ThreadMill(UntabbedOperation):

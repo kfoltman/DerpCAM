@@ -181,12 +181,13 @@ class Gcode(object):
             res += self.enc_coord('K', k)
         return res
 
-    def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True):
+    def helix_turn(self, x, y, r, start_z, end_z, angle=0, climb=True, no_linear=False):
         i = -r * cos(angle)
         j = -r * sin(angle)
         sx = x - i
         sy = y - j
-        self.linear(x = sx, y = sy)
+        if not no_linear:
+            self.linear(x = sx, y = sy)
         cur_z = start_z
         delta_z = end_z - start_z
         arc_dir = direction=1 if climb else -1
