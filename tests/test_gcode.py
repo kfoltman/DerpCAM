@@ -10,7 +10,7 @@ from DerpCAM.cam.milling_tool import *
 from DerpCAM.cam.toolpath import *
 from DerpCAM.cam.wall_profile import *
 
-machine_params = MachineParams(5, 1)
+machine_params = MachineParams(safe_z=5, semi_safe_z=1)
 tool = standard_tool(2, 2, 2, material_mildsteel, carbide_uncoated)
 tool.maxdoc = 1
 

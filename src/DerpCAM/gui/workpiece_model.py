@@ -42,6 +42,7 @@ class WorkpieceTreeItem(CAMTreeItem):
     prop_thickness = FloatDistEditableProperty("Thickness", "thickness", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     prop_clearance = FloatDistEditableProperty("Clearance", "clearance", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     prop_safe_entry_z = FloatDistEditableProperty("Safe entry Z", "safe_entry_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
+    prop_final_z = FloatDistEditableProperty("Final Z", "final_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
@@ -50,9 +51,10 @@ class WorkpieceTreeItem(CAMTreeItem):
         self.thickness = None
         self.clearance = self.document.config_settings.clearance_z
         self.safe_entry_z = self.document.config_settings.safe_entry_z
+        self.final_z = self.document.config_settings.final_z
         self.emitPropertyChanged()
     def properties(self):
-        return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z]
+        return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z, self.prop_final_z]
     def data(self, role):
         if role == Qt.DisplayRole:
             mname = MaterialType.toString(self.material) if self.material is not None else "unknown material"
@@ -66,7 +68,7 @@ class WorkpieceTreeItem(CAMTreeItem):
     def onPropertyValueSet(self, name):
         #if name == 'material':
         #    self.document.make_tool()
-        if name in ('clearance', 'safe_entry_z'):
+        if name in ('clearance', 'safe_entry_z', 'final_z'):
             self.document.makeMachineParams()
         self.emitPropertyChanged(name)
     def invalidatedObjects(self, aspect):

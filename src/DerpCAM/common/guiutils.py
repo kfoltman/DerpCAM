@@ -408,11 +408,16 @@ def customCursor(name):
         res = cursor_cache[name] = QCursor(dataToBitmap(shape[2:]), shape[0], shape[1])
     return res
 
-def floatSpin(vmin, vmax, decs, value, tooltip):
+def floatSpin(vmin, vmax, decs, value, tooltip, specialValue=None):
     res = QDoubleSpinBox()
     res.setRange(vmin, vmax)
     res.setDecimals(decs)
-    res.setValue(value)
+    if specialValue is not None:
+        res.setSpecialValueText(specialValue)
+    if value is not None:
+        res.setValue(value)
+    else:
+        res.setValue(vmin)
     res.setToolTip(tooltip)
     vlongest = max(len(str(vmin)), len(str(vmax)))
     digits = vlongest + decs + (1 if decs else 0)

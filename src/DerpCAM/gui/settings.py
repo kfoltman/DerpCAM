@@ -35,8 +35,12 @@ class FloatConfigSetting(ConfigSetting):
         ConfigSetting.__init__(self, attr_name, setting_pathname, def_value)
         self.digits = digits
     def from_setting(self, cfgvalue):
+        if cfgvalue == "":
+            return None
         return float(cfgvalue)
     def to_setting(self, value):
+        if value is None:
+            return ""
         return f"{value:0.{self.digits}f}"
 
 class BoolConfigSetting(ConfigSetting):
@@ -69,6 +73,7 @@ class ConfigSettings(object):
         ConfigSetting('last_gcode_directory', 'paths/last_gcode', ''),
         FloatConfigSetting('clearance_z', 'defaults/clearance_z', 5, 2),
         FloatConfigSetting('safe_entry_z', 'defaults/safe_entry_z', 1, 2),
+        FloatConfigSetting('final_z', 'defaults/final_z', None, 2),
         BoolConfigSetting('dxf_inches', 'units/dxf_inches', GeometrySettings.dxf_inches),
         BoolConfigSetting('gcode_inches', 'units/gcode_inches', GeometrySettings.gcode_inches),
         BoolConfigSetting('display_inches', 'units/display_inches', GuiSettings.inch_mode),
@@ -239,6 +244,8 @@ class PreferencesDialog(QDialog):
         self.formDefaults.addRow("&Clearance Z (mm):", self.clearanceZSpin)
         self.safeEntryZSpin = floatSpin(-100, 100, 2, self.config.safe_entry_z, "Z coordinate above which vertical rapid moves are safe, slightly above the top of the material")
         self.formDefaults.addRow("&Safe entry Z (mm):", self.safeEntryZSpin)
+        self.finalZSpin = floatSpin(-100, 100, 2, self.config.final_z, "Z coordinate to go to at the end of the G-Code file (for tool changes, safe workpiece removal etc.)", specialValue="None")
+        self.formDefaults.addRow("&Final Z (mm):", self.finalZSpin)
         self.autoImportJoinCheck = QCheckBox("Automatically join DXF lines/arcs into polylines")
         self.autoImportJoinCheck.setChecked(self.config.auto_join_polylines)
         self.formDefaults.addRow(self.autoImportJoinCheck)
@@ -303,6 +310,9 @@ class PreferencesDialog(QDialog):
         self.config.gcode_directory = self.gcodeDirEdit.value()
         self.config.clearance_z = self.clearanceZSpin.value()
         self.config.safe_entry_z = self.safeEntryZSpin.value()
+        self.config.final_z = self.finalZSpin.value()
+        if self.config.final_z <= -100:
+            self.config.final_z = None
         self.config.auto_join_polylines = self.autoImportJoinCheck.isChecked()
         self.config.dxf_inches = self.dxfInchesCheck.isChecked()
         self.config.gcode_inches = self.gcodeInchesCheck.isChecked()

@@ -1262,7 +1262,12 @@ class DocumentModel(QObject):
         self.load(data)
         self.projectLoaded.emit()
     def makeMachineParams(self):
-        self.gcode_machine_params = gcodeops.MachineParams(safe_z=self.material.clearance, semi_safe_z=self.material.safe_entry_z,
+        def combine(x, y):
+            return x if x is not None else y
+        self.gcode_machine_params = gcodeops.MachineParams(
+            safe_z=combine(self.material.clearance, self.config_settings.clearance_z),
+            semi_safe_z=combine(self.material.safe_entry_z, self.config_settings.safe_entry_z),
+            final_z=self.material.final_z,
             min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm)
     def newDocument(self):
         self.reinitDocument()

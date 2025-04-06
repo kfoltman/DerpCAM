@@ -14,9 +14,10 @@ from DerpCAM.cam.gcodegen import Gcode, PathOutput, BaseCut2D, VCarveCut, CutPat
 from DerpCAM.cam import shapes, toolpath
 
 class MachineParams(object):
-    def __init__(self, safe_z, semi_safe_z, min_rpm=None, max_rpm=None):
+    def __init__(self, /, safe_z, semi_safe_z, final_z=None, min_rpm=None, max_rpm=None):
         self.safe_z = safe_z
         self.semi_safe_z = semi_safe_z
+        self.final_z = final_z
         self.min_rpm = min_rpm
         self.max_rpm = max_rpm
         self.over_tab_safety = 0.2 # margin for not rubbing against the top of a holding tab
@@ -702,6 +703,8 @@ class Operations(object):
             gcode.begin_section(operation.rpm, props.coolant_mode if props else 0)
             operation.to_gcode(gcode)
             gcode.section_info(f"End operation: {type(operation).__name__}")
+        if self.machine_params.final_z is not None:
+            gcode.rapid(z=self.machine_params.final_z)
         gcode.rapid(x=0, y=0)
         gcode.finish()
         return gcode
