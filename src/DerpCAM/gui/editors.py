@@ -440,8 +440,12 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
             self.point_prompt = "Centre of rotation:"
             self.parent.setWindowTitle("Rotate objects - select centre of rotation")
         elif self.stage == 1:
-            self.point_prompt = "First arm:"
-            self.parent.setWindowTitle("Rotate objects - set the first arm of the angle")
+            if self.mode == 0:
+                self.point_prompt = "First arm:"
+                self.parent.setWindowTitle("Rotate objects - set the first arm of the angle")
+            else:
+                self.point_prompt = "Anchor:"
+                self.parent.setWindowTitle("Rotate objects - set the anchor point to rotate")
         else:
             self.point_prompt = "Second arm:"
             self.parent.setWindowTitle("Rotate objects - set the second arm of the angle")
@@ -460,7 +464,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.deleteOriginalButton.setChecked(self.deleteOrig)
         self.translateOnlyButton.setChecked(self.translateOnly)
         self.modeButton3P.setChecked(self.mode == 0)
-        self.modeButton2P.setChecked(self.mode == 1)
+        self.modeButton1P.setChecked(self.mode == 1)
         self.angleSpin.setEnabled(self.mode == 1)
     def createExtraControls(self):
         self.optionsLayout = QVBoxLayout()
@@ -475,8 +479,8 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.modeGroup.setLayout(self.modeGroupLayout)
         self.modeButton3P = QRadioButton("&3 points")
         self.modeGroupLayout.addWidget(self.modeButton3P)
-        self.modeButton2P = QRadioButton("&2 points+angle")
-        self.modeGroupLayout.addWidget(self.modeButton2P)
+        self.modeButton1P = QRadioButton("1-&2 points+angle")
+        self.modeGroupLayout.addWidget(self.modeButton1P)
         self.angleSpin = guiutils.floatSpin(-360, 360, 1, self.angle, "Rotation angle per rotated copy")
         self.angleSpinLabel = QLabel("&Angle:")
         self.angleSpinLabel.setBuddy(self.angleSpin)
@@ -487,7 +491,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         self.optionsLayout.addWidget(self.modeGroup)
 
         self.modeButton3P.clicked.connect(lambda: self.setMode(0))
-        self.modeButton2P.clicked.connect(lambda: self.setMode(1))
+        self.modeButton1P.clicked.connect(lambda: self.setMode(1))
 
         self.arrayLayout = QHBoxLayout()
         self.arrayCount = guiutils.intSpin(1, 100, self.count, "Number of copies added")
@@ -507,6 +511,11 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     def setMode(self, value):
         CanvasRotateEditor.mode = value
         self.updateButtons()
+        if value == 1:
+            if (self.stage == 1 and not self.translateOnly) or self.stage == 2:
+                # Just for safety
+                self.mouse_point = self.centre_point
+                self.apply()
     def setAngle(self, value):
         # XXXKF use formats later
         try:
@@ -518,6 +527,10 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
     def pointSelected(self, x, y, from_equals):
         if self.stage == 0:
             self.centre_point = geom.PathPoint(x, y)
+            if self.mode == 1 and not self.translateOnly:
+                self.mouse_point = geom.PathPoint(x, y) # just in case
+                self.apply()
+                return
             self.stage = 1
             self.setTitle()
             self.updateLabel()
@@ -527,6 +540,7 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         elif self.stage == 1:
             self.first_arm = geom.PathPoint(x, y)
             if self.mode == 1:
+                # for 'translate only'
                 self.mouse_point = geom.PathPoint(x, y) # just in case
                 self.apply()
                 return
@@ -539,15 +553,23 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         else:
             self.mouse_point = geom.PathPoint(x, y)
             self.apply()
-    def getTransform(self, second_arm):
-        ox = self.centre_point.x
-        oy = self.centre_point.y
-        angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
+    def getTransform(self, mouse_point):
+        if self.stage > 0:
+            ox = self.centre_point.x
+            oy = self.centre_point.y
+        else:
+            ox = mouse_point.x
+            oy = mouse_point.y
         if self.mode == 1:
             rotation = self.angle * math.pi / 180
-            return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
+            if self.translateOnly and self.stage == 1 and mouse_point is not None:
+                angle1 = math.atan2(mouse_point.y - oy, mouse_point.x - ox)
+                return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, mouse_point.dist(self.centre_point)
+            else:
+                return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, 0, 0
         else:
-            angle2 = math.atan2(second_arm.y - oy, second_arm.x - ox)
+            angle1 = math.atan2(self.first_arm.y - oy, self.first_arm.x - ox)
+            angle2 = math.atan2(mouse_point.y - oy, mouse_point.x - ox)
             rotation = angle2 - angle1
             return ox + self.document.drawing.x_offset, oy + self.document.drawing.y_offset, rotation, angle1, self.first_arm.dist(self.centre_point)
     def drawPreview(self, qp, item, ox, oy, rotation, orig_rotation, radius):
@@ -569,23 +591,42 @@ class CanvasRotateEditor(CanvasEditorPickPoint):
         qp.setTransform(oldTransform)
     def paint(self, e, qp):
         CanvasEditorPickPoint.paint(self, e, qp)
-        if self.centre_point is not None:
+        if self.mode == 1:
+            if self.mouse_point is not None:
+                if self.translateOnly and self.stage == 1:
+                    # Anchor point candidate
+                    first_arm = self.mouse_point
+                    if first_arm is not None:
+                        pen = qp.pen()
+                        qp.setPen(QPen(QColor(255, 0, 0), 0))
+                        qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
+                        ox, oy, rotation, orig_rotation, radius = self.getTransform(self.mouse_point)
+                        tx, ty = ox + radius * math.cos(rotation + orig_rotation), oy + radius * math.sin(rotation + orig_rotation)
+                        qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(tx, ty)))
+                ox, oy, rotation, orig_rotation, radius = self.getTransform(self.mouse_point)
+                for i in range(self.arrayCount.value()):
+                    for item in self.objects:
+                        self.drawPreview(qp, item, ox, oy, rotation * (i + 1), orig_rotation, radius)
+        elif self.centre_point is not None:
             first_arm = self.first_arm if self.first_arm is not None else self.mouse_point
             if first_arm is not None:
                 pen = qp.pen()
                 qp.setPen(QPen(QColor(255, 0, 0), 0))
-                qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
-                if self.first_arm is not None and self.mouse_point is not None:
-                    second_arm = self.mouse_point
-                    qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
-                qp.setPen(pen)
-                if self.first_arm is not None and self.mouse_point is not None:
-                    ox, oy, rotation, orig_rotation, radius = self.getTransform(self.mouse_point)
-                    for i in range(self.arrayCount.value()):
-                        for item in self.objects:
-                            self.drawPreview(qp, item, ox, oy, rotation * (i + 1), orig_rotation, radius)
+                if self.mode == 0:
+                    # First arm (or candidate)
+                    qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(first_arm.x, first_arm.y)))
+                    if self.first_arm is not None and self.mouse_point is not None:
+                        # Second arm candidate
+                        second_arm = self.mouse_point
+                        qp.drawLine(self.canvas.project(QPointF(self.centre_point.x, self.centre_point.y)), self.canvas.project(QPointF(second_arm.x, second_arm.y)))
+                    qp.setPen(pen)
+                    if self.first_arm is not None and self.mouse_point is not None:
+                        ox, oy, rotation, orig_rotation, radius = self.getTransform(self.mouse_point)
+                        for i in range(self.arrayCount.value()):
+                            for item in self.objects:
+                                self.drawPreview(qp, item, ox, oy, rotation * (i + 1), orig_rotation, radius)
     def apply(self):
-        if self.stage == 2 or (self.stage == 1 and self.mode == 1):
+        if self.stage == 2 or self.mode == 1:
             second_arm = self.mouse_point
             ox, oy, rotation, orig_rotation, radius = self.getTransform(second_arm)
             CanvasRotateEditor.count = self.arrayCount.value()
@@ -1297,6 +1338,9 @@ create a circle or use the '=' key to enter centre coordinates.
         self.modeLayout.addStretch(1)
         self.layout.addRow(self.modeLayout)
         self.updateModeButtons()
+    def updateControls(self):
+        self.applyButton.setEnabled(False)
+        CanvasNewItemEditor.updateControls(self)
     def updateModeButtons(self):
         mode = CanvasNewCircleEditor.drawMode
         for i, button in enumerate(self.modeButtons):
@@ -1358,6 +1402,8 @@ create a circle or use the '=' key to enter centre coordinates.
         # Second click (or first if radius/diameter is specified)
         if self.radius is not None:
             centre = self.second_point
+            if centre is None:
+                return
             r = self.radius
         else:
             centre = self.first_point
