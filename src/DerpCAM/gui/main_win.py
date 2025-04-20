@@ -235,7 +235,7 @@ class CAMMainWindow(QMainWindow):
             self.viewer.flashHighlight(None)
     def isGeometrySelected(self):
         selType, items = self.projectDW.activeSelection()
-        return selType == 's' and len(items) > 0
+        return selType == 's' and len(items) > 0 and all([isinstance(i, model.DrawingItemTreeItem) for i in items])
     def isOpenGeometrySelected(self, min_size):
         selType, items = self.projectDW.activeSelection()
         return selType == 's' and len([i for i in items if isinstance(i, model.DrawingPolylineTreeItem) and not i.closed]) >= min_size
