@@ -227,8 +227,10 @@ class PathArc(PathNode):
     def rotated(self, ox, oy, rotation):
         return PathArc(self.p1.rotated(ox, oy, rotation), self.p2.rotated(ox, oy, rotation), self.c.rotated(ox, oy, rotation), self.steps, self.sstart + rotation, self.sspan, self.speed_hint)
     def mirrored(self, p1, p2):
-        rotation = atan2(p2.y - p1.y, p2.x - p1.x)
-        return PathArc(self.p1.mirrored(p1, p2), self.p2.mirrored(p1, p2), self.c.mirrored(p1, p2), self.steps, self.sstart + 2 * rotation, -self.sspan, self.speed_hint)
+        p1m = self.p1.mirrored(p1, p2)
+        p2m = self.p2.mirrored(p1, p2)
+        cm = self.c.mirrored(p1, p2)
+        return PathArc(p1m, p2m, cm, self.steps, cm.angle(p1m), -self.sspan, self.speed_hint)
     def scaled(self, cx, cy, scale):
         return PathArc(self.p1.scaled(cx, cy, scale), self.p2.scaled(cx, cy, scale), self.c.scaled(cx, cy, scale), self.steps, self.sstart, self.sspan, self.speed_hint)
     def cut(self, alpha, beta):
