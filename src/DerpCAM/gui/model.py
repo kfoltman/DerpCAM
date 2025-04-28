@@ -1519,8 +1519,11 @@ class DocumentModel(QObject):
         path = self.defaultGcodeFileName(suffix)
         output_dir = self.config_settings.gcode_directory or self.config_settings.last_gcode_directory
         if output_dir != '':
-            old_path, gcode_filename = os.path.split(path)
-            path = os.path.join(output_dir, gcode_filename)
+            if path == '':
+                path = os.path.join(output_dir, "untitled" + suffix)
+            else:
+                old_path, gcode_filename = os.path.split(path)
+                path = os.path.join(output_dir, gcode_filename)
         return path
     def exportGcode(self, fn):
         with Spinner():
