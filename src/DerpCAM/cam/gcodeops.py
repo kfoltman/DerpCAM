@@ -25,7 +25,7 @@ class MachineParams(object):
         self.first_depth = None
         self.extra_depth = 0
     def clone(self):
-        clone = MachineParams(self.safe_z, self.semi_safe_z, self.min_rpm, self.max_rpm)
+        clone = MachineParams(self.safe_z, self.semi_safe_z, self.final_z, self.min_rpm, self.max_rpm)
         clone.first_depth = self.first_depth
         clone.extra_depth = self.extra_depth
         return clone
