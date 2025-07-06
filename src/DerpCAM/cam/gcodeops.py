@@ -509,10 +509,10 @@ class HelicalDrill(UntabbedOperation):
         exitz = min(curz, self.props.depth + self.machine_params.exit_safety)
         while curz > self.props.depth:
             nextz = max(curz - doc, self.props.depth)
-            gcode.helix_turn(self.x, self.y, r, curz, nextz, no_linear=no_linear)
+            gcode.helix_turn(self.x, self.y, r, curz, nextz, no_linear=no_linear, climb=self.tool.climb)
             curz = nextz
             no_linear = True
-        gcode.helix_turn(self.x, self.y, r, curz, curz, no_linear=no_linear)
+        gcode.helix_turn(self.x, self.y, r, curz, curz, no_linear=no_linear, climb=self.tool.climb)
         if prevd is not None:
             prevr = (prevd - self.tool.diameter) / 2
             gcode.linear(x=self.x + prevr, y=self.y, z=exitz)
