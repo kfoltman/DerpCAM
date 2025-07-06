@@ -255,6 +255,8 @@ class OperationTreeItem(CAMTreeItem):
         has_islands = OperationType.has_islands(self.operation)
         if not is_contour and name in ['tab_height', 'tab_count', 'extra_width', 'trc_rate', 'user_tabs', 'entry_exit']:
             return False
+        if is_contour and name == 'roughing_offset':
+            return False
         if not has_islands and name == 'pocket_strategy':
             return False
         if not self.areIslandsEditable() and name == 'islands':
