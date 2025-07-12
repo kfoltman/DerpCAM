@@ -969,7 +969,7 @@ class MoveItemUndoCommand(QUndoCommand):
 
 class MoveDrawingItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items, dx, dy):
-        QUndoCommand.__init__(self, "Move geometry item" if len(items) == 1 else "Move {len(items)} geometry items")
+        QUndoCommand.__init__(self, "Move geometry item" if len(items) == 1 else f"Move {len(items)} geometry items")
         self.document = document
         self.items = items
         self.dx = dx
@@ -993,7 +993,7 @@ class MoveDrawingItemsUndoCommand(QUndoCommand):
 
 class RotateDrawingItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items, ox, oy, rotation):
-        QUndoCommand.__init__(self, "Rotate geometry item" if len(items) == 1 else "Rotate {len(items)} geometry items")
+        QUndoCommand.__init__(self, "Rotate geometry item" if len(items) == 1 else f"Rotate {len(items)} geometry items")
         self.document = document
         self.items = items
         self.ox = ox
@@ -1018,7 +1018,7 @@ class RotateDrawingItemsUndoCommand(QUndoCommand):
 
 class MirrorDrawingItemsUndoCommand(QUndoCommand):
     def __init__(self, document, items, p1, p2):
-        QUndoCommand.__init__(self, "Mirror geometry item" if len(items) == 1 else "Mirror {len(items)} geometry items")
+        QUndoCommand.__init__(self, "Mirror geometry item" if len(items) == 1 else f"Mirror {len(items)} geometry items")
         self.document = document
         self.items = items
         self.p1 = p1
