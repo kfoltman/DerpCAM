@@ -413,7 +413,12 @@ class PropertySheetItemDelegate(QStyledItemDelegate):
             except ValueError:
                 pass
         else:
-            return QStyledItemDelegate.setModelData(self, editor, model, index)
+            oldValue = self.props_widget.item(row, 0).value
+            QStyledItemDelegate.setModelData(self, editor, model, index)
+            if isinstance(oldValue, MultipleItem) and editor.text() == '':
+                # Special case: editing a MultipleItem to an empty string wouldn't normally trigger the cellChanged signal
+                # because it looks to QStyledItemDelegate as if the user was changing an empty string to an empty string.
+                self.props_widget.cellChanged.emit(row, index.column())
         #self.props_widget.itemFromIndex(index).prop.setData(value)
 
 class DeferredUpdateEvent(QEvent):
