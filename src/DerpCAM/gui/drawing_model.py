@@ -130,21 +130,27 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def translate(self, dx, dy):
         old = self.centre
         self.centre = self.centre.translated(dx, dy)
+        self.calcBounds()
         return old
     def restore_translate(self, old):
         self.centre = old
+        self.calcBounds()
     def rotate(self, ox, oy, rotation):
         old = self.centre
         self.centre = self.centre.rotated(ox, oy, rotation)
+        self.calcBounds()
         return old
     def restore_rotate(self, old):
         self.centre = old
+        self.calcBounds()
     def mirror(self, p1, p2):
         old = self.centre
         self.centre = self.centre.mirrored(p1, p2)
+        self.calcBounds()
         return old
     def restore_mirror(self, old):
         self.centre = old
+        self.calcBounds()
     def store(self):
         res = DrawingItemTreeItem.store(self)
         res['cx'] = self.centre.x
@@ -421,9 +427,11 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
     def translate(self, dx, dy):
         old = self.origin
         self.origin = self.origin.translated(dx, dy)
+        self.calcBounds()
         return old
     def restore_translate(self, old):
         self.origin = old
+        self.calcBounds()
     def rotate(self, ox, oy, rotation):
         old = (self.origin, self.style)
         self.origin = self.origin.rotated(ox, oy, rotation)
@@ -431,10 +439,12 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         style.angle += round(rotation * 180 / math.pi, 3)
         style.angle = style.angle % 360
         self.style = style
+        self.calcBounds()
         return old
     def restore_rotate(self, old):
         self.origin = old[0]
         self.style = old[1]
+        self.calcBounds()
     def toShape(self):
         res = []
         last_bounds = None
