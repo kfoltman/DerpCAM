@@ -193,7 +193,7 @@ class HSMPocket(Pocket):
         Pocket.__init__(self, shape, tool, machine_params, props, extra_attribs={ 'shape_to_refine' : shape_to_refine })
     def build_paths(self, margin):
         self.validate()
-        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {})
+        return PathOutput(cam.pocket.hsm_peel(self.shape, self.tool, self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {}, presorted=True)
 
 class OutsidePeel(UntabbedOperation):
     def build_paths(self, margin):
@@ -205,7 +205,7 @@ class OutsidePeelHSM(UntabbedOperation):
     def build_paths(self, margin):
         if not self.shape.closed:
             raise ValueError("Outside peel cuts are not supported for open shapes")
-        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {})
+        return PathOutput(cam.peel.outside_peel_hsm(self.shape, self.tool, zigzag=self.props.zigzag, displace=self.props.margin + margin, shape_to_refine=self.shape_to_refine, roughing_offset=self.props.roughing_offset), None, {}, presorted=True)
 
 class Contour(Operation):
     def __init__(self, shape, outside, tool, machine_params, props, tabs, extra_width=0, trc_rate=0, entry_exit=None):

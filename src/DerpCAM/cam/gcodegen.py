@@ -467,6 +467,7 @@ class CutLayer2D(object):
         self.segments = contour.segments
         self.force_join = force_join
         self.helical_from_top = helical_from_top
+        self.presorted = contour.presorted
         self.bounds = toolpath.Toolpath.max_bounds(self.segments)
         self.parent = None
         self.children = []
@@ -588,6 +589,9 @@ class CutLayerTree(object):
         self.last_layer = []
         self.this_layer = []
     def add(self, cutlayer):
+        if cutlayer.presorted:
+            self.this_layer.append(cutlayer)
+            return
         for i in self.this_layer:
             if i.overlaps(cutlayer) and not cutlayer.is_edge():
                 i.linked.append(cutlayer)
@@ -684,7 +688,7 @@ class CutPath2D(BaseCutPath):
         self.generate_preview(self.subpaths_full)
         self.cut_layers = self.to_layers()
     def contours_for_layer(self, layer):
-        return [PathContour([subpath]) for subpath in self.subpaths_full]
+        return [PathContour([subpath], False) for subpath in self.subpaths_full]
     def to_preview(self):
         preview = []
         for i in self.subpaths_full:
@@ -701,6 +705,7 @@ class PreviewSubpath(object):
         self.bounds = toolpath.Toolpath.max_bounds(contour.segments)
         self.children = []
         self.linked = []
+        self.presorted = contour.presorted
     def is_edge(self):
         return self.path[0].is_edge
     def overlaps(self, another):
@@ -825,28 +830,30 @@ class CutPathWallProfile(BaseCutPath):
 # A continuous cut outline, consisting of one or more Toolpath objects. Can have multiple segments (for tabbed
 # outlines), but they need to form a continuous line (the next one must start where the previous one ends).
 class PathContour(object):
-    def __init__(self, segments):
+    def __init__(self, segments, presorted):
         assert isinstance(segments, list)
         self.segments = segments
+        self.presorted = presorted
     def tabify(self, cut):
         assert len(self.segments) == 1
-        return PathContour(self.segments[0].tabify(cut))
+        return PathContour(self.segments[0].tabify(cut), self.presorted)
     def untrochoidify(self):
-        return PathContour([item.for_tab_below() for item in self.segments])
+        return PathContour([item.for_tab_below() for item in self.segments], self.presorted)
 
 class PathOutput(object):
-    def __init__(self, paths, paths_for_helical_entry, piggybacked_paths_dict):
+    def __init__(self, paths, paths_for_helical_entry, piggybacked_paths_dict, presorted=False):
         self.paths = paths
         self.paths_for_helical_entry = paths_for_helical_entry
         # Additional paths to cut after a given path, at each depth level (used for widened slots)
         self.piggybacked_paths_dict = piggybacked_paths_dict
+        self.presorted = presorted
     def to_contours(self):
         contours = []
         if self.paths:
             for path in self.paths:
-                contours.append(PathContour([path.optimize()]))
+                contours.append(PathContour([path.optimize()], self.presorted))
                 for pbpath in self.piggybacked_paths_dict.get(path, []):
-                    contours.append(PathContour([pbpath.optimize()]))
+                    contours.append(PathContour([pbpath.optimize()], self.presorted))
         return contours
 
 class BaseCut(object):
