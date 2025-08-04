@@ -64,11 +64,10 @@ class CutterListWidget(QTreeWidget):
         currentItem = None
         if not self.inventory_only:
             for cycle in self.document.allCycles():
-                currentItem = self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item) or currentItem
+                currentItem = self.addToolbit(self.project_toolbits, cycle.cutter, cycle, current_item, True) or currentItem
             #self.addVirtualToolbit(self.project_toolbits, "Create a new cutter for this project only")
         for tb in self.toolbits_func():
-            if tb.name not in self.document.project_toolbits:
-                currentItem = self.addToolbit(self.inventory_toolbits, tb, tb, current_item) or currentItem
+            currentItem = self.addToolbit(self.inventory_toolbits, tb, tb, current_item, tb.name not in self.document.project_toolbits) or currentItem
         #self.addVirtualToolbit(self.inventory_toolbits, "Create a new cutter in the inventory")
         self.expandAll()
         if currentItem:
@@ -81,7 +80,7 @@ class CutterListWidget(QTreeWidget):
         cutter.setForeground(0, QColor(64, 64, 64))
         cutter.setFont(0, self.italic_font)
         parent.addChild(cutter)
-    def addToolbit(self, output_list, tb, tb_obj, current_item):
+    def addToolbit(self, output_list, tb, tb_obj, current_item, can_be_added):
         if self.cutter_type is not None and not isinstance(tb, self.cutter_type):
             return
         is_global = output_list is self.inventory_toolbits
@@ -89,6 +88,7 @@ class CutterListWidget(QTreeWidget):
         cutter = QTreeWidgetItem([tb.cutter_type_name, tb.name, tb.description_only()])
         cutter.is_global = is_global
         cutter.content = tb_obj
+        cutter.can_be_added = can_be_added
         self.setItemFont(cutter, self.larger_font)
         currentItem = None
         if tb_obj is current_item:
@@ -97,6 +97,7 @@ class CutterListWidget(QTreeWidget):
         for j in presets:
             preset = QTreeWidgetItem(["Preset", j.name, j.description_only()])
             preset.is_global = is_global
+            preset.can_be_added = True
             self.setItemFont(preset, self.italic_font)
             preset.content = (tb_obj, j)
             cutter.addChild(preset)
@@ -114,6 +115,11 @@ class CutterListWidget(QTreeWidget):
     def setItemFont(self, item, font):
         for i in range(3):
             item.setFont(i, font)
+    def selectedItemCanBeAdded(self):
+        item = self.currentItem()
+        if item is None or item.content is None:
+            return False
+        return item.can_be_added
     def selectedItem(self):
         item = self.currentItem()
         if item is not None:
@@ -198,7 +204,7 @@ class SelectCutterDialog(QDialog):
             setButtons("&Duplicate preset...", "&Modify preset...", "&Delete preset")
         else:
             setButtons(None, None, None)
-        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(self.tools.selectedItem() is not None)
+        self.buttonBox.button(QDialogButtonBox.Ok).setEnabled(self.tools.selectedItemCanBeAdded())
     def newAction(self):
         item = self.tools.currentItem()
         if item is None:
