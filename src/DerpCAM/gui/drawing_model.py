@@ -94,12 +94,16 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
     def setPropertyValue(self, name, value):
         if name == 'x':
             self.centre = geom.PathPoint(value, self.centre.y)
+            self.calcBounds()
         elif name == 'y':
             self.centre = geom.PathPoint(self.centre.x, value)
+            self.calcBounds()
         elif name == 'radius':
             self.r = value
+            self.calcBounds()
         elif name == 'diameter':
             self.r = value / 2.0
+            self.calcBounds()
         else:
             assert False, "Unknown property: " + name
         self.emitPropertyChanged(name)
