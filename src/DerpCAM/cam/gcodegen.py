@@ -369,34 +369,41 @@ class Gcode(object):
         self.section_info(f"End helical move")
         return helical_entry.start
 
-    def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt, dfeed):
+    def ramped_move_z(self, new_z, old_z, subpath, tool, semi_safe_z, already_cut_z, lastpt, dfeed, double_ramp=False):
         self.section_info(f"Start ramped move from {old_z:0.3f} to {new_z:0.3f}")
         if new_z >= old_z:
             self.rapid(z=new_z)
             self.section_info(f"End ramped move - upward direction detected")
             return lastpt
         old_z = self.prepare_move_z(new_z, old_z, semi_safe_z, already_cut_z)
+        double_mult = 2 if double_ramp else 1
         # Always positive
         z_diff = old_z - new_z
         xy_diff = z_diff * tool.slope()
         tlengths = subpath.lengths()
-        max_ramp_length = tool.max_ramp_length(z_diff)
-        if tlengths[-1] > max_ramp_length:
+        max_ramp_length = tool.max_ramp_length(z_diff) / double_mult
+        npasses = xy_diff / (min(max_ramp_length, tlengths[-1]) * double_mult)
+        if npasses >= 1 and npasses - floor(npasses) > 0.001:
+            # Try to stretch it a little to avoid partial ramps
+            prop_ramp_length = xy_diff / floor(npasses) / double_mult
+            if prop_ramp_length < tlengths[-1]:
+                max_ramp_length = prop_ramp_length
+        if max_ramp_length < tlengths[-1]:
             subpath = subpath.subpath(0, max_ramp_length)
             tlengths = subpath.lengths()
-        npasses = xy_diff / tlengths[-1]
+        npasses = xy_diff / (tlengths[-1] * double_mult)
         if debug_ramp:
             self.add("(Ramp from %0.2f to %0.2f segment length %0.2f xydiff %0.2f passes %d)" % (old_z, new_z, tlengths[-1], xy_diff, npasses))
         subpath_reverse = subpath.reverse()
         lastpt = subpath.seg_start()
         self.feed(tool.hfeed)
         self.linear(x=lastpt.x, y=lastpt.y)
-        per_level = tlengths[-1] / tool.slope()
+        per_level = (tlengths[-1] * double_mult) / tool.slope()
         cur_z = old_z
         for i in range(ceil(npasses)):
             if i == floor(npasses):
                 # Last pass, do a shorter one
-                newlength = (npasses - floor(npasses)) * tlengths[-1]
+                newlength = (npasses - floor(npasses)) * tlengths[-1] / double_mult
                 if newlength < 1 / GeometrySettings.RESOLUTION:
                     # Very small delta, just plunge down
                     feed = self.last_feed
@@ -415,13 +422,13 @@ class Gcode(object):
             next_z = max(new_z, pass_z - per_level)
             if debug_ramp:
                 self.add("(Pass %d base level %0.2f min %0.2f)" % (i, pass_z, next_z))
-            if False:
-                # Simple progressive ramping (not tested!). It does not do lifting,
-                # so it's probably no better for non-centre cutting tools than the
-                # simple one.
-                dz = next_z - cur_z
-                lastpt = self.apply_subpath(subpath, lastpt, cur_z + dz * 0.5, cur_z, tlengths[-1], subject="ramp")
-                lastpt = self.apply_subpath(subpath_reverse, lastpt, cur_z + dz, cur_z + dz * 0.5, tlengths[-1], subject="ramp")
+            if double_ramp:
+                # XXXKF add lifting at some point in future
+                self.feed(dfeed)
+                half_z = (cur_z + next_z) / 2.0
+                lastpt = self.apply_subpath(subpath, lastpt, half_z, cur_z, tlengths[-1], subject="ramp-in")
+                cur_z = half_z
+                lastpt = self.apply_subpath(subpath_reverse, lastpt, next_z, cur_z, tlengths[-1], subject="ramp-back")
                 cur_z = next_z
             else:
                 # This is one of the possible strategies: ramp at an angle, then
@@ -1014,7 +1021,7 @@ class BaseCut2D(BaseCutLayered):
                     from_top = subpath.helical_from_top and curz < self.props.start_depth, top_z=self.props.start_depth)
             else:
                 if newz < self.curz:
-                    self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None, dfeed=subpath.tool.hfeed * speed_ratio)
+                    self.lastpt = gcode.ramped_move_z(newz, self.curz, subpath.path, subpath.tool, self.machine_params.semi_safe_z, z_above_cut, None, dfeed=subpath.tool.hfeed * speed_ratio, double_ramp=self.props.double_ramp)
                 assert self.lastpt is not None
             gcode.feed(subpath.tool.hfeed)
         if self.lastpt != subpath.path.seg_start():

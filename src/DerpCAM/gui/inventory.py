@@ -227,9 +227,11 @@ class EntryMode(EnumClass):
     PREFER_HELIX = 2
     #REQUIRE_HELIX = 3
     #PLUNGE = 4
+    PREFER_DOUBLE_RAMP = 5
     descriptions = [
         (PREFER_RAMP, "Prefer ramp"),
         (PREFER_HELIX, "Prefer helix"),
+        (PREFER_DOUBLE_RAMP, "Prefer double ramp"),
         #(REQUIRE_HELIX, "Require helix"),
         #(PLUNGE, "Vertical plunge"),
     ]

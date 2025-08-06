@@ -635,7 +635,7 @@ class OperationTreeItem(CAMTreeItem):
                 climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
-                pda.entry_mode != inventory.EntryMode.PREFER_RAMP, wall_profile, pda.coolant_mode)
+                pda.entry_mode == inventory.EntryMode.PREFER_HELIX, wall_profile, pda.coolant_mode, pda.entry_mode == inventory.EntryMode.PREFER_DOUBLE_RAMP)
             if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
                 self.addWarning(f"Specified depth of cut per pass is larger than the maximum of {Format.cutter_length(self.cutter.max_doc)}")
         elif isinstance(self.cutter, inventory.DrillBitCutter):
