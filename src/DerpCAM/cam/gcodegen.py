@@ -590,7 +590,10 @@ class CutLayerTree(object):
         self.this_layer = []
     def add(self, cutlayer):
         if cutlayer.presorted:
-            self.this_layer.append(cutlayer)
+            if not self.roots:
+                self.roots = [cutlayer]
+            else:
+                self.roots.append(cutlayer)
             return
         for i in self.this_layer:
             if i.overlaps(cutlayer) and not cutlayer.is_edge():
