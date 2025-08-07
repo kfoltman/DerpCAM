@@ -36,7 +36,8 @@ class PresetDerivedAttributes(object):
         PresetDerivedAttributeItem('direction', def_value=inventory.MillDirection.CONVENTIONAL),
         PresetDerivedAttributeItem('pocket_strategy', def_value=inventory.PocketStrategy.CONTOUR_PARALLEL),
         PresetDerivedAttributeItem('axis_angle', def_value=0),
-        PresetDerivedAttributeItem('eh_diameter', preset_scale=100, def_value=50),
+        PresetDerivedAttributeItem('min_eh_diameter', preset_scale=100, def_value=25),
+        PresetDerivedAttributeItem('max_eh_diameter', preset_scale=100, def_value=50),
         PresetDerivedAttributeItem('entry_mode', def_value=inventory.EntryMode.PREFER_HELIX),
     ]
     # only endmill+drill bit
@@ -309,10 +310,11 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True)
     prop_coolant_mode = EnumEditableProperty("Coolant mode", "coolant_mode", inventory.CoolantMode, allow_none=True)
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
-    prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_min_eh_diameter = FloatDistEditableProperty("Entry helix min %dia", "min_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_max_eh_diameter = FloatDistEditableProperty("Entry helix max %dia", "max_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True)
     
-    props_percent = set(['stepover', 'extra_width', 'trc_rate', 'eh_diameter'])
+    props_percent = set(['stepover', 'extra_width', 'trc_rate', 'min_eh_diameter', 'max_eh_diameter'])
 
     def __init__(self, document, preset):
         self.inventory_preset = preset
@@ -350,7 +352,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return []
     @classmethod
     def properties_endmill(klass):
-        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_eh_diameter, klass.prop_entry_mode, klass.prop_coolant_mode]
+        return [klass.prop_name, klass.prop_doc, klass.prop_hfeed, klass.prop_vfeed, klass.prop_offset, klass.prop_roughing_offset, klass.prop_stepover, klass.prop_direction, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_extra_width, klass.prop_trc_rate, klass.prop_pocket_strategy, klass.prop_axis_angle, klass.prop_min_eh_diameter, klass.prop_max_eh_diameter, klass.prop_entry_mode, klass.prop_coolant_mode]
     @classmethod
     def properties_drillbit(klass):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode]
@@ -422,7 +424,7 @@ class ToolPresetTreeItem(CAMTreeItem):
                     self.inventory_preset.vfeed = None
         else:
             assert False, "Unknown attribute: " + repr(name)
-        if name in ['roughing_offset', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode']:
+        if name in ['roughing_offset', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'min_eh_diameter', 'max_eh_diameter', 'entry_mode']:
             # There are other things that might require a recalculation, but do not result in visible changes
             self.document.startUpdateCAM(subset=self.document.allOperations(lambda item: item.tool_preset is self.inventory_preset))
         self.emitPropertyChanged(name)

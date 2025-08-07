@@ -6,7 +6,7 @@ class FakeTool(object):
         self.diameter = diameter
 
 class Tool(object):
-    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None, tip_angle=0, tip_diameter=0):
+    def __init__(self, diameter, hfeed, vfeed, maxdoc, stepover=0.5, stepover_fulldepth=0.1, climb=False, min_helix_ratio=None, max_helix_ratio=None, tip_angle=0, tip_diameter=0):
         self.diameter = diameter
         self.flutes = None
         self.hfeed = hfeed
@@ -22,8 +22,12 @@ class Tool(object):
         # evacuation may be a problem.
         if min_helix_ratio is None:
             min_helix_ratio = 0.5
+        if max_helix_ratio is None:
+            max_helix_ratio = min_helix_ratio
         self.min_helix_ratio = min_helix_ratio
+        self.max_helix_ratio = max_helix_ratio
         self.min_helix_diameter = min_helix_ratio * diameter
+        self.max_helix_diameter = max_helix_ratio * diameter
         self.helix_entry_diameter = self.min_helix_diameter
         self.material = None
         self.coating = None
@@ -56,11 +60,11 @@ class Tool(object):
             return self.diameter
         slope = -0.5 / tan((self.tip_angle * pi / 180) / 2)
         return min(self.diameter, self.tip_diameter + depth / slope)
-    def clone_with_overrides(self, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, tip_angle=None, tip_diameter=None):
+    def clone_with_overrides(self, /, hfeed=None, vfeed=None, maxdoc=None, rpm=None, stepover=None, climb=None, min_helix_ratio=None, max_helix_ratio=None, tip_angle=None, tip_diameter=None):
         def ovr(v1, v2):
             return v1 if v1 is not None else v2
         tool = Tool(self.diameter, hfeed or self.hfeed, vfeed or self.vfeed, maxdoc or self.maxdoc, stepover or self.stepover, self.stepover_fulldepth, 
-            ovr(climb, self.climb), ovr(min_helix_ratio, self.min_helix_ratio), ovr(tip_angle, self.tip_angle), ovr(tip_diameter, self.tip_diameter))
+            ovr(climb, self.climb), ovr(min_helix_ratio, self.min_helix_ratio), ovr(max_helix_ratio, self.max_helix_ratio), ovr(tip_angle, self.tip_angle), ovr(tip_diameter, self.tip_diameter))
         if rpm is None:
             tool.rpm = self.rpm
         else:
@@ -88,6 +92,15 @@ class Tool(object):
             self.short_info = "%dF %0.1fmm %s/%s @S=%0.0f, F=%0.0f, D=%0.2f" % (self.flutes, self.diameter, self.coating.short_name, self.material.short_name, self.rpm, self.hfeed, self.maxdoc)
         else:
             self.short_info = "%dF %0.2fmm %s/%s @S=%0.0f, F=%0.0f, D=%0.2f" % (self.flutes, self.diameter, self.coating.short_name, self.material.short_name, self.rpm, self.hfeed, self.maxdoc)
+    def helix_diameters(self):
+        # Returns a sequence of potential helix diameters to try
+        res = [self.max_helix_diameter]
+        if self.min_helix_diameter < self.max_helix_diameter:
+            step = min(1, max(0.1, (self.max_helix_diameter - self.min_helix_diameter) / 5))
+            while res[-1] - step > self.min_helix_diameter:
+                res.append(res[-1] - step)
+            res.append(self.min_helix_diameter)
+        return res
 
 class ThreadCutter(object):
     def __init__(self, diameter, min_pitch, max_pitch, flutes, flute_length, rpm, feed, stepover, tooth_angle=60):

@@ -4,7 +4,7 @@ width = 30
 length = 60
 
 
-tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2)
+tool = Tool(diameter = 4, hfeed = 300, vfeed = 50, maxdoc = 0.2, min_helix_ratio = 0.25, max_helix_ratio = 0.75)
 depth = -4
 # Safe Z for rapid moves above the workpiece (clear of clamping, screws etc.)
 safe_z = 5

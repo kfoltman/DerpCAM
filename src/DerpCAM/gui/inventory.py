@@ -102,6 +102,7 @@ class Serializable(object):
                 setattr(res, i.name, i.decode(data.get(i.name, None)))
             else:
                 setattr(res, i, data.get(i, None))
+        res.load_remaining(data)
         res.update_defaults()
         return res
     def store(self):
@@ -116,6 +117,8 @@ class Serializable(object):
                 data[i] = getattr(self, i)
         return data
     def update_defaults(self):
+        pass
+    def load_remaining(self, data):
         pass
     def resetTo(self, src):
         for i in self.properties:
@@ -244,9 +247,9 @@ class PresetBase(Serializable):
             return self.description_only()
 
 class EndMillPreset(PresetBase):
-    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'eh_diameter', 'entry_mode', 'roughing_offset', 'coolant_mode', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'hfeed', 'vfeed', 'maxdoc', 'offset', 'stepover', 'direction', 'extra_width', 'trc_rate', 'pocket_strategy', 'axis_angle', 'min_eh_diameter', 'max_eh_diameter', 'entry_mode', 'roughing_offset', 'coolant_mode', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode):
+    def new(klass, id, name, toolbit, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, min_eh_diameter, max_eh_diameter, entry_mode, roughing_offset, coolant_mode):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
@@ -260,7 +263,8 @@ class EndMillPreset(PresetBase):
         res.trc_rate = trc_rate
         res.pocket_strategy = pocket_strategy
         res.axis_angle = axis_angle
-        res.eh_diameter = eh_diameter
+        res.min_eh_diameter = min_eh_diameter
+        res.max_eh_diameter = max_eh_diameter
         res.entry_mode = entry_mode
         res.roughing_offset = roughing_offset
         res.coolant_mode = coolant_mode
@@ -282,6 +286,13 @@ class EndMillPreset(PresetBase):
         if self.direction is not None:
             res.append(MillDirection.toString(self.direction))
         return " ".join(res)
+    def load_remaining(self, data):
+        eh_diameter = data.get('eh_diameter')
+        if eh_diameter is not None:
+            if self.min_eh_diameter is None:
+                self.min_eh_diameter = eh_diameter
+            if self.max_eh_diameter is None:
+                self.max_eh_diameter = eh_diameter
 
 class EndMillShape(EnumClass):
     FLAT = 0
@@ -318,8 +329,8 @@ class EndMillCutter(CutterBase):
         return self.shape == EndMillShape.TAPERED
     def eff_diameter(self):
         return max(0.1, self.tip_diameter) if self.shape == EndMillShape.TAPERED else self.diameter
-    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode):
-        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, eh_diameter, entry_mode, roughing_offset, coolant_mode))
+    def addPreset(self, id, name, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, min_eh_diameter, max_eh_diameter, entry_mode, roughing_offset, coolant_mode):
+        self.presets.append(EndMillPreset.new(id, name, self, rpm, hfeed, vfeed, maxdoc, offset, stepover, direction, extra_width, trc_rate, pocket_strategy, axis_angle, min_eh_diameter, max_eh_diameter, entry_mode, roughing_offset, coolant_mode))
         return self
     def description_only(self):
         form = EndMillShape.toString(self.shape).lower() + " end mill"
@@ -484,13 +495,13 @@ class Inventory(object):
         carbide = self.materialByName('carbide')
         self.toolbits = [
             EndMillCutter.new(1, "cheapo 2F 3.2/15", carbide, 3.2, 15, 2, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
-                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
+                .addPreset(100, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.2, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
+                .addPreset(101, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.2, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(2, "cheapo 2F 2.5/12", carbide, 2.5, 12, 2, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
-                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
+                .addPreset(102, "Wood-roughing", 24000, 3200, 1500, 2, 0, 0.6, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.2, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED)
+                .addPreset(103, "Wood-finishing", 24000, 1600, 1500, 1, 0, 0.6, MillDirection.CLIMB, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.2, 0.5, EntryMode.PREFER_RAMP, 0.1, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(3, "cheapo 1F 3.2/15", carbide, 3.2, 15, 1, EndMillShape.FLAT, 0, 0, None)
-                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.5, EntryMode.PREFER_HELIX, 0.15, CoolantMode.UNSPECIFIED),
+                .addPreset(104, "Alu-risky", 16000, 500, 100, 0.5, 0, 0.4, MillDirection.CONVENTIONAL, 0, 0, PocketStrategy.CONTOUR_PARALLEL, 0, 0.2, 0.5, EntryMode.PREFER_HELIX, 0.15, CoolantMode.UNSPECIFIED),
             EndMillCutter.new(4, "cheapo 1F 2/8", carbide, 2, 8, 1, EndMillShape.FLAT, 0, 0, None),
             EndMillCutter.new(5, "30\u00b0 0.3mm V-bit, 3.2mm shank", carbide, 3.2, None, 1, EndMillShape.TAPERED, 30, 0.3, None),
             DrillBitCutter.new(50, "2mm HSS", HSS, 2, 25)

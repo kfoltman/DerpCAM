@@ -44,7 +44,7 @@ class InventoryTest(unittest.TestCase):
         self.checkPropagationForToolbit("cheapo 2F 3.2/15", attr_values=[("diameter", 3), ("flutes", 3), ("length", 10)])
         self.checkPropagationForPreset("cheapo 2F 3.2/15", "Wood-roughing",
             attr_values=[("rpm", 3), ("vfeed", 30), ("hfeed", 30), ("maxdoc", 1), ("offset", 0.1), ("stepover", 0.55), ("direction", MillDirection.CLIMB),
-                ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45), ('eh_diameter', 30), ('entry_mode', EntryMode.PREFER_HELIX), ('roughing_offset', 0.05), ('coolant_mode', CoolantMode.OFF)])
+                ("extra_width", 0.1), ("trc_rate", 0.1), ("pocket_strategy", PocketStrategy.HSM_PEEL_ZIGZAG), ("axis_angle", 45), ('min_eh_diameter', 30), ('max_eh_diameter', 30), ('entry_mode', EntryMode.PREFER_HELIX), ('roughing_offset', 0.05), ('coolant_mode', CoolantMode.OFF)])
     def checkPropagationForToolbit(self, toolbit_name, attr_values):
         em = std_cutters.toolbitByName(toolbit_name)
         self.checkPropagation(em, attr_values)
@@ -111,7 +111,7 @@ class InventoryTest(unittest.TestCase):
         self.checkPreset(inventory, "cheapo 2F 3.2/15", "Wood-roughing",
             ['\u21943200 ', '\u21931500 ', '\u21a72 ', '\u27f760%', '\u27f324000'],
             rpm=24000, hfeed=3200, vfeed=1500, maxdoc=2, offset=0, stepover=0.6,
-            direction=MillDirection.CONVENTIONAL, pocket_strategy=PocketStrategy.CONTOUR_PARALLEL, extra_width=0, trc_rate=0, axis_angle=0, eh_diameter=0.5)
+            direction=MillDirection.CONVENTIONAL, pocket_strategy=PocketStrategy.CONTOUR_PARALLEL, extra_width=0, trc_rate=0, axis_angle=0, min_eh_diameter=0.2, max_eh_diameter=0.5)
         self.checkPreset(inventory, "2mm HSS", "Wood-untested", ['\u27f310000', '\u2193100', '\u21a76'], rpm=10000, vfeed=100, maxdoc=6)
         self.checkPreset(inventory, "3mm HSS", "Wood-untested", ['\u27f37000', '\u2193100', '\u21a76'], rpm=7000, vfeed=100, maxdoc=6)
     def checkCutterAttribs(self, inventory, id, name, diameter, flutes, length, substr, data_type):

@@ -441,6 +441,8 @@ class HelicalDrill(UntabbedOperation):
         self.min_dia = tool.diameter + tool.min_helix_diameter
         if d < self.min_dia:
             raise ValueError("Diameter %0.3f smaller than the minimum %0.3f" % (d, self.min_dia))
+        # Can expand up to max diameter
+        self.min_dia = min(d, tool.diameter + tool.max_helix_diameter)
         self.x = x
         self.y = y
         self.d = d

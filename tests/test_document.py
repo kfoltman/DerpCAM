@@ -535,7 +535,8 @@ class PDATest(unittest.TestCase):
         op.direction = gui.inventory.MillDirection.CLIMB
         op.pocket_strategy = gui.inventory.PocketStrategy.AXIS_PARALLEL
         op.axis_angle = 30
-        op.eh_diameter = 80
+        op.min_eh_diameter = 80
+        op.max_eh_diameter = 90
         pda = gui.model.PresetDerivedAttributes(op)
         errors = []
         pda.validate(errors)
@@ -554,7 +555,8 @@ class PDATest(unittest.TestCase):
         self.assertEqual(preset.direction, gui.inventory.MillDirection.CLIMB)
         self.assertEqual(preset.pocket_strategy, gui.inventory.PocketStrategy.AXIS_PARALLEL)
         self.assertEqual(preset.axis_angle, 30)
-        self.assertEqual(preset.eh_diameter, 0.8)
+        self.assertEqual(preset.min_eh_diameter, 0.8)
+        self.assertEqual(preset.max_eh_diameter, 0.9)
         # Reset the operation's settings, verify that they are reset
         pda.resetPresetDerivedValues(op)
         self.verifyOpBlank(op)
@@ -630,7 +632,8 @@ class PDATest(unittest.TestCase):
         self.verifyAttribute(op, pda, 'direction', gui.inventory.MillDirection.CLIMB, gui.inventory.MillDirection.CONVENTIONAL)
         self.verifyAttribute(op, pda, 'pocket_strategy', gui.inventory.PocketStrategy.AXIS_PARALLEL, gui.inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG)
         self.verifyAttribute(op, pda, 'axis_angle', 30, 35)
-        self.verifyAttribute(op, pda, 'eh_diameter', 80, 20)
+        self.verifyAttribute(op, pda, 'min_eh_diameter', 80, 20)
+        self.verifyAttribute(op, pda, 'max_eh_diameter', 90, 30)
     def verifyOpValuesDB(self, op):
         pda = gui.model.PresetDerivedAttributes(op)
         self.verifyAttribute(op, pda, 'rpm', 18000, 20000)

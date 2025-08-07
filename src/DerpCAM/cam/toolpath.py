@@ -514,7 +514,7 @@ def joinClosePathsWithCollisionCheck(tps, boundary, islands):
 def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
     boundary_path = IntPath(boundary)
     boundary_path = boundary_path.force_orientation(True)
-    island_paths = [IntPath(i).force_orientation(True) for i in islands]
+    island_paths = [IntPath(i).force_orientation(True) for i in islands]    
     for tp in toolpaths:
         candidates = [tp.path.nodes[0]]
         if len(tp.path.nodes) > 1 and False:
@@ -526,20 +526,25 @@ def findHelicalEntryPoints(toolpaths, tool, boundary, islands, margin):
             candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
             d = tool.diameter * -0.5
             candidates.append((mid[0] + cos(angle) * d, mid[1] + sin(angle) * d))
-        for start in candidates:
-            # Size of the helical entry hole
-            mr = tool.min_helix_diameter
-            d = (tool.diameter + 2 * mr) + 2 * margin
-            c = IntPath(circle(start.x, start.y, d / 2))
-            # Check if it sticks outside of the final shape
-            # XXXKF could be optimized by doing a simple bounds check first
-            if run_clipper_simple(pyclipr.Difference, [c], [boundary_path], bool_only=True):
-                continue
-            # Check for collision with islands
-            if islands and any([run_clipper_simple(pyclipr.Intersection, [i], [c], bool_only=True) for i in island_paths]):
-                continue
-            tp.helical_entry = HelicalEntry(start, mr)
-            break
+        md = tool.max_helix_diameter
+        for md in tool.helix_diameters():
+            for start in candidates:
+                # Size of the helical entry hole
+                d = (tool.diameter + md) + 2 * margin
+                c = IntPath(circle(start.x, start.y, d / 2))
+                # Check if it sticks outside of the final shape
+                # XXXKF could be optimized by doing a simple bounds check first
+                if run_clipper_simple(pyclipr.Difference, [c], [boundary_path], bool_only=True):
+                    continue
+                # Check for collision with islands
+                if islands and any([run_clipper_simple(pyclipr.Intersection, [i], [c], bool_only=True) for i in island_paths]):
+                    continue
+                tp.helical_entry = HelicalEntry(start, md / 2.0)
+                break
+            # Already found?
+            if tp.helical_entry is not None:
+                break
+            # Try a smaller helix
 
 def startWithClosestPoint(path, pt, dia):
     mindist = None

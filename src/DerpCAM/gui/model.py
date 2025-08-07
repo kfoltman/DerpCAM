@@ -160,7 +160,8 @@ class OperationTreeItem(CAMTreeItem):
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
-    prop_eh_diameter = FloatDistEditableProperty("Entry helix %dia", "eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_min_eh_diameter = FloatDistEditableProperty("Entry helix min %dia", "min_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
+    prop_max_eh_diameter = FloatDistEditableProperty("Entry helix max %dia", "max_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True, none_value="(use preset value)")
     prop_coolant_mode = EnumEditableProperty("Coolant mode", "coolant_mode", inventory.CoolantMode, allow_none=True, none_value="(use preset value)")
 
@@ -206,6 +207,8 @@ class OperationTreeItem(CAMTreeItem):
         self.start_depth = 0
         self.tab_height = None
         self.tab_count = None
+        self.min_eh_diameter = None
+        self.max_eh_diameter = None
         self.offset = 0
         self.roughing_offset = 0
         self.pattern_type = FillType.CROSS
@@ -263,7 +266,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if not OperationType.has_stepover(self.operation) and name == 'stepover':
             return False
-        if not OperationType.has_entry_helix(self.operation) and name == 'eh_diameter':
+        if not OperationType.has_entry_helix(self.operation) and name in ['min_eh_diameter', 'max_eh_diameter']:
             return False
         if (not has_islands or self.pocket_strategy not in [inventory.PocketStrategy.AXIS_PARALLEL, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG]) and name == 'axis_angle':
             return False
@@ -319,6 +322,12 @@ class OperationTreeItem(CAMTreeItem):
         self.entry_exit = [(geom.PathPoint(i[0][0], i[0][1]), geom.PathPoint(i[1][0], i[1][1])) for i in dump.get('entry_exit', [])]
         self.active = dump.get('active', True)
         self.wall_profile = dump.get('wall_profile', None)
+        eh_diameter = dump.get('eh_diameter')
+        if eh_diameter is not None:
+            if self.min_eh_diameter is None:
+                self.min_eh_diameter = eh_diameter
+            if self.max_eh_diameter is None:
+                self.max_eh_diameter = eh_diameter
         self.updateCheckState()
     def properties(self):
         return [self.prop_operation, self.prop_cutter, self.prop_preset, 
@@ -332,7 +341,7 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
-            self.prop_stepover, self.prop_thread_pitch, self.prop_eh_diameter, self.prop_entry_mode,
+            self.prop_stepover, self.prop_thread_pitch, self.prop_min_eh_diameter, self.prop_max_eh_diameter, self.prop_entry_mode,
             self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm,
             self.prop_coolant_mode]
     def setPropertyValue(self, name, value):
@@ -632,7 +641,7 @@ class OperationTreeItem(CAMTreeItem):
             wall_profile = self.wall_profile.shape if self.wall_profile else None
             is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
             tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
-                climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
+                climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.min_eh_diameter / 100.0, max_helix_ratio=pda.max_eh_diameter, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
                 pda.entry_mode == inventory.EntryMode.PREFER_HELIX, wall_profile, pda.coolant_mode, pda.entry_mode == inventory.EntryMode.PREFER_DOUBLE_RAMP)
@@ -1148,7 +1157,7 @@ class DocumentModel(QObject):
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
                 std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None, 0, 0.5, inventory.EntryMode.PREFER_RAMP, 0, inventory.CoolantMode.UNSPECIFIED)
+                tool.get('direction', 0), 0, 0, None, 0, 0.5, 0.5, inventory.EntryMode.PREFER_RAMP, 0, inventory.CoolantMode.UNSPECIFIED)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset
