@@ -641,7 +641,7 @@ class OperationTreeItem(CAMTreeItem):
             wall_profile = self.wall_profile.shape if self.wall_profile else None
             is_tapered = self.cutter.shape == inventory.EndMillShape.TAPERED
             tool = milling_tool.Tool(self.cutter.diameter, pda.hfeed, pda.vfeed, pda.doc, stepover=pda.stepover / 100.0,
-                climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.min_eh_diameter / 100.0, max_helix_ratio=pda.max_eh_diameter, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
+                climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.min_eh_diameter / 100.0, max_helix_ratio=pda.max_eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
                 pda.entry_mode == inventory.EntryMode.PREFER_HELIX, wall_profile, pda.coolant_mode, pda.entry_mode == inventory.EntryMode.PREFER_DOUBLE_RAMP)
