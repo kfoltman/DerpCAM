@@ -100,6 +100,7 @@ else:
     except Exception as e:
         QMessageBox.critical(w, "Error while loading a project/drawing", str(e))
     if args.close:
+        w.document.undoStack.setClean()
         if not document.waitForUpdateCAM():
             sys.stderr.write(f"Error: Operation cancelled\n")
             retcode = 1
@@ -110,7 +111,7 @@ else:
                 for i in errors:
                     if i:
                         sys.stderr.write(f"Error: {i}\n")
-        QTimer.singleShot(0, app.quit)
+        QTimer.singleShot(1000, lambda: w.fileExit())
     res = app.exec_()
     if not args.close or res:
         retcode = res
