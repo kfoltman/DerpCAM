@@ -190,7 +190,7 @@ class Gcode(object):
             self.linear(x = sx, y = sy)
         cur_z = start_z
         delta_z = end_z - start_z
-        arc_dir = direction=1 if climb else -1
+        arc_dir = 1 if climb else -1
         if GeometrySettings.gcode_variant in (GcodeVariant.GRBL, GcodeVariant.MARLIN):
             sx2 = x + i
             sy2 = y + j

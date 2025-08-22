@@ -159,6 +159,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_wall_profile = RefEditableProperty("Wall profile", "wall_profile", WallProfileAdapter(), allow_none=True, none_value="<none>")
     prop_dogbones = EnumEditableProperty("Dogbones", "dogbones", cam.dogbone.DogboneMode, allow_none=False)
     prop_pocket_strategy = EnumEditableProperty("Strategy", "pocket_strategy", inventory.PocketStrategy, allow_none=True, none_value="(use preset value)")
+    prop_hole_strategy = EnumEditableProperty("Strategy", "hole_strategy", inventory.HoleStrategy, allow_none=True, none_value="(use preset value)")
     prop_axis_angle = FloatDistEditableProperty("Axis angle", "axis_angle", format=Format.angle, unit='\u00b0', min=0, max=90, allow_none=True)
     prop_min_eh_diameter = FloatDistEditableProperty("Entry helix min %dia", "min_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_max_eh_diameter = FloatDistEditableProperty("Entry helix max %dia", "max_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
@@ -282,6 +283,8 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.INSIDE_THREAD and name in ['thread_pitch']:
             return False
+        if self.operation != OperationType.INTERPOLATED_HOLE and name in ['hole_strategy']:
+            return False
         return True
     def getValidEnumValues(self, name):
         if name == 'pocket_strategy' and self.operation == OperationType.SIDE_MILL:
@@ -337,7 +340,8 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_dogbones,
             self.prop_extra_width,
             self.prop_islands,
-            self.prop_pocket_strategy, self.prop_axis_angle,
+            self.prop_pocket_strategy, self.prop_hole_strategy,
+            self.prop_axis_angle,
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
@@ -644,7 +648,7 @@ class OperationTreeItem(CAMTreeItem):
                 climb=(pda.direction == inventory.MillDirection.CLIMB), min_helix_ratio=pda.min_eh_diameter / 100.0, max_helix_ratio=pda.max_eh_diameter / 100.0, tip_angle=self.cutter.angle if is_tapered else 0, tip_diameter=self.cutter.tip_diameter if is_tapered else 0)
             zigzag = pda.pocket_strategy in (inventory.PocketStrategy.HSM_PEEL_ZIGZAG, inventory.PocketStrategy.AXIS_PARALLEL_ZIGZAG, wall_profile)
             gcode_props = gcodeops.OperationProps(-depth, -start_depth, -tab_depth, pda.offset, zigzag, pda.axis_angle * math.pi / 180, pda.roughing_offset, 
-                pda.entry_mode == inventory.EntryMode.PREFER_HELIX, wall_profile, pda.coolant_mode, pda.entry_mode == inventory.EntryMode.PREFER_DOUBLE_RAMP)
+                pda.entry_mode == inventory.EntryMode.PREFER_HELIX, wall_profile, pda.coolant_mode, pda.entry_mode == inventory.EntryMode.PREFER_DOUBLE_RAMP, pda.hole_strategy == inventory.HoleStrategy.RADIAL_AXIAL)
             if self.cutter.max_doc and pda.doc > self.cutter.max_doc:
                 self.addWarning(f"Specified depth of cut per pass is larger than the maximum of {Format.cutter_length(self.cutter.max_doc)}")
         elif isinstance(self.cutter, inventory.DrillBitCutter):
@@ -1156,8 +1160,9 @@ class DocumentModel(QObject):
             std_tool = milling_tool.standard_tool(prj_cutter.diameter, prj_cutter, prj_cutter.flutes, material, milling_tool.carbide_uncoated, rpm_override=tool['rpm'], max_doc=tool['depth']).clone_with_overrides(
                 hfeed=tool['hfeed'], vfeed=tool['vfeed'], maxdoc=tool['depth'], rpm=tool['rpm'], stepover=tool.get('stepover', None))
             prj_preset = inventory.EndMillPreset.new(None, "Project preset", prj_cutter,
-                std_tool.rpm, std_tool.hfeed, std_tool.vfeed, std_tool.maxdoc, 0, std_tool.stepover,
-                tool.get('direction', 0), 0, 0, None, 0, 0.5, 0.5, inventory.EntryMode.PREFER_RAMP, 0, inventory.CoolantMode.UNSPECIFIED)
+                rpm=std_tool.rpm, hfeed=std_tool.hfeed, vfeed=std_tool.vfeed, maxdoc=std_tool.maxdoc, offset=0, stepover=std_tool.stepover,
+                direction=tool.get('direction', 0), extra_width=0, trc_rate=0, pocket_strategy=None, hole_strategy=None, axis_angle=0, 
+                min_eh_diameter=0.5, max_eh_diameter=0.5, entry_mode=inventory.EntryMode.PREFER_RAMP, roughing_offset=0, coolant_mode=inventory.CoolantMode.UNSPECIFIED)
             prj_cutter.presets.append(prj_preset)
             self.opAddCutter(prj_cutter)
             self.default_preset_by_tool[prj_cutter] = prj_preset

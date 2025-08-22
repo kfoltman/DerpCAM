@@ -31,7 +31,7 @@ class MachineParams(object):
         return clone
 
 class OperationProps(object):
-    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None, coolant_mode=None, double_ramp=False):
+    def __init__(self, depth, start_depth=0, tab_depth=None, margin=0, zigzag=False, angle=0, roughing_offset=0, allow_helical_entry=True, wall_profile=None, coolant_mode=None, double_ramp=False, radial_axial=False):
         self.depth = depth
         self.start_depth = start_depth
         self.tab_depth = tab_depth
@@ -44,6 +44,7 @@ class OperationProps(object):
         self.wall_profile = wall_profile or PlainWallProfile()
         self.coolant_mode = coolant_mode
         self.double_ramp = double_ramp
+        self.radial_axial = radial_axial
     def clone(self, **attrs):
         res = OperationProps(self.depth, self.start_depth, self.tab_depth, self.margin, self.zigzag, self.angle, self.roughing_offset, self.allow_helical_entry, self.wall_profile, self.coolant_mode, self.double_ramp)
         for k, v in attrs.items():
@@ -454,6 +455,7 @@ class HelicalDrill(UntabbedOperation):
         for cd in self.diameters():
             paths.append(shapes.Shape.circle(self.x, self.y, r=0.5*(cd - self.tool.diameter)).boundary)
         return PathOutput([toolpath.Toolpath(Path(path, True), self.tool) for path in paths], None, {})
+
     def diameters(self):
         ro = self.props.roughing_offset if self.props.roughing_offset is not None and self.props.roughing_offset > 0 else 0
         if self.d < self.min_dia:
@@ -482,8 +484,74 @@ class HelicalDrill(UntabbedOperation):
             return dias
 
     def to_gcode(self, gcode):
-        rate_factor = self.tool.full_plunge_feed_ratio
+        if self.props.radial_axial:
+            self.to_gcode_radial_axial(gcode)
+        else:
+            self.to_gcode_axial_radial(gcode)
 
+    def to_gcode_radial_axial(self, gcode):
+        diameters = self.diameters()
+        if not diameters:
+            return
+        curz = self.machine_params.semi_safe_z + self.props.start_depth
+        endz = self.props.depth
+        doc = self.tool.maxdoc
+        r = (diameters[0]  - self.tool.diameter) / 2
+        gcode.rapid(z=self.machine_params.safe_z)
+        gcode.rapid(x=self.x + r, y=self.y)
+        gcode.rapid(z=curz)
+        first = True
+        while curz > endz:
+            startz = (self.props.start_depth if first else curz) - doc
+            nextz = max(startz, endz)
+            self.to_gcode_enter_slice(gcode, curz, nextz, r)
+            self.to_gcode_expand_slice(gcode, nextz, diameters)
+            curz = nextz
+            first = False
+        gcode.section_info(f"Exit to centre/safe Z")
+        gcode.linear(x=self.x, y=self.y)
+        gcode.rapid(x=self.x, y=self.y, z=self.machine_params.safe_z)
+        gcode.section_info(f"End slicing drill")
+
+    def to_gcode_enter_slice(self, gcode, curz, endz, r):
+        # Helical entry, ends at x + r, y
+        gcode.section_info(f"Helical entry to depth {endz:0.2f}, radius {r:0.2f}")
+        dist = 2 * pi * r
+        doc = min(self.tool.maxdoc, dist / self.tool.slope())
+        rate_factor = self.tool.full_plunge_feed_ratio
+        feed = self.tool.hfeed * rate_factor * self.tool.diagonal_factor()
+        gcode.feed(feed)
+        no_linear = False
+        while curz > endz:
+            nextz = max(curz - doc, endz)
+            if nextz == endz:
+                # XXXKF should modify the feed rate here
+                pass
+            gcode.helix_turn(self.x, self.y, r, curz, nextz, no_linear=no_linear, climb=self.tool.climb)
+            no_linear = True
+            curz = nextz
+        # Full pass (XXKF check if necessary)
+        gcode.feed(self.tool.hfeed)
+        gcode.helix_turn(self.x, self.y, r, endz, endz, no_linear=True, climb=self.tool.climb)
+
+    def to_gcode_expand_slice(self, gcode, z, diameters):
+        gcode.feed(self.tool.hfeed)
+        r = (diameters[0]  - self.tool.diameter) / 2
+        arc_dir = 1 if self.tool.climb else -1
+        for diameter in diameters[1 : ]:
+            gcode.section_info(f"Expand to diameter {diameter:0.2f}")
+            newr = (diameter - self.tool.diameter) / 2
+            rdiff = newr - r
+            tempr = r - rdiff
+            # Tiny half-circle inwards by half a difference between radiuses
+            gcode.arc(arc_dir, self.x + tempr, self.y, i = -rdiff / 2)
+            # Larger half-cricle outwards to end at a final radius
+            gcode.arc(arc_dir, self.x + newr, self.y, i = rdiff)
+            r = newr
+            gcode.helix_turn(self.x, self.y, r, z, z, no_linear=True, climb=self.tool.climb)
+
+    def to_gcode_axial_radial(self, gcode):
+        rate_factor = self.tool.full_plunge_feed_ratio
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
         prevd = None
@@ -502,6 +570,7 @@ class HelicalDrill(UntabbedOperation):
         r = (d - self.tool.diameter) / 2
         gcode.section_info("Start ring at %0.2f, %0.2f diameter %0.2f overall diameter %0.2f" % (self.x, self.y, 2 * r, 2 * r + self.tool.diameter))
         curz = machine_params.semi_safe_z + self.props.start_depth
+        exitz = min(curz, self.props.depth + self.machine_params.exit_safety)
         gcode.rapid(z=machine_params.safe_z if first else curz)
         gcode.rapid(x=self.x + r, y=self.y)
         gcode.rapid(z=curz)
@@ -509,7 +578,6 @@ class HelicalDrill(UntabbedOperation):
         dist = 2 * pi * r
         doc = min(self.tool.maxdoc, dist / self.tool.slope())
         no_linear = False
-        exitz = min(curz, self.props.depth + self.machine_params.exit_safety)
         while curz > self.props.depth:
             nextz = max(curz - doc, self.props.depth)
             gcode.helix_turn(self.x, self.y, r, curz, nextz, no_linear=no_linear, climb=self.tool.climb)
