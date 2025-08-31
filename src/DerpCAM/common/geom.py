@@ -657,6 +657,8 @@ class CandidateCircle(object):
         return self.cx == other.cx and self.cy == other.cy and self.r == other.r
     def dist(self, p):
         return sqrt((p.x - self.cx) ** 2 + (p.y - self.cy) ** 2)
+    def distxy(self, x, y):
+        return sqrt((x - self.cx) ** 2 + (y - self.cy) ** 2)
     def angle(self, p):
         return atan2(p.y - self.cy, p.x - self.cx)
     def centre(self):

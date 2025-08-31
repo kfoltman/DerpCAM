@@ -113,6 +113,7 @@ class CAMMainWindow(QMainWindow):
             MenuItem("Save project &as...", self.fileSaveAs, QKeySequence.SaveAs, "Save a project file under a different name", allow_in_editor=True),
             None,
             MenuItem("&Export G-Code...", self.fileExportGcode, QKeySequence("Ctrl+G"), "Generate and export the G-Code"),
+            MenuItem("Export &DXF...", self.fileExportDXF, None, "Save geometry of the current project to a DXF file"),
             None,
             MenuItem("E&xit", self.fileExit, QKeySequence.Quit, "Quit application", allow_in_editor=True),
         ])
@@ -592,6 +593,21 @@ class CAMMainWindow(QMainWindow):
             self.saveProject(self.document.filename)
             self.document.undoStack.setClean()
             return True
+    def fileExportDXF(self):
+        dlg = QFileDialog(self, "Export the geometry", filter=f"DXF files (*.dxf);;All files (*)")
+        dlg.setAcceptMode(QFileDialog.AcceptSave)
+        dlg.setFileMode(QFileDialog.AnyFile)
+        dlg.setDefaultSuffix(".dxf")
+        if self.document.drawing_filename is not None:
+            path = os.path.splitext(self.document.drawing_filename)[0] + ".dxf"
+            dlg.selectFile(path)
+        else:
+            input_dir = self.configSettings.input_directory or self.configSettings.last_input_directory
+            if input_dir:
+                dlg.setDirectory(input_dir)
+        if dlg.exec_():
+            fn = dlg.selectedFiles()[0]
+            self.document.exportAsDXF(fn)
     def fileExportGcode(self):
         try:
             self.document.validateForOutput()

@@ -2,7 +2,7 @@ from .common_model import *
 from .drawing_model import DrawingItemTreeItem, DrawingPolylineTreeItem, DrawingCircleTreeItem, \
     DrawingTextTreeItem, DrawingTreeItem, DrawingTextStyleHAlign, DrawingTextStyleVAlign, DrawingTextStyle, \
     JoinItemsUndoCommand, AddDrawingItemsUndoCommand, DeleteDrawingItemsUndoCommand, \
-    ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand
+    ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand, DXFExporter
 from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, PresetDerivedAttributes, \
     ModifyToolUndoCommand, RevertToolUndoCommand, \
     AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand, \
@@ -1544,6 +1544,9 @@ class DocumentModel(QObject):
     def exportGcode(self, fn):
         with Spinner():
             OpExporter(self).write(fn)
+    def exportAsDXF(self, fn):
+        with Spinner():
+            DXFExporter(self).write(fn)
     def operationExportSpecial(self, items, filename, first_depth, extra_depth):
         assert len(items) == 1 # for now
         item = items[0]

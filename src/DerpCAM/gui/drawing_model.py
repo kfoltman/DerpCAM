@@ -1,5 +1,6 @@
 from .common_model import *
 import pyclipr
+import ezdxf.zoom
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -1028,3 +1029,41 @@ def contour_nesting(contours, translation):
         for i in redundant:
             islands.remove(i)
     return outsides
+
+class DXFExporter(object):
+    def __init__(self, document):
+        self.document = document
+        self.dxf = ezdxf.new(setup=True, units=ezdxf.units.MM)
+        self.msp = self.dxf.modelspace()
+        for item in self.document.drawing.items():
+            self.add_item(item)
+    def dxfattribs(self):
+        return {"layer" : "0"}
+    def add_item(self, item):
+        if isinstance(item, DrawingPolylineTreeItem):
+            self.add_polyline(item)
+        elif isinstance(item, DrawingCircleTreeItem):
+            self.add_circle(item)
+    def add_polyline(self, item):
+        points = []
+        for node in item.points:
+            if isinstance(node, geom.PathPoint):
+                points.append((node.x, node.y, 0))
+            else:
+                print ("bulge", )
+                r = node.c.r
+                mx = (node.p1.x + node.p2.x) / 2
+                my = (node.p1.y + node.p2.y) / 2
+                nr = node.c.distxy(mx, my)
+                bulge = (r - nr) / r
+                points[-1] = (points[-1][0], points[-1][1], bulge)
+                points.append((node.p2.x, node.p2.y, 0))
+        if item.closed:
+            points.append((item.points[0].x, item.points[0].y, 0))
+        self.msp.add_lwpolyline(points=points, dxfattribs=self.dxfattribs(), format="xyb")
+    def add_circle(self, item):
+        self.msp.add_circle(center=ezdxf.math.Vec2(item.centre.x, item.centre.y), radius=item.r, dxfattribs=self.dxfattribs())
+    def write(self, filename):
+        ezdxf.zoom.extents(self.msp, factor=1.5)
+        with open(filename, "w") as f:
+            self.dxf.write(f)
