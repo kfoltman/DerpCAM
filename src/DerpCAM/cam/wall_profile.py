@@ -7,6 +7,32 @@ class BaseWallProfile(object):
         self.offset_tolerance = 0.1
     def offset_at_depth(self, z, total_depth):
         assert False
+    def max_depth_for_offset(self, offset, total_depth):
+        calc = self.offset_at_depth(0, total_depth)
+        if offset <= calc:
+            return 0
+        depth = total_depth
+        step = total_depth / 2
+        eps = 1e-4
+        calc = self.offset_at_depth(depth, total_depth)
+        if offset >= calc:
+            return total_depth
+        while abs(calc - offset) >= eps and step >= eps:
+            if calc > offset:
+                depth -= step
+            else:
+                depth += step
+            depth = round(depth, 4)
+            step /= 2
+            calc = self.offset_at_depth(depth, total_depth)
+        while step >= eps:
+            depth2 = depth + step
+            calc = self.offset_at_depth(depth2, total_depth)
+            if abs(calc - offset) < eps:
+                depth = depth2
+                depth = round(depth, 4)
+            step /= 2
+        return min(depth, total_depth)
 
 class PlainWallProfile(BaseWallProfile):
     def offset_at_depth(self, depth, total_depth):
