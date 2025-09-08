@@ -28,7 +28,7 @@ class TopChamferWallProfile(BaseWallProfile):
         self.draft = math.tan(angle_deg * math.pi / 180)
         self.length = length
     def offset_at_depth(self, depth, total_depth):
-        if depth <= length:
+        if depth >= self.length:
             return 0
         return self.draft * (depth - self.length)
 
