@@ -55,6 +55,10 @@ class OperationProps(object):
         return self.clone(start_depth=min(self.start_depth, self.depth - vmargin), margin=margin)
     def actual_tab_depth(self):
         return self.tab_depth if self.tab_depth is not None else self.depth
+    def offset_at_depth(self, depth):
+        if self.wall_profile is None:
+            return 0
+        return self.wall_profile.offset_at_depth(depth, self.start_depth - self.depth)
 
 class Operation(object):
     def __init__(self, shape, tool, machine_params, props):
@@ -458,8 +462,7 @@ class HelicalDrill(UntabbedOperation):
 
     def diameters(self, depth):
         # Extend or shrink the diameter based on any chamfers/roundovers
-        total_depth = self.props.start_depth - self.props.depth
-        wpExtra = self.props.wall_profile.offset_at_depth(depth, total_depth) if self.props.wall_profile else 0
+        wpExtra = 2 * self.props.offset_at_depth(depth)
         ro = self.props.roughing_offset if self.props.roughing_offset is not None and self.props.roughing_offset > 0 else 0
         dMax = self.d - wpExtra
         if dMax < self.min_dia:
@@ -502,6 +505,7 @@ class HelicalDrill(UntabbedOperation):
         endz = self.props.depth
         doc = self.tool.maxdoc
         last_dia0 = None
+        cylinders = []
         while curz > endz:
             nextz = max(startz - doc, endz)
             # XXXKF implement reduction of DOC if horizontal stepover would be greater than set amount
@@ -517,12 +521,42 @@ class HelicalDrill(UntabbedOperation):
                 gcode.rapid(z=curz)
             self.to_gcode_enter_slice(gcode, curz, nextz, r)
             self.to_gcode_expand_slice(gcode, nextz, diameters)
+            if cylinders and cylinders[-1][1] == diameters[-1]:
+                cylinders[-1] = (self.props.start_depth - nextz, diameters[-1])
+            else:
+                cylinders.append((self.props.start_depth - nextz, diameters[-1]))
             startz = curz = nextz
             last_dia0 = diameters[0]
+        if self.props.wall_profile:
+            self.to_gcode_profile_cleanup(gcode, cylinders)
         gcode.section_info(f"Exit to centre/safe Z")
         gcode.linear(x=self.x, y=self.y)
         gcode.rapid(x=self.x, y=self.y, z=self.machine_params.safe_z)
         gcode.section_info(f"End slicing drill")
+
+    def to_gcode_profile_cleanup(self, gcode, cylinders):
+        startz = self.props.start_depth
+        endz = self.props.depth
+        curz = startz
+        gcode.linear(x=self.x, y=self.y)
+        gcode.rapid(x=self.x, y=self.y, z=startz)
+        rate_factor = self.tool.full_plunge_feed_ratio
+        feed = self.tool.hfeed * rate_factor * self.tool.diagonal_factor()
+        gcode.feed(feed)
+        while curz > endz:
+            nextz = max(endz, curz - self.props.wall_profile.sublayer_thickness)
+            depth = startz - nextz
+            while cylinders and cylinders[0][0] < depth:
+                cylinders.pop(0)
+            d = self.d - 2 * self.props.offset_at_depth(depth)
+            if cylinders and abs(cylinders[0][1] - d) >= 1e-4:
+                entryr = (cylinders[0][1] - self.tool.diameter) / 2
+                r = (d - self.tool.diameter) / 2
+                gcode.linear(x=self.x + entryr, y=self.y)
+                gcode.linear(z=nextz)
+                gcode.linear(x=self.x + r, y=self.y)
+                gcode.helix_turn(self.x, self.y, r, nextz, nextz, climb=self.tool.climb)
+            curz = nextz
 
     def to_gcode_enter_slice(self, gcode, curz, endz, r):
         # Helical entry, ends at x + r, y
@@ -566,18 +600,30 @@ class HelicalDrill(UntabbedOperation):
         gcode.section_info(f"Start helical drill at {self.x:0.2f}, {self.y:0.2f} diameter {self.d:0.2f} depth {self.props.depth:0.2f}")
         first = True
         prevd = None
+        rings = []
         for d in self.diameters(0):
             depth = self.props.depth
             if self.props.wall_profile:
                 # Only go as deep as the wall profile permits
-                depth_limit = self.props.wall_profile.max_depth_for_offset(self.d - d, self.props.start_depth - self.props.depth)
+                depth_limit = self.props.wall_profile.max_depth_for_offset((self.d - d) / 2, self.props.start_depth - self.props.depth)
                 if depth_limit <= 0: # Can't do this diameter at all
                     break
                 depth = max(depth, self.props.start_depth - depth_limit)
+                rings.append((d, depth_limit))
             self.to_gcode_ring(gcode, d, prevd, depth, self.tool.hfeed * (rate_factor if first else 1) * self.tool.diagonal_factor(), self.machine_params, first)
             prevd = d
             first = False
+        cylinders = []
+        rings = list(reversed(rings))
+        from_depth = 0
+        total_depth = self.props.start_depth - self.props.depth
+        for dmin, to_depth in rings:
+            cylinders.append((to_depth, dmin))
+            if to_depth >= total_depth - 1e-4:
+                break
         gcode.feed(self.tool.hfeed)
+        if self.props.wall_profile:
+            self.to_gcode_profile_cleanup(gcode, cylinders)
         # Do not rub against the walls
         gcode.section_info(f"Exit to centre/safe Z")
         gcode.linear(x=self.x, y=self.y)
