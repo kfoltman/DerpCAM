@@ -556,7 +556,7 @@ class HelicalDrill(UntabbedOperation):
                 if dnext != d:
                     break
                 inc += t
-            nextz -= inc
+            nextz = max(nextz - inc, endz)
             if cylinders and d >= cylinders[0][1] + 1e-4:
                 entryr = (cylinders[0][1] - self.tool.diameter) / 2
                 r = (d - self.tool.diameter) / 2
