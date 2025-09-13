@@ -554,9 +554,7 @@ class HelicalDrill(UntabbedOperation):
             if prevd - d >= 2 * self.props.wall_profile.offset_tolerance:
                 offset = (self.d - prevd) / 2 + self.props.wall_profile.offset_tolerance
                 d = self.d - 2 * offset
-                print (f"Correcting depth {depth}")
                 depth = self.props.wall_profile.max_depth_for_offset(offset, total_depth)
-                print (f"  to {depth}")
                 nextz = startz - depth
             # Try skipping layers if possible
             inc = 0
