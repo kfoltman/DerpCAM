@@ -694,7 +694,7 @@ class HelicalDrillFullDepth(HelicalDrill):
             gcode.feed(self.tool.hfeed)
             no_linear = False
             # Bore it out at full depth to the final diameter
-            for d in self.diameters():
+            for d in self.diameters(self.props.start_depth - self.props.depth):
                 r = max(self.tool.diameter * self.tool.stepover / 2, (d - self.tool.diameter) / 2)
                 gcode.helix_turn(self.x, self.y, r, self.props.depth, self.props.depth, no_linear=no_linear)
                 d += self.tool.diameter * self.tool.stepover_fulldepth
