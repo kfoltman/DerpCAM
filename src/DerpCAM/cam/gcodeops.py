@@ -537,18 +537,27 @@ class HelicalDrill(UntabbedOperation):
     def to_gcode_profile_cleanup(self, gcode, cylinders):
         startz = self.props.start_depth
         endz = self.props.depth
+        total_depth = startz - endz
         curz = startz
         t = self.props.wall_profile.sublayer_thickness
         gcode.linear(x=self.x, y=self.y)
         gcode.rapid(x=self.x, y=self.y, z=startz)
         rate_factor = self.tool.full_plunge_feed_ratio
         gcode.feed(self.tool.hfeed)
+        prevd = self.d - 2 * self.props.offset_at_depth(0)
         while curz > endz:
             nextz = max(endz, curz - t)
             depth = startz - nextz
             while cylinders and cylinders[0][0] < depth:
                 cylinders.pop(0)
             d = self.d - 2 * self.props.offset_at_depth(depth)
+            if prevd - d >= 2 * self.props.wall_profile.offset_tolerance:
+                offset = (self.d - prevd) / 2 + self.props.wall_profile.offset_tolerance
+                d = self.d - 2 * offset
+                print (f"Correcting depth {depth}")
+                depth = self.props.wall_profile.max_depth_for_offset(offset, total_depth)
+                print (f"  to {depth}")
+                nextz = startz - depth
             # Try skipping layers if possible
             inc = 0
             while inc + t <= self.tool.maxdoc:
@@ -572,6 +581,7 @@ class HelicalDrill(UntabbedOperation):
                 gcode.linear(x=self.x + r, y=self.y)
                 gcode.helix_turn(self.x, self.y, r, nextz, nextz, climb=self.tool.climb)
             curz = nextz
+            prevd = d
 
     def to_gcode_enter_slice(self, gcode, curz, endz, r):
         # Helical entry, ends at x + r, y
