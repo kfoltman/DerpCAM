@@ -538,22 +538,37 @@ class HelicalDrill(UntabbedOperation):
         startz = self.props.start_depth
         endz = self.props.depth
         curz = startz
+        t = self.props.wall_profile.sublayer_thickness
         gcode.linear(x=self.x, y=self.y)
         gcode.rapid(x=self.x, y=self.y, z=startz)
         rate_factor = self.tool.full_plunge_feed_ratio
-        feed = self.tool.hfeed * rate_factor * self.tool.diagonal_factor()
-        gcode.feed(feed)
+        gcode.feed(self.tool.hfeed)
         while curz > endz:
-            nextz = max(endz, curz - self.props.wall_profile.sublayer_thickness)
+            nextz = max(endz, curz - t)
             depth = startz - nextz
             while cylinders and cylinders[0][0] < depth:
                 cylinders.pop(0)
             d = self.d - 2 * self.props.offset_at_depth(depth)
-            if cylinders and abs(cylinders[0][1] - d) >= 1e-4:
+            # Try skipping layers if possible
+            inc = 0
+            while inc + t <= self.tool.maxdoc:
+                dnext = self.d - 2 * self.props.offset_at_depth(depth + inc + t)
+                if dnext != d:
+                    break
+                inc += t
+            nextz -= inc
+            if cylinders and d >= cylinders[0][1] + 1e-4:
                 entryr = (cylinders[0][1] - self.tool.diameter) / 2
                 r = (d - self.tool.diameter) / 2
                 gcode.linear(x=self.x + entryr, y=self.y)
+                gcode.feed(self.tool.vfeed)
                 gcode.linear(z=nextz)
+                gcode.feed(self.tool.hfeed)
+                r0 = min(r, entryr + self.tool.diameter * self.tool.stepover)
+                while r0 < r:
+                    gcode.linear(x=self.x + r0, y=self.y)
+                    gcode.helix_turn(self.x, self.y, r0, nextz, nextz, climb=self.tool.climb)
+                    r0 = min(r, r0 + self.tool.diameter * self.tool.stepover)
                 gcode.linear(x=self.x + r, y=self.y)
                 gcode.helix_turn(self.x, self.y, r, nextz, nextz, climb=self.tool.climb)
             curz = nextz
