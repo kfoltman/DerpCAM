@@ -457,6 +457,10 @@ class Inventory(object):
         CutterMaterial.add(material)
         self.cutter_materials[material.name] = material
     def addWallProfile(self, wall_profile):
+        for wp in self.wall_profiles:
+            if wp.name == wall_profile.name:
+                wp.resetTo(wall_profile)
+                return
         self.wall_profiles.append(wall_profile)
     def materialByName(self, name):
         return self.cutter_materials[name]

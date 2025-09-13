@@ -338,8 +338,8 @@ class WallProfileEditorDlg(QDialog):
         self.model = ProfileShapeModel(self.edit_shape)
         self.model.tableWidget = self.tableWidget
         self.tableWidget.setModel(self.model)
-        self.tableWidget.setMinimumSize(600, 200)
-        self.tableWidget.setColumnWidth(2, 150)
+        self.tableWidget.setMinimumSize(800, 300)
+        self.tableWidget.setColumnWidth(2, 180)
         hdr = self.tableWidget.horizontalHeader()
         self.profileDelegate = ProfileShapeItemDelegate()
         self.tableWidget.setItemDelegateForColumn(2, self.profileDelegate)
@@ -391,9 +391,9 @@ class WallProfileManagerDlg(QDialog):
         self.largerFont = QFont()
         self.largerFont.setBold(True)
         self.profileList = QTableWidget(0, 2)
-        self.profileList.setMinimumSize(450, 200)
+        self.profileList.setMinimumSize(800, 300)
         self.profileList.setColumnWidth(0, 150)
-        self.profileList.setColumnWidth(1, 250)
+        self.profileList.setColumnWidth(1, 350)
         self.profileList.setSelectionBehavior(QTableView.SelectRows)
         self.profileList.setHorizontalHeaderLabels(["Name", "Description"])
         self.profileList.horizontalHeader().setStretchLastSection(True)
@@ -418,9 +418,12 @@ class WallProfileManagerDlg(QDialog):
         self.editButtons.addWidget(self.deleteButton)
         self.layout.addLayout(self.editButtons)
         self.buttonBox = QHBoxLayout()
+        self.toInventoryButton = QPushButton("")
+        self.toInventoryButton.clicked.connect(self.onToInventoryClicked)
         self.closeButton = QPushButton("")
         self.closeButton.setDefault(True)
         self.closeButton.clicked.connect(self.onCloseClicked)
+        self.buttonBox.addWidget(self.toInventoryButton)
         self.buttonBox.addStretch()
         self.buttonBox.addWidget(self.closeButton)
         self.layout.addLayout(self.buttonBox)
@@ -447,6 +450,17 @@ class WallProfileManagerDlg(QDialog):
             return self.profileList.item(itemIdx, 0).data(Qt.UserRole)
         else:
             return None
+    def currentProfileIsInInventory(self):
+        profile = self.currentProfile()
+        return profile.name in [iwp.name for iwp in inventory.inventory.wall_profiles]
+    def onToInventoryClicked(self):
+        if self.currentProfileIsFromInventory():
+            return
+        profile = self.currentProfile()
+        if profile is None:
+            return
+        inventory.inventory.addWallProfile(profile)
+        self.populateList(profile)
     def onCloseClicked(self):
         if self.currentProfileIsFromInventory():
             self.accept()
@@ -463,6 +477,17 @@ class WallProfileManagerDlg(QDialog):
             self.addButton.setText("&Add in inventory")
         else:
             self.addButton.setText("&Add in project")
+        itemIdx = self.profileList.currentRow()
+        if itemIdx == 0 or self.currentProfileIsFromInventory(True):
+            self.toInventoryButton.setEnabled(False)
+            self.toInventoryButton.setVisible(False)
+        else:
+            self.toInventoryButton.setEnabled(True)
+            self.toInventoryButton.setVisible(True)
+            if self.currentProfileIsInInventory():
+                self.toInventoryButton.setText("&Update in inventory")
+            else:
+                self.toInventoryButton.setText("&Save to inventory")
         if self.currentProfileIsFromInventory():
             self.closeButton.setText("&Load into project")
         else:
@@ -474,7 +499,7 @@ class WallProfileManagerDlg(QDialog):
             return twi
         def makeNonEditable(item):
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-        iwp = inventory.inventory.wall_profiles
+        iwp = sorted(inventory.inventory.wall_profiles, key=lambda wp: wp.name)
         pwp = sorted(self.document.project_wall_profiles.values(), key=lambda wp: wp.name)
         self.profileList.setRowCount(2 + len(iwp) + len(pwp))
         current = 0
@@ -497,6 +522,9 @@ class WallProfileManagerDlg(QDialog):
             makeNonEditable(self.profileList.item(i, 1))
         self.profileList.setCurrentCell(current, 0)
         self.onItemActivated()
+        self.profileList.resizeColumnToContents(0)
+        self.profileList.setColumnWidth(0, self.profileList.columnWidth(0) + 30)
+        self.profileList.resizeColumnToContents(1)
     def addWallProfile(self):
         profile = inventory.InvWallProfile.new(None, "", "")
         try:

@@ -187,6 +187,10 @@ class CAMObjectTreeDockWidget(QDockWidget):
                 menu.addAction("Add").triggered.connect(lambda: self.wallProfileAdd())
                 menu.addAction("Load").triggered.connect(lambda: self.wallProfileLoad())
             elif isinstance(item, model.WallProfileTreeItem):
+                if inventory.inventory.wallProfileByName(item.wall_profile.name):
+                    menu.addAction("&Update").triggered.connect(lambda: self.wallProfileSave(item))
+                else:
+                    menu.addAction("&Save").triggered.connect(lambda: self.wallProfileSave(item))
                 menu.addAction("Edit").triggered.connect(lambda: self.wallProfileEdit(item))
         if menu.isEmpty():
             return
@@ -269,6 +273,9 @@ class CAMObjectTreeDockWidget(QDockWidget):
             self.document.opAddWallProfile(profile)
         else:
             profile.forget()
+    def wallProfileSave(self, item):
+        profile = item.wall_profile
+        inventory.inventory.addWallProfile(profile)
     def wallProfileEdit(self, item):
         profile = item.wall_profile
         workcopy = inventory.InvWallProfile.new(None, profile.name, "", )
