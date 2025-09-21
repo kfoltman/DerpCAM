@@ -377,9 +377,10 @@ class OperationTreeItem(CAMTreeItem):
         if name == 'wall_profile':
             if isinstance(value, NewProfileOption):
                 profile = inventory.InvWallProfile.new(None, "", "")
-                dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile)
+                dlg = WallProfileEditorDlg(parent=None, title="Create a new wall profile", profile=profile,
+                    document=self.document, from_inventory=False)
                 if dlg.exec_():
-                    inventory.inventory.wall_profiles.append(profile)
+                    self.document.opAddWallProfile(profile)
                     value = profile
                 else:
                     profile.forget()
