@@ -9,7 +9,7 @@ class BaseWallProfile(object):
         assert False
     def max_depth_for_offset(self, offset, total_depth):
         calc = self.offset_at_depth(0, total_depth)
-        if offset <= calc:
+        if offset <= calc - 0.001:
             return 0
         depth = total_depth
         step = total_depth / 2
