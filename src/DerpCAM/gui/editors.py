@@ -224,10 +224,15 @@ class CanvasEditorWithSnap(CanvasEditor):
         pt = self.canvas.project(QPointF(loc.x - ox, loc.y - oy))
         qp.drawText(QRectF(pt - hbox2a - displ, pt + hbox2b - displ), Qt.AlignBottom | Qt.AlignCenter, coordsText)
     def onEqualsKey(self):
-        dlg = guiutils.CoordinateEntryDlg(self.parent, prompt=self.point_prompt)
+        canEdit = self.canEditPoint()
+        if not canEdit:
+            return
+        dlg = guiutils.CoordinateEntryDlg(self.parent, prompt=self.point_prompt, initial=canEdit if isinstance(canEdit, tuple) and len(canEdit) == 2 else None)
         if dlg.exec_():
             x, y = dlg.result
             self.pointSelected(x, y, from_equals=True)
+    def canEditPoint(self):
+        return False
     def pointSelected(self, x, y, from_equals):
         assert False
 
@@ -239,6 +244,8 @@ class CanvasEditorPickPoint(CanvasEditorWithSnap):
         self.cancel_index = None
         self.mouse_point = None
         self.point_prompt = None
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         self.mouse_point = geom.PathPoint(x, y)
         self.apply()
@@ -1099,6 +1106,8 @@ Click on a drawing to create a text object.
             self.item.origin = newPos
             self.canvas.repaint()
         return False
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         self.last_style = self.item.style.clone()
         self.item.origin = geom.PathPoint(x, y)
@@ -1178,6 +1187,8 @@ Enter the fillet radius for rounded corners.
         if changed:
             self.canvas.repaint()
         return False
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         newPos = geom.PathPoint(x, y)
         if self.second_point is None:
@@ -1265,6 +1276,8 @@ Enter the slot width for linear slots or use 0 for a basic straight line.
         if changed:
             self.canvas.repaint()
         return False
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         newPos = geom.PathPoint(x, y)
         if self.second_point is None:
@@ -1415,6 +1428,8 @@ create a circle or use the '=' key to enter centre coordinates.
         self.item = model.DrawingCircleTreeItem(self.document, centre, r)
         self.document.addShapesFromEditor([self.item])
         CanvasNewItemEditor.apply(self)
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         newPos = geom.PathPoint(x, y)
         if self.second_point is None and self.radius is None:
@@ -1487,6 +1502,8 @@ coordinates instead.
         self.item = model.DrawingPolylineTreeItem(self.document, arc_points, closed)
         self.document.addShapesFromEditor([self.item])
         self.apply()
+    def canEditPoint(self):
+        return True
     def pointSelected(self, x, y, from_equals):
         if self.second_point is None:
             self.firstClick(geom.PathPoint(x, y))
@@ -1611,7 +1628,7 @@ class CanvasPolylineEditor(CanvasDrawingItemEditor):
             self.visual_feedback = None
             self.canvas.repaint()
     def setTitle(self):
-        self.point_prompt = "Point coordinates (not implemented yet):"
+        self.point_prompt = "Point coordinates:"
         self.parent.setWindowTitle("Modify a polyline")
     def createExtraControls(self):
         self.arcMode = 2
@@ -1762,6 +1779,8 @@ Double-clicking a node removes it.
                 self.canvas.start_point = e.localPos()
                 self.drag_start_data = (e.localPos(), len(polyline.points) - 1, pt)
     def nearestPolylineItem(self, pt, exclude=None, margin=5):
+        if pt is None:
+            return None
         polyline = self.item
         nearest = None
         nearest_dist = None
@@ -1915,7 +1934,20 @@ Double-clicking a node removes it.
                 cy = pt.y - r * math.sin(sstart + sspan)
         new_arc = geom.PathArc.xyra(cx, cy, r, sstart, sspan)
         self.item.document.opModifyPolylinePoint(self.item, dragged, new_arc, True)
-        
+    def canEditPoint(self):
+        nearest = self.nearestPolylineItem(self.last_pos)
+        if nearest is None:
+            return False
+        node = self.item.points[nearest]
+        if isinstance(node, geom.PathArc):
+            return False
+        if nearest + 1 < len(self.item.points) and isinstance(self.item.points[nearest + 1], geom.PathArc):
+            return False
+        self.equalsPointIndex = nearest
+        return (node.x, node.y)
+    def pointSelected(self, x, y, from_equals):
+        if from_equals:
+            self.item.document.opModifyPolylinePoint(self.item, self.equalsPointIndex, geom.PathPoint(x, y), False)
     def mouseMoveEvent(self, e):
         repaint = False
         if self.visual_feedback:

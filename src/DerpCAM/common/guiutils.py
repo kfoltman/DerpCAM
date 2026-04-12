@@ -448,12 +448,12 @@ def incrSuffix(name):
     return name + "2"
 
 class CoordinateEntryDlg(QDialog):
-    def __init__(self, parent, title="Coordinate entry", prompt=None):
+    def __init__(self, parent, title="Coordinate entry", prompt=None, initial=None):
         QDialog.__init__(self, parent, Qt.Popup)
         self.title = title
         self.prompt = prompt or "Enter coordinates"
         self.format = format
-        self.result = None
+        self.result = initial
         self.separator = ";" if QLocale().decimalPoint() == ',' else ","
         self.initUI()
     def initUI(self):
@@ -471,6 +471,10 @@ class CoordinateEntryDlg(QDialog):
         self.xEdit.setFocus()
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
+        if isinstance(self.result, tuple) and len(self.result) == 2:
+            self.xEdit.setText(Format.coord(self.result[0], brief=True))
+            self.yEdit.setText(Format.coord(self.result[1], brief=True))
+            self.xEdit.selectAll()
     def accept(self):
         try:
             x, unit = UnitConverter.parse(self.xEdit.text(), "mm", as_float=True)
