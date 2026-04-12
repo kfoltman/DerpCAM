@@ -1,7 +1,7 @@
 ezdxf >= 0.17.2
 Shapely >= 2.0, <= 2.1.2
 PyQt5 >= 5.15.6
-pyvoronoi == 1.2.8
+pyvoronoi == 1.2.0
 pyclipr >= 0.1.7
 HSM_nibble >= 0.2
 sortedcontainers >= 2.4.0
