@@ -40,8 +40,11 @@ class CanvasEditor(object):
         self.eventFilter = CanvasEditorEventFilter(self)
     def cancel(self):
         if self.cancel_index is not None and self.item is not None:
-            while self.item.document.undoStack.index() > self.cancel_index:
-                self.item.document.undoStack.undo()
+            undoStack = self.item.document.undoStack
+            if undoStack.index() > self.cancel_index:
+                for i in range(self.cancel_index, undoStack.count()):
+                    undoStack.command(i).setObsolete(True)
+                undoStack.setIndex(self.cancel_index)
         if self.canvas.editor:
             self.canvas.exitEditMode(False)
     def createControls(self):

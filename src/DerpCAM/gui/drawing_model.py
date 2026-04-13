@@ -993,7 +993,7 @@ class ModifyPolylinePointUndoCommand(QUndoCommand):
     def mergeWith(self, other):
         if not isinstance(other, ModifyPolylinePointUndoCommand):
             return False
-        if not self.mergeable:
+        if not self.mergeable or self.polyline is not other.polyline or self.position != other.position:
             return False
         self.new_location = other.new_location
         return True
