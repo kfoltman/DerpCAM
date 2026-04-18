@@ -1938,7 +1938,8 @@ Double-clicking a node removes it.
         new_arc = geom.PathArc.xyra(cx, cy, r, sstart, sspan)
         self.item.document.opModifyPolylinePoint(self.item, dragged, new_arc, True)
     def canEditPoint(self):
-        nearest = self.nearestPolylineItem(self.last_pos)
+        pos = self.ptFromPos(self.canvas.mapFromGlobal(QCursor.pos()))
+        nearest = self.nearestPolylineItem(pos)
         if nearest is None:
             return False
         node = self.item.points[nearest]
@@ -1947,10 +1948,12 @@ Double-clicking a node removes it.
         if nearest + 1 < len(self.item.points) and isinstance(self.item.points[nearest + 1], geom.PathArc):
             return False
         self.equalsPointIndex = nearest
-        return (node.x, node.y)
+        ox, oy = self.drawingOffset()
+        return (node.x - ox, node.y - oy)
     def pointSelected(self, x, y, from_equals):
         if from_equals:
-            self.item.document.opModifyPolylinePoint(self.item, self.equalsPointIndex, geom.PathPoint(x, y), False)
+            ox, oy = self.drawingOffset()
+            self.item.document.opModifyPolylinePoint(self.item, self.equalsPointIndex, geom.PathPoint(x + ox, y + oy), False)
     def mouseMoveEvent(self, e):
         repaint = False
         if self.visual_feedback:
