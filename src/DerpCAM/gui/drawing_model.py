@@ -576,6 +576,8 @@ class DrawingTreeItem(CAMListTreeItem):
                 del itemRepr['shape_id']
                 itemStr = json.dumps(itemRepr)
                 if itemStr not in existing:
+                    # FreeCAD can output duplicate items, e.g. circular holes in solids result in circles on each face the hole is piercing
+                    existing[itemStr] = item
                     itemsToAdd.append(item)
         self.document.opAddDrawingItems(itemsToAdd)
         if geom.GeometrySettings.auto_join_polylines:
@@ -594,10 +596,15 @@ class DrawingTreeItem(CAMListTreeItem):
             return geom.PathPoint(x * scaling, y * scaling)
         if dxftype == 'LWPOLYLINE':
             points, closed = geom.dxf_polyline_to_points(entity, scaling)
+            if len(points) == 1:
+                # FreeCAD outputs those 1-point lines for some reason
+                return None
             return DrawingPolylineTreeItem(self.document, points, closed)
         elif dxftype == 'LINE':
             start = tuple(entity.dxf.start)[0:2]
             end = tuple(entity.dxf.end)[0:2]
+            if start == end:
+                return None
             return DrawingPolylineTreeItem(self.document, [pt(start[0], start[1]), pt(end[0], end[1])], False)
         elif dxftype == 'ELLIPSE':
             centre = pt(entity.dxf.center[0], entity.dxf.center[1])
