@@ -1,6 +1,9 @@
 from .common_model import *
 import pyclipr
 import ezdxf.zoom
+import collections
+
+StartEndRadius = collections.namedtuple('StartEndRadius', ['start', 'end', 'centre', 'radius'])
 
 class DrawingItemTreeItem(CAMTreeItem):
     defaultGrayPen = QPen(QColor(0, 0, 0, 64), 0)
@@ -66,6 +69,8 @@ class DrawingItemTreeItem(CAMTreeItem):
         return self
     def createPaths(self):
         pass
+    def radius(self):
+        return None
 
 class DrawingCircleTreeItem(DrawingItemTreeItem):
     prop_x = FloatDistEditableProperty("Centre X", "x", Format.coord, unit="mm", allow_none=False)
@@ -162,9 +167,11 @@ class DrawingCircleTreeItem(DrawingItemTreeItem):
         res['cy'] = self.centre.y
         res['r'] = self.r
         return res
-    def startEndPos(self):
+    def startEndRadius(self):
         p = geom.PathPoint(self.centre.x + self.r, self.centre.y)
-        return (p, p)
+        return StartEndRadius(p, p, self.centre, self.r)
+    def radius(self):
+        return self.r
 
 class DrawingPolylineTreeItem(DrawingItemTreeItem):
     prop_points = SetEditableProperty("Points", "points", format_func=lambda value: f"{len(value)} points - double-click to edit", edit_func=lambda item: item.editPoints())
@@ -280,11 +287,11 @@ class DrawingPolylineTreeItem(DrawingItemTreeItem):
             y2 = centre.y + y1 * math.cos(major_angle) + x1 * math.sin(major_angle)
             points.append(geom.PathPoint(x2, y2))
         return DrawingPolylineTreeItem(document, points, closed, src_name="Ellipse")
-    def startEndPos(self):
+    def startEndRadius(self):
         if self.closed:
-            return (self.points[0], self.points[0])
+            return StartEndRadius(self.points[0], self.points[0], None, -1)
         else:
-            return (self.points[0].seg_start(), self.points[-1].seg_end())
+            return StartEndRadius(self.points[0].seg_start(), self.points[-1].seg_end(), None, -1)
         
 class DrawingTextStyleHAlign(EnumClass):
     LEFT = 0
@@ -533,9 +540,9 @@ class DrawingTextTreeItem(DrawingItemTreeItem):
         for polygon in ppath.toSubpathPolygons(transform):
             self.paths.append(geom.Path([geom.PathPoint(p.x() / scale + x, -p.y() / scale + y).rotated(self.origin.x, self.origin.y, -angle_rad) for p in polygon], True))
         self.calcBounds()
-    def startEndPos(self):
+    def startEndRadius(self):
         if self.paths:
-            return (self.paths[0].seg_start(), self.paths[-1].seg_end())
+            return StartEndRadius(self.paths[0].seg_start(), self.paths[-1].seg_end(), None, -1)
 
 @CAMTreeItem.register_class
 class DrawingTreeItem(CAMListTreeItem):

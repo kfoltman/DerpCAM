@@ -275,42 +275,71 @@ class DrawingViewer(view.PathViewer):
 
 def sortPoints(pos):
     n = len(pos)
-    first = 0
     startPos = PathPoint(0.0, 0.0)
-    firstDist = pos[0][0].dist(startPos)
-    for i in range(1, n):
-        tryDist = pos[i][0].dist(startPos)
+    # Find the location closest to the start point
+    first = 0
+    firstDist = 1e10
+    for i in range(n):
+        candidate = pos[i]
+        tryDist = startPos.dist(candidate.start)
         if tryDist < firstDist:
             first = i
             firstDist = tryDist
+    # A list that gathers the path
+    seq = []
+    # Remaining points (to be added to the path) - 0..N-1 except for first
     deck = list(range(n))
-    seq = [first]
-    lastPoint = pos[first][1]
-    del deck[first]
+
+    def add(deckpos):
+        ptidx = deck[deckpos]
+        startEndRadius = pos[ptidx]
+        if startEndRadius.radius <= 0:
+            # Not a circle - normal single add
+            seq.append(deck.pop(deckpos))
+            return startEndRadius.end
+        centre = startEndRadius.centre
+        circles = []
+        # Find all circles with the same centre, including this one. Store their
+        # indices within deck, so that they can be easily moved out of there.
+        for i in range(len(deck)):
+            candidate = deck[i]
+            startEndRadius = pos[candidate]
+            if startEndRadius.radius > 0 and startEndRadius.centre.dist(centre) == 0:
+                circles.append(i)
+        # There should be at least one!
+        assert len(circles)
+        # Sort descending by radius
+        if len(circles) > 1:
+            circles = list(sorted(circles, key=lambda didx: -pos[deck[didx]].radius))
+        # Move from deck to seq, like in the non-circle case
+        for didx in circles:
+            seq.append(deck.pop(didx))
+        return pos[seq[-1]].end
+    prevPoint = add(first)
     while deck:
         shortest = 0
-        shortestLen = lastPoint.dist(pos[deck[0]][0])
-        for i in range(1, len(deck)):
-            thisLen = lastPoint.dist(pos[deck[i]][0])
-            if thisLen < shortestLen:
+        shortestDist = 1e10
+        largestRadius = pos[deck[0]].radius if shortestDist < eps else 0
+        for i in range(len(deck)):
+            candidate = pos[deck[i]]
+            thisDist = prevPoint.dist(candidate.start)
+            if thisDist < shortestDist:
                 shortest = i
-                shortestLen = thisLen
-        nearestIdx = deck[shortest]
-        seq.append(nearestIdx)
-        lastPoint = pos[nearestIdx][1]
-        del deck[shortest]
+                shortestDist = thisDist
+        prevPoint = add(shortest)
     return seq
 
 def sortSelections(selections, shape_ids):
     if len(selections) < 2:
         return shape_ids
     selections = list(selections)
-    pos = [i.startEndPos() for i in selections]
+    pos = [i.startEndRadius() for i in selections]
     seq = sortPoints(pos)
     # Map shape_id to order
     spos = {}
     for i, v in enumerate(seq):
-        spos[selections[v].shape_id] = i
+        drawing_obj = selections[v]
+        spos[drawing_obj.shape_id] = i
     res = {}
     for i in list(sorted(shape_ids.keys(), key=lambda shape_id: spos[shape_id])):
         res[i] = list(sorted(shape_ids[i], key=lambda shape_id: spos[shape_id]))
