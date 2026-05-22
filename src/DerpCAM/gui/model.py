@@ -1285,7 +1285,8 @@ class DocumentModel(QObject):
             safe_z=combine(self.material.clearance, self.config_settings.clearance_z),
             semi_safe_z=combine(self.material.safe_entry_z, self.config_settings.safe_entry_z),
             final_z=self.material.final_z,
-            min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm)
+            min_rpm=geom.GeometrySettings.spindle_min_rpm, max_rpm=geom.GeometrySettings.spindle_max_rpm,
+            start_end_x=self.material.start_end_x, start_end_y=self.material.start_end_y)
     def newDocument(self):
         self.reinitDocument()
         self.filename = None

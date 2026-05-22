@@ -14,18 +14,20 @@ from DerpCAM.cam.gcodegen import Gcode, PathOutput, BaseCut2D, VCarveCut, CutPat
 from DerpCAM.cam import shapes, toolpath
 
 class MachineParams(object):
-    def __init__(self, /, safe_z, semi_safe_z, final_z=None, min_rpm=None, max_rpm=None):
+    def __init__(self, /, safe_z, semi_safe_z, final_z=None, min_rpm=None, max_rpm=None, start_end_x=0, start_end_y=0):
         self.safe_z = safe_z
         self.semi_safe_z = semi_safe_z
         self.final_z = final_z
         self.min_rpm = min_rpm
         self.max_rpm = max_rpm
+        self.start_end_x = start_end_x
+        self.start_end_y = start_end_y
         self.over_tab_safety = 0.2 # margin for not rubbing against the top of a holding tab
         self.exit_safety = 0.5 # the upward/Z part of the exit from a hole to prevent rubbing against the sides or the bottom
         self.first_depth = None
         self.extra_depth = 0
     def clone(self):
-        clone = MachineParams(self.safe_z, self.semi_safe_z, self.final_z, self.min_rpm, self.max_rpm)
+        clone = MachineParams(self.safe_z, self.semi_safe_z, self.final_z, self.min_rpm, self.max_rpm, self.start_end_x, self.start_end_y)
         clone.first_depth = self.first_depth
         clone.extra_depth = self.extra_depth
         return clone
@@ -854,7 +856,7 @@ class Operations(object):
         gcode = Gcode()
         gcode.reset()
         gcode.rapid(z=self.machine_params.safe_z)
-        gcode.rapid(x=0, y=0)
+        gcode.rapid(x=self.machine_params.start_end_x, y=self.machine_params.start_end_y)
         for operation in self.operations:
             gcode.section_info(f"Start operation: {type(operation).__name__}")
             props = self.props or operation.props
@@ -863,7 +865,7 @@ class Operations(object):
             gcode.section_info(f"End operation: {type(operation).__name__}")
         if self.machine_params.final_z is not None:
             gcode.rapid(z=self.machine_params.final_z)
-        gcode.rapid(x=0, y=0)
+        gcode.rapid(x=self.machine_params.start_end_x, y=self.machine_params.start_end_y)
         gcode.finish()
         return gcode
     def to_gcode_file(self, filename):

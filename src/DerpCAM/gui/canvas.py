@@ -20,12 +20,14 @@ class DocumentRenderer(object):
                     owner.mode_item.renderer.renderToolpaths(owner, alpha_scale = 0.25)
             self.document.drawing.renderTo(owner, owner.editor)
             if owner.editor is None:
+                sx = self.document.material.start_end_x
+                sy = self.document.material.start_end_y
                 self.document.forEachOperation(lambda item: item.renderer.renderToolpaths(owner) if item.renderer else None)
-                self.lastpt = PathPoint(0, 0)
+                self.lastpt = PathPoint(sx, sy)
                 self.document.forEachOperation(lambda item: self.renderRapids(item.renderer, owner) if item.renderer else None)
-                if dist(self.lastpt, PathPoint(0, 0)) > 0:
+                if dist(self.lastpt, PathPoint(sx, sy)) > 0:
                     pen = QPen(QColor(255, 0, 0), 0)
-                    owner.addRapidLine(pen, self.lastpt, PathPoint(0, 0))
+                    owner.addRapidLine(pen, self.lastpt, PathPoint(sx, sy))
     def renderRapids(self, renderer, owner):
         self.lastpt = renderer.renderRapids(owner, self.lastpt)
 

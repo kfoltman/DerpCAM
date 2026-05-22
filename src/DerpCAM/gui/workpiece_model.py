@@ -43,6 +43,8 @@ class WorkpieceTreeItem(CAMTreeItem):
     prop_clearance = FloatDistEditableProperty("Clearance", "clearance", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     prop_safe_entry_z = FloatDistEditableProperty("Safe entry Z", "safe_entry_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
     prop_final_z = FloatDistEditableProperty("Final Z", "final_z", Format.depth_of_cut, unit="mm", min=0, max=100, allow_none=True)
+    prop_start_end_x = FloatDistEditableProperty("Initial/final X", "start_end_x", Format.coord, unit="mm", min=-3000, max=3000, allow_none=True)
+    prop_start_end_y = FloatDistEditableProperty("Initial/final Y", "start_end_y", Format.coord, unit="mm", min=-3000, max=3000, allow_none=True)
     def __init__(self, document):
         CAMTreeItem.__init__(self, document, "Workpiece")
         self.resetProperties()
@@ -52,9 +54,11 @@ class WorkpieceTreeItem(CAMTreeItem):
         self.clearance = self.document.config_settings.clearance_z
         self.safe_entry_z = self.document.config_settings.safe_entry_z
         self.final_z = self.document.config_settings.final_z
+        self.start_end_x = 0
+        self.start_end_y = 0
         self.emitPropertyChanged()
     def properties(self):
-        return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z, self.prop_final_z]
+        return [self.prop_material, self.prop_thickness, self.prop_clearance, self.prop_safe_entry_z, self.prop_final_z, self.prop_start_end_x, self.prop_start_end_y]
     def data(self, role):
         if role == Qt.DisplayRole:
             mname = MaterialType.toString(self.material) if self.material is not None else "unknown material"
@@ -68,7 +72,7 @@ class WorkpieceTreeItem(CAMTreeItem):
     def onPropertyValueSet(self, name):
         #if name == 'material':
         #    self.document.make_tool()
-        if name in ('clearance', 'safe_entry_z', 'final_z'):
+        if name in ('clearance', 'safe_entry_z', 'final_z', 'start_end_x', 'start_end_y'):
             self.document.makeMachineParams()
         self.emitPropertyChanged(name)
     def invalidatedObjects(self, aspect):
