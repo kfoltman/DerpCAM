@@ -46,8 +46,9 @@ class DrawingItemTreeItem(CAMTreeItem):
                 DrawingTextStyle(dump['height'], dump['width'], dump['halign'], dump['valign'], dump['angle'], dump['font'], dump.get('spacing', 0)), dump['text'])
         else:
             raise ValueError("Unexpected type: %s" % rtype)
-        item.shape_id = dump['shape_id']
-        klass.next_drawing_item_id = max(item.shape_id + 1, klass.next_drawing_item_id)
+        if not document.drawing.itemById(dump['shape_id']):
+            item.shape_id = dump['shape_id']
+            klass.next_drawing_item_id = max(item.shape_id + 1, klass.next_drawing_item_id)
         return item
     def onPropertyValueSet(self, name):
         self.emitPropertyChanged(name)
