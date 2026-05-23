@@ -1595,13 +1595,26 @@ class DocumentModel(QObject):
         with MultipleItemUndoContext(self, shapeIds, lambda count: f"Create {count} of {OperationType.toString(operationType)}"):
             indexes = []
             rowCount = cycle.rowCount()
-            for i in shapeIds:
-                item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : i, 'operation' : operationType })
+            lastCircle = None
+            for shape_id, islands in shapeIds.items():
+                item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : shape_id, 'operation' : operationType })
                 item.cutter = cycle.cutter
                 item.tool_preset = self.default_preset_by_tool.get(item.cutter, None)
-                item.islands = shapeIds[i]
+                item.islands = islands
                 if operationType == OperationType.SIDE_MILL:
                     item.pocket_strategy = inventory.PocketStrategy.HSM_PEEL
+                if operationType == OperationType.INTERPOLATED_HOLE:
+                    # Treat concentric interpolated holes as counterbores. Set the depth for the
+                    # larger hole based on the diameter of the
+                    circle = self.drawing.itemById(shape_id)
+                    if lastCircle is not None:
+                        lastCentre, lastR, lastItem = lastCircle
+                        if lastCentre.dist(circle.centre) < geom.eps and lastR > circle.r:
+                            # Make it a little deeper just to make sure the screw head fits
+                            lastItem.depth = circle.r * 2 + 0.2
+                            # But start the smaller hole from the nominal depth for safety
+                            item.start_depth = circle.r * 2
+                    lastCircle = (circle.centre, circle.r, item)
                 item.startUpdateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
