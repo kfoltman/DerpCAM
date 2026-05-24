@@ -1596,6 +1596,7 @@ class DocumentModel(QObject):
             indexes = []
             rowCount = cycle.rowCount()
             lastCircle = None
+            centresDone = set()
             for shape_id, islands in shapeIds.items():
                 item = CAMTreeItem.load(self, { '_type' : 'OperationTreeItem', 'shape_id' : shape_id, 'operation' : operationType })
                 item.cutter = cycle.cutter
@@ -1603,7 +1604,7 @@ class DocumentModel(QObject):
                 item.islands = islands
                 if operationType == OperationType.SIDE_MILL:
                     item.pocket_strategy = inventory.PocketStrategy.HSM_PEEL
-                if operationType == OperationType.INTERPOLATED_HOLE:
+                elif operationType == OperationType.INTERPOLATED_HOLE:
                     # Treat concentric interpolated holes as counterbores. Set the depth for the
                     # larger hole based on the diameter of the
                     circle = self.drawing.itemById(shape_id)
@@ -1615,6 +1616,13 @@ class DocumentModel(QObject):
                             # But start the smaller hole from the nominal depth for safety
                             item.start_depth = circle.r * 2
                     lastCircle = (circle.centre, circle.r, item)
+                elif operationType == OperationType.DRILLED_HOLE:
+                    # Eliminate duplicate points
+                    circle = self.drawing.itemById(shape_id)
+                    coords = (circle.centre.x, circle.centre.y)
+                    if coords in centresDone:
+                        continue
+                    centresDone.add(coords)
                 item.startUpdateCAM()
                 self.undoStack.push(AddOperationUndoCommand(self, item, cycle, rowCount))
                 indexes.append(item.index())
