@@ -315,7 +315,9 @@ def sortPoints(pos):
             circles = list(sorted(circles, key=lambda didx: -pos[deck[didx]].radius))
         # Move from deck to seq, like in the non-circle case
         for didx in circles:
-            seq.append(deck.pop(didx))
+            seq.append(deck[didx])
+        circles = set(circles)
+        deck[:] = [item for i, item in enumerate(deck) if i not in circles]
         return pos[seq[-1]].end
     prevPoint = add(first)
     while deck:
