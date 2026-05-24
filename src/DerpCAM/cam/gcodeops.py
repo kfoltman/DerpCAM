@@ -439,6 +439,10 @@ class PeckDrill(UntabbedOperation):
                 gcode.rapid(z=retrz)
             if self.dwell_retract:
                 gcode.dwell(self.dwell_retract)
+            if self.slow_retract or not GeometrySettings.rapid_entry_into_finish_pass:
+                gcode.linear(z=nextz + self.machine_params.semi_safe_z)
+            else:
+                gcode.rapid(z=nextz + self.machine_params.semi_safe_z)
             curz = nextz
         gcode.rapid(z=self.machine_params.safe_z)
 
