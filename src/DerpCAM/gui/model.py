@@ -2,7 +2,7 @@ from .common_model import *
 from .drawing_model import DrawingItemTreeItem, DrawingPolylineTreeItem, DrawingCircleTreeItem, \
     DrawingTextTreeItem, DrawingTreeItem, DrawingTextStyleHAlign, DrawingTextStyleVAlign, DrawingTextStyle, \
     JoinItemsUndoCommand, AddDrawingItemsUndoCommand, DeleteDrawingItemsUndoCommand, \
-    ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand, DXFExporter
+    ModifyPolylineUndoCommand, ModifyPolylinePointUndoCommand, DXFExporter, SelectSpecialDialog
 from .tool_model import ToolListTreeItem, ToolTreeItem, ToolPresetTreeItem, PresetDerivedAttributes, \
     ModifyToolUndoCommand, RevertToolUndoCommand, \
     AddPresetUndoCommand, ModifyPresetUndoCommand, RevertPresetUndoCommand, DeletePresetUndoCommand, \

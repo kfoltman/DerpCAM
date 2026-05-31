@@ -127,6 +127,8 @@ class CAMMainWindow(QMainWindow):
             MenuItem("&Copy", self.editCopy, QKeySequence("Ctrl+C"), "Copy drawing objects to clipboard", enable_func=self.isGeometrySelected),
             MenuItem("&Paste", self.editPaste, QKeySequence("Ctrl+V"), "Paste drawing objects from clipboard", enable_func=self.isClipboardNonEmpty),
             None,
+            MenuItem("&Select special...", self.editSelectSpecial, None, "Select/deselect by item characteristics"),
+            None,
             MenuItem("&Join lines", self.editJoin, None, "Join line segments or polylines end to end", enable_func=lambda: self.isOpenGeometrySelected(2)),
             MenuItem("&Move/clone objects", self.editMove, None, "Move or clone geometry objects", enable_func=self.isGeometrySelected),
             MenuItem("R&otate objects", self.editRotate, None, "Rotate geometry objects", enable_func=self.isGeometrySelected),
@@ -407,6 +409,17 @@ class CAMMainWindow(QMainWindow):
             #self.viewer.majorUpdate()
             self.configSettings.save()
             self.setModelLimitsFromPreferences()
+    def editSelectSpecial(self):
+        dlg = model.SelectSpecialDialog(self)
+        dlg.initUI()
+        if dlg.exec():
+            matched = dlg.matchObjects(self.document.drawing)
+            if dlg.mode == dlg.SELECT:
+                self.viewer.setSelection(self.viewer.selection | matched)
+            elif dlg.mode == dlg.DESELECT:
+                self.viewer.setSelection(self.viewer.selection - matched)
+            elif dlg.mode == dlg.INVERT:
+                self.viewer.setSelection(self.viewer.selection ^ matched)
     def setModelLimitsFromPreferences(self):
         model.OperationTreeItem.prop_rpm.min = geom.GeometrySettings.spindle_min_rpm
         model.OperationTreeItem.prop_rpm.max = geom.GeometrySettings.spindle_max_rpm

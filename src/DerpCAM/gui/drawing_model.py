@@ -1082,3 +1082,116 @@ class DXFExporter(object):
         ezdxf.zoom.extents(self.msp, factor=1.5)
         with open(filename, "w") as f:
             self.dxf.write(f)
+
+class SelectSpecialDialog(QDialog):
+    SELECT = 'select'
+    DESELECT = 'deselect'
+    INVERT = 'invert'
+    mode = SELECT
+    enableCircles = False
+    fromDiameter = 0
+    toDiameter = 500
+    enablePolylines = False
+    enableText = False
+
+    def __init__(self, parent):
+        QDialog.__init__(self, parent)
+    def initUI(self):
+        self.outerBox = QVBoxLayout(self)
+        self.selectDeselectGroup = QGroupBox("Select/deselect", self)
+        self.outerBox.addWidget(self.selectDeselectGroup)
+        self.selectDeselectBox = QHBoxLayout()
+        self.selectRadio = QRadioButton("&Select")
+        self.selectRadio.setChecked(SelectSpecialDialog.mode == SelectSpecialDialog.SELECT)
+        self.selectRadio.clicked.connect(self.updateButtons)
+        self.selectDeselectBox.addWidget(self.selectRadio)
+        self.deselectRadio = QRadioButton("&Deselect")
+        self.deselectRadio.setChecked(SelectSpecialDialog.mode == SelectSpecialDialog.DESELECT)
+        self.deselectRadio.clicked.connect(self.updateButtons)
+        self.selectDeselectBox.addWidget(self.deselectRadio)
+        self.invertRadio = QRadioButton("&Invert")
+        self.invertRadio.setChecked(SelectSpecialDialog.mode == SelectSpecialDialog.INVERT)
+        self.invertRadio.clicked.connect(self.updateButtons)
+        self.selectDeselectBox.addWidget(self.invertRadio)
+        self.selectDeselectGroup.setLayout(self.selectDeselectBox)
+
+        self.objectTypeGroup = QGroupBox("Object type", self)
+        self.objectTypeBox = QVBoxLayout()
+        self.circleCheckBox = QCheckBox("Circ&le", self)
+        self.circleCheckBox.setChecked(SelectSpecialDialog.enableCircles)
+        self.circleCheckBox.clicked.connect(self.updateButtons)
+        self.circleCheckBox.clicked.connect(lambda value: self.circleFromEdit.setFocus() if value else None)
+        self.circleParamsBox = QHBoxLayout()
+        self.circleParamsBox.addWidget(self.circleCheckBox)
+        self.circleParamsBox.addSpacing(20)
+        self.circleFromEdit = floatSpin(0, 500, 2, SelectSpecialDialog.fromDiameter, "Minimum diameter")
+        self.circleFromEdit.valueChanged.connect(lambda value: self.updateButtons())
+        self.circleParamsFromLabel = QLabel("&from")
+        self.circleParamsFromLabel.setBuddy(self.circleFromEdit)
+        self.circleParamsBox.addWidget(self.circleParamsFromLabel)
+        self.circleParamsBox.addWidget(self.circleFromEdit)
+        self.circleToEdit = floatSpin(0, 500, 2, SelectSpecialDialog.toDiameter, "Maximum diameter")
+        self.circleToEdit.valueChanged.connect(lambda value: self.updateButtons())
+        self.circleParamsToLabel = QLabel("t&o")
+        self.circleParamsToLabel.setBuddy(self.circleToEdit)
+        self.circleParamsBox.addWidget(self.circleParamsToLabel)
+        self.circleParamsBox.addWidget(self.circleToEdit)
+        self.objectTypeBox.addLayout(self.circleParamsBox)
+        self.polylineCheckBox = QCheckBox("&Polyline", self)
+        self.polylineCheckBox.setChecked(SelectSpecialDialog.enablePolylines)
+        self.polylineCheckBox.clicked.connect(self.updateButtons)
+        self.objectTypeBox.addWidget(self.polylineCheckBox)
+        self.textCheckBox = QCheckBox("&Text", self)
+        self.textCheckBox.setChecked(SelectSpecialDialog.enableText)
+        self.textCheckBox.clicked.connect(self.updateButtons)
+        self.objectTypeBox.addWidget(self.textCheckBox)
+        self.objectTypeGroup.setLayout(self.objectTypeBox)
+        self.outerBox.addWidget(self.objectTypeGroup)
+
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.outerBox.addWidget(self.buttonBox)
+        self.updateButtons()
+
+        if SelectSpecialDialog.mode == SelectSpecialDialog.SELECT:
+            self.selectRadio.setFocus()
+        elif SelectSpecialDialog.mode == SelectSpecialDialog.DESELECT:
+            self.deselectRadio.setFocus()
+        elif SelectSpecialDialog.mode == SelectSpecialDialog.INVERT:
+            self.invertRadio.setFocus()
+    def updateButtons(self):
+        circles = self.circleCheckBox.checkState() != Qt.Unchecked
+        if self.selectRadio.isChecked():
+            SelectSpecialDialog.mode = SelectSpecialDialog.SELECT
+        if self.deselectRadio.isChecked():
+            SelectSpecialDialog.mode = SelectSpecialDialog.DESELECT
+        if self.invertRadio.isChecked():
+            SelectSpecialDialog.mode = SelectSpecialDialog.INVERT
+        SelectSpecialDialog.enableCircles = circles
+        polylines = self.polylineCheckBox.checkState() != Qt.Unchecked
+        SelectSpecialDialog.enablePolylines = polylines
+        text = self.textCheckBox.checkState() != Qt.Unchecked
+        SelectSpecialDialog.enableText = text
+        SelectSpecialDialog.fromDiameter = self.circleFromEdit.value()
+        SelectSpecialDialog.toDiameter = self.circleToEdit.value()
+        self.circleFromEdit.setEnabled(circles)
+        self.circleToEdit.setEnabled(circles)
+    def matchObjects(self, drawing):
+        matches = set()
+        for item in drawing.items():
+            if isinstance(item, DrawingCircleTreeItem):
+                if not SelectSpecialDialog.enableCircles:
+                    continue
+                if 2 * item.r < SelectSpecialDialog.fromDiameter:
+                    continue
+                if 2 * item.r > SelectSpecialDialog.toDiameter:
+                    continue
+            if isinstance(item, DrawingPolylineTreeItem) and \
+                not SelectSpecialDialog.enablePolylines:
+                continue
+            if isinstance(item, DrawingTextTreeItem) and \
+                not SelectSpecialDialog.enableText:
+                continue
+            matches.add(item)
+        return matches
