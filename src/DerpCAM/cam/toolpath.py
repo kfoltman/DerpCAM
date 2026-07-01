@@ -371,7 +371,7 @@ class Toolpath(object):
         step = 50
         for i in range(0, len(intsFull), step):
             ints = intsFull[i : i + step + 1]
-            ints += ints[::-1]
+            # ints += ints[::-1] # Not needed now?
             initv = min(offset, 3)
             res = run_clipper_offset(ints, False, initv / GeometrySettings.RESOLUTION)
             if res:
