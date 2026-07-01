@@ -372,10 +372,13 @@ class Toolpath(object):
         for i in range(0, len(intsFull), step):
             ints = intsFull[i : i + step + 1]
             # ints += ints[::-1] # Not needed now?
-            initv = min(offset, 3)
+            # initv = min(offset, 3) # Also not needed now?
+            initv = offset
             res = run_clipper_offset(ints, False, initv / GeometrySettings.RESOLUTION)
             if res:
                 outlines += res
+            if is_calculation_cancelled():
+                return []
 
         if is_calculation_cancelled():
             return []
@@ -383,12 +386,13 @@ class Toolpath(object):
         for o in outlines:
             pc.addPath(o, pyclipr.Subject, False)
         outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
-        outlines2 = []
-        for o in outlines:
-            if is_calculation_cancelled():
-                return []
-            outlines2 += run_clipper_offset(o, False, (offset - initv) / GeometrySettings.RESOLUTION, joined=True)
-        outlines = outlines2
+        if offset > initv:
+            outlines2 = []
+            for o in outlines:
+                if is_calculation_cancelled():
+                    return []
+                outlines2 += run_clipper_offset(o, False, (offset - initv) / GeometrySettings.RESOLUTION, joined=True)
+            outlines = outlines2
         pc = pyclipr.Clipper()
         for o in outlines:
             pc.addPath(o, pyclipr.Subject, False)
