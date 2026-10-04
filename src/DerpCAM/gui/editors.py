@@ -978,7 +978,8 @@ class CanvasDrawingItemEditor(CanvasEditorWithSnap):
         if inverse:
             ox, oy = -ox, -oy
         if snap:
-            return self.snapCoords(geom.PathPoint(pos.x() + ox, pos.y() + oy))
+            snapped = self.snapCoords(geom.PathPoint(pos.x(), pos.y()))
+            return geom.PathPoint(snapped.x + ox, snapped.y + oy)
         else:
             return geom.PathPoint(pos.x() + ox, pos.y() + oy)
     def paintPoint(self, qp, loc, as_arc):
