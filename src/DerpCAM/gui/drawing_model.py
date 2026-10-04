@@ -744,11 +744,19 @@ class DrawingTreeItem(CAMListTreeItem):
                     if isinstance(p, geom.PathArc):
                         points.add(p.c.centre())
         return points
-    def snapMidPoints(self):
+    def snapMidPoints(self, excluded):
         points = set()
         for item in self.items():
             if isinstance(item, DrawingPolylineTreeItem):
                 for start, end in geom.PathSegmentIterator(geom.Path(item.points, item.closed)):
+                    if excluded:
+                        found = False
+                        for exc in excluded:
+                            if exc.dist(start.seg_start()) < 0.001 or exc.dist(end.seg_end()) < 0.001:
+                                found = True
+                                break
+                        if found:
+                            continue
                     if isinstance(end, geom.PathArc):
                         points.add(end.at_fraction(0.5))
                     else:

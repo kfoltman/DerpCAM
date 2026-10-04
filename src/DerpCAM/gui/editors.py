@@ -191,13 +191,13 @@ class CanvasEditorWithSnap(CanvasEditor):
         pt2 = geom.PathPoint(pt.x + drawing.x_offset, pt.y + drawing.y_offset)
         if self.snapMode & 14:
             points = set()
+            excluded = self.excludeSnapPoints()
             if self.snapMode & 2:
                 points |= drawing.snapEndPoints()
             if self.snapMode & 4:
                 points |= drawing.snapCentrePoints()
             if self.snapMode & 8:
-                points |= drawing.snapMidPoints()
-            excluded = self.excludeSnapPoints()
+                points |= drawing.snapMidPoints(excluded)
             if excluded:
                 points -= excluded
             for i in points:
