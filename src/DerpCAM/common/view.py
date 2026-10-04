@@ -152,7 +152,6 @@ class OperationsRenderer(object):
         self.addToolpathsTransformed(owner, pen, path, stage, operation)
     def addToolpathsTransformed(self, owner, pen, path, stage, operation):
         if stage == 1:
-            t = time.time()
             # print ("Before buffer")
             #print ("->", len(outlines))
             outlines = getattr(path, 'rendered_outlines', None)
