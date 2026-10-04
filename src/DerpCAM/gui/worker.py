@@ -16,7 +16,8 @@ class WorkerThread(threading.Thread):
         self.cancelled = True
     def threadMain(self):
         try:
-            self.worker_func()
+            if not self.cancelled:
+                self.worker_func()
             if self.cam and self.cam.is_nothing():
                 self.parent_operation.addWarning("No cuts produced")
             self.progress = (self.progress[1], self.progress[1])
