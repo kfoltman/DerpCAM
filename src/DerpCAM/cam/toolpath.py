@@ -375,7 +375,7 @@ class Toolpath(object):
         if self.path.closed:
             intsFull += [intsFull[0]]
         outlines = []
-        step = 50
+        step = max(50, int(sqrt(len(intsFull))))
         for i in range(0, len(intsFull), step):
             ints = intsFull[i : i + step + 1]
             # ints += ints[::-1] # Not needed now?
@@ -400,9 +400,10 @@ class Toolpath(object):
                     return []
                 outlines2 += run_clipper_offset(o, False, (offset - initv) / GeometrySettings.RESOLUTION, joined=True)
             outlines = outlines2
-        subjects = []
+        pc = pyclipr.Clipper()
         for o in outlines:
-            subjects.append(o)
+            pc.addPath(o, pyclipr.Subject, False)
+        subjects = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
         for c in circles:
             if is_calculation_cancelled():
                 return []
@@ -411,7 +412,7 @@ class Toolpath(object):
             else:
                 subjects += run_clipper_offset(PtsToInts([PathPoint(c.cx, c.cy)]), False, (c.r + diameter / 2), joined=True)
         subjects2 = []
-        grouping = max(10, int(sqrt(len(subjects))))
+        grouping = max(50, int(sqrt(len(subjects))))
         for i in range(0, len(subjects), grouping):
             pc = pyclipr.Clipper()
             for j in range(i, min(i + grouping, len(subjects))):
