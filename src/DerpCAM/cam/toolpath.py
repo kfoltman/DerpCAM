@@ -387,8 +387,6 @@ class Toolpath(object):
             if is_calculation_cancelled():
                 return []
 
-        import time
-        t = time.time()
         pc = pyclipr.Clipper()
         for o in outlines:
             if is_calculation_cancelled():
