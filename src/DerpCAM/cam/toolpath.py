@@ -355,6 +355,7 @@ class Toolpath(object):
         preview = preview_cache.get(key)
         if preview:
             return preview
+        use_clipper_for_circles = True
         optimize_trochoidals = True
         if optimize_trochoidals:
             points = CircleFitter.interpolate_arcs(self.path.without_circles().nodes, False, 2)
@@ -386,6 +387,8 @@ class Toolpath(object):
             if is_calculation_cancelled():
                 return []
 
+        import time
+        t = time.time()
         pc = pyclipr.Clipper()
         for o in outlines:
             if is_calculation_cancelled():
@@ -399,15 +402,26 @@ class Toolpath(object):
                     return []
                 outlines2 += run_clipper_offset(o, False, (offset - initv) / GeometrySettings.RESOLUTION, joined=True)
             outlines = outlines2
-        pc = pyclipr.Clipper()
+        subjects = []
         for o in outlines:
-            if is_calculation_cancelled():
-                return []
-            pc.addPath(o, pyclipr.Subject, False)
+            subjects.append(o)
         for c in circles:
             if is_calculation_cancelled():
                 return []
-            pc.addPath(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution), pyclipr.Subject, False)
+            if not use_clipper_for_circles:
+                subjects.append(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution))
+            else:
+                subjects += run_clipper_offset(PtsToInts([PathPoint(c.cx, c.cy)]), False, (c.r + diameter / 2), joined=True)
+        subjects2 = []
+        grouping = max(10, int(sqrt(len(subjects))))
+        for i in range(0, len(subjects), grouping):
+            pc = pyclipr.Clipper()
+            for j in range(i, min(i + grouping, len(subjects))):
+                pc.addPath(subjects[j], pyclipr.Subject, False)
+            subjects2 += pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
+        pc = pyclipr.Clipper()
+        for o in subjects2:
+            pc.addPath(o, pyclipr.Subject, False)
         outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
         result = [PtsFromInts(ints, resolution) for ints in outlines]
         preview_cache[key] = result
