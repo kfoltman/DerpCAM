@@ -25,6 +25,9 @@ class GeometrySettings:
     rapid_entry_into_finish_pass = False
     auto_join_polylines = False
 
+def settingsCacheKey():
+    return (GeometrySettings.RESOLUTION, GeometrySettings.simplify_arcs, GeometrySettings.simplify_lines, GeometrySettings.paranoid_mode)
+
 def gcodeSuffix():
     return ".ngc" if GeometrySettings.gcode_variant == GcodeVariant.LINUXCNC else ".gcode"
 

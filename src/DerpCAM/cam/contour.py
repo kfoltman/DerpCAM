@@ -2,6 +2,8 @@ from DerpCAM.common import geom
 from DerpCAM.cam import shapes, toolpath
 import math
 
+outline_cache = {}
+
 def plain_clipper(shape, diameter, outside, displace, climb):
     dist = 0.5 * diameter + displace
     boundary = geom.PtsToInts(shape.boundary)
@@ -161,4 +163,11 @@ def pseudotrochoidal(shape, diameter, is_outside, displace, climb, stepover, cir
         return None
     return paths
     
-plain = plain_clipper
+def plain(shape, diameter, outside, displace, climb):
+    key = (repr(shape.boundary), shape.closed, diameter, outside, displace, climb, geom.settingsCacheKey())
+    paths = outline_cache.get(key)
+    if paths is not None:
+        return paths
+    paths = plain_clipper(shape, diameter, outside, displace, climb)
+    outline_cache[key] = paths
+    return paths

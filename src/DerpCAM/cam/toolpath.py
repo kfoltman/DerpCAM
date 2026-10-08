@@ -3,6 +3,8 @@ from ..common.geom import *
 from .milling_tool import *
 from shapely.geometry import Polygon, LinearRing, MultiPolygon, Point
 
+preview_cache = {}
+
 class RapidMove(object):
     @classmethod
     def joinable(self, other):
@@ -348,6 +350,11 @@ class Toolpath(object):
     def render_as_outlines(self, props):
         if self.is_vcarve():
             return self.render_vcarve_as_outlines()
+        diameter = self.tool.depth2dia(props.depth - props.start_depth)
+        key = (repr(self.path), diameter, settingsCacheKey())
+        preview = preview_cache.get(key)
+        if preview:
+            return preview
         optimize_trochoidals = True
         if optimize_trochoidals:
             points = CircleFitter.interpolate_arcs(self.path.without_circles().nodes, False, 2)
@@ -356,7 +363,6 @@ class Toolpath(object):
             points = CircleFitter.interpolate_arcs(self.path.nodes, False, 2)
             circles = []
         resolution = GeometrySettings.RESOLUTION
-        diameter = self.tool.depth2dia(props.depth - props.start_depth)
         offset = resolution * diameter / 2
         if offset < 20:
             resolution *= 20 / offset
@@ -380,10 +386,10 @@ class Toolpath(object):
             if is_calculation_cancelled():
                 return []
 
-        if is_calculation_cancelled():
-            return []
         pc = pyclipr.Clipper()
         for o in outlines:
+            if is_calculation_cancelled():
+                return []
             pc.addPath(o, pyclipr.Subject, False)
         outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
         if offset > initv:
@@ -395,11 +401,17 @@ class Toolpath(object):
             outlines = outlines2
         pc = pyclipr.Clipper()
         for o in outlines:
+            if is_calculation_cancelled():
+                return []
             pc.addPath(o, pyclipr.Subject, False)
         for c in circles:
+            if is_calculation_cancelled():
+                return []
             pc.addPath(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution), pyclipr.Subject, False)
         outlines = pc.execute(pyclipr.Union, pyclipr.FillRule.NonZero)
-        return [PtsFromInts(ints, resolution) for ints in outlines]
+        result = [PtsFromInts(ints, resolution) for ints in outlines]
+        preview_cache[key] = result
+        return result
     def is_empty(self):
         return self.path.is_empty()
     def is_vcarve(self):
