@@ -78,9 +78,15 @@ def finish_contour(tps, tool, boundary_transformed, islands_transformed, islands
         for pts in shapes.Shape._intersection(h, *boundary_transformed):
             tps.append(toolpath.Toolpath(pts2path(pts, not tool.climb), tool, is_edge=True))
 
+contour_parallel_cache = {}
+
 def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_contour=True, outer_margin=0):
     if not shape.closed:
         raise ValueError("Cannot mill pockets of open polylines")
+    key = (repr(shape.boundary), "|".join(repr(i) for i in shape.islands), tool.diameter, tool.climb, displace, roughing_offset, finish_outer_contour, outer_margin, geom.settingsCacheKey())
+    tps = contour_parallel_cache.get(key)
+    if tps:
+        return tps
     expected_size = min(shape.bounds[2] - shape.bounds[0], shape.bounds[3] - shape.bounds[1]) / 2.0
     tps_islands = []
     boundary_transformed, islands_transformed, islands_transformed_nonoverlap, boundary_transformed_nonoverlap = calculate_tool_margin(shape, tool, displace + roughing_offset, outer_margin)
@@ -114,6 +120,7 @@ def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_co
         tps += tps_finish
     toolpath.findHelicalEntryPoints(tps, tool, shape.boundary, shape.islands, displace)
     geom.set_calculation_progress(expected_size, expected_size)
+    contour_parallel_cache[key] = tps
     return tps
 
 class AxisParallelRow(object):
