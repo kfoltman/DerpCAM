@@ -5,7 +5,7 @@ from . import shapes, toolpath, milling_tool
 import math, threading
 import pyclipr
 from shapely.geometry import Polygon, GeometryCollection, MultiPolygon, LinearRing, LineString, Point, MultiLineString
-from shapely.ops import nearest_points
+from shapely.ops import nearest_points, substring
 
 def calc_contour(shape, tool, outside=True, displace=0, subtract=None):
     dist = (0.5 * tool.diameter + displace)
@@ -450,7 +450,20 @@ def add_finishing_outlines(tps, polygon, tool, from_outside, safe_entry):
             add_finishing_outlines(tps, geom, tool, from_outside, safe_entry)
         return
     if not from_outside:
-        add_toolpath_to_finish_pass(tps, linestring2path(polygon.exterior, tool.climb), tool, safe_entry)
+        last_pt = Point(*tps[-1].path.nodes[-1].seg_end().as_tuple())
+        nearest = nearest_points(last_pt, polygon.exterior)
+        added = False
+        if nearest:
+            nearest_dist = nearest[1].distance(last_pt)
+            if nearest_dist <= tool.diameter * tool.stepover:
+                t = polygon.exterior.project(nearest[1])
+                exterior1 = substring(polygon.exterior, start_dist=t, end_dist=polygon.exterior.length)
+                exterior2 = substring(polygon.exterior, start_dist=0, end_dist=t)
+                tps[-1].path.nodes += linestring2path(exterior1, tool.climb).nodes
+                tps[-1].path.nodes += linestring2path(exterior2, tool.climb).nodes
+                added = True
+        if not added:
+            add_toolpath_to_finish_pass(tps, linestring2path(polygon.exterior, tool.climb), tool, safe_entry)
     for h in polygon.interiors:
         add_toolpath_to_finish_pass(tps, linestring2path(h, not tool.climb), tool, safe_entry)
 

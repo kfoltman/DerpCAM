@@ -141,6 +141,8 @@ class PathPoint(PathNode):
         if len(t) != 2:
             raise ValueError("Invalid number of data items in a point record")
         return PathPoint(t[0], t[1])
+    def as_tuple(self):
+        return (self.x, self.y)
     def translated(self, dx, dy):
         return PathPoint(self.x + dx, self.y + dy)
     def rotated(self, ox, oy, rotation):
