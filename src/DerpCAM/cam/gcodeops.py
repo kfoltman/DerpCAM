@@ -805,20 +805,6 @@ class ThreadMill(UntabbedOperation):
         else:
             gcode.rapid(x=self.x, y=self.y)
 
-def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
-    draft = tan(draft_angle_deg * pi / 180)
-    height = props.start_depth - props.depth
-    assert height > 0
-    z = props.start_depth
-    cut_so_far = 0
-    nlayer = 0
-    while z > props.depth:
-        this_layer = min(layer_thickness, height - cut_so_far)
-        end_z = z - this_layer
-        func(z, end_z, cut_so_far * draft)
-        z = end_z
-        cut_so_far += this_layer
-
 class Operations(object):
     def __init__(self, machine_params, tool=None, props=None, thickness=None):
         self.machine_params = machine_params
