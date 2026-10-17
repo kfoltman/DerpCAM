@@ -173,6 +173,7 @@ class OperationTreeItem(CAMTreeItem):
     prop_roughing_offset = FloatDistEditableProperty("Roughing offset", "roughing_offset", Format.coord, unit="mm", min=0, max=20, allow_none=True)
     prop_stepover = FloatDistEditableProperty("Stepover", "stepover", Format.percent, unit="%", min=1, max=100, allow_none=True)
     prop_thread_pitch = FloatDistEditableProperty("Thread pitch", "thread_pitch", Format.thread_pitch, unit="mm", min=0.01, max=10, allow_none=True)
+    prop_thread_type = EnumEditableProperty("Thread type", "thread_type", inventory.ThreadType, allow_none=True)
     prop_extra_width = FloatDistEditableProperty("Extra width", "extra_width", Format.percent, unit="%", min=0, max=100, allow_none=True)
     prop_trc_rate = FloatDistEditableProperty("Trochoid: step", "trc_rate", Format.percent, unit="%", min=0, max=200, allow_none=True)
     prop_direction = EnumEditableProperty("Direction", "direction", inventory.MillDirection, allow_none=True, none_value="(use preset value)")
@@ -216,6 +217,7 @@ class OperationTreeItem(CAMTreeItem):
         self.pattern_angle = 45
         self.pattern_scale = 100
         self.thread_pitch = None
+        self.thread_type = None
         self.islands = set()
         self.wall_profile = None
         self.dogbones = cam.dogbone.DogboneMode.DISABLED
@@ -281,7 +283,7 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if OperationType.is_threading(self.operation) and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode', 'doc']:
             return False
-        if not OperationType.is_threading(self.operation) and name in ['thread_pitch']:
+        if not OperationType.is_threading(self.operation) and name in ['thread_pitch', 'thread_type']:
             return False
         if self.operation != OperationType.INTERPOLATED_HOLE and name in ['hole_strategy']:
             return False
@@ -345,7 +347,8 @@ class OperationTreeItem(CAMTreeItem):
             self.prop_direction,
             self.prop_doc, self.prop_hfeed, self.prop_vfeed,
             self.prop_offset, self.prop_roughing_offset,
-            self.prop_stepover, self.prop_thread_pitch, self.prop_min_eh_diameter, self.prop_max_eh_diameter, self.prop_entry_mode,
+            self.prop_stepover, self.prop_thread_pitch, self.prop_thread_type,
+            self.prop_min_eh_diameter, self.prop_max_eh_diameter, self.prop_entry_mode,
             self.prop_trc_rate, self.prop_pattern_type, self.prop_pattern_angle, self.prop_pattern_scale, self.prop_rpm,
             self.prop_coolant_mode]
     def setPropertyValue(self, name, value):
@@ -422,8 +425,12 @@ class OperationTreeItem(CAMTreeItem):
                     return f"Oversize Drill {self.cutter.diameter:0.1f}mm" if self.cutter else ""
             return OperationType.toString(self.operation) + (f" {self.cutter.diameter:0.1f}mm" if self.cutter else "")
         if OperationType.is_threading(self.operation):
-            pitch = self.thread_pitch or self.threadPitch()
+            pda = PresetDerivedAttributes(self, addError=lambda error: errors.append(error))
+            pitch = pda.thread_pitch
+            ttype = pda.thread_type
             opStr = OperationType.toString(self.operation)
+            if ttype == inventory.ThreadType.LH:
+                opStr = opStr.replace("thread", "LH thread")
             if pitch is not None and pitch > self.cutter.max_pitch:
                 opStr = opStr.replace("thread", "pre-thread")
             pitch = "?" if pitch is None else Format.thread_pitch(pitch, brief=True)
@@ -556,9 +563,9 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.PATTERN_FILL:
             return lambda: parent_cam.pattern_fill(shape, self.patternData())
         elif self.operation == OperationType.INSIDE_THREAD:
-            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch(), False, False)
+            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, pda.thread_pitch, False, pda.thread_type)
         elif self.operation == OperationType.OUTSIDE_THREAD:
-            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch(), True, False)
+            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, pda.thread_pitch, True, pda.thread_type)
         raise ValueError("Unsupported operation")
     DEFAULT_METRIC_PITCHES = {
         1.6 : 0.35,

@@ -233,6 +233,14 @@ class CoolantMode(EnumClass):
         (MIST, "Mist coolant"),
     ]
 
+class ThreadType(EnumClass):
+    RH = 0
+    LH = 1
+    descriptions = [
+        (RH, "Right hand"),
+        (LH, "Left hand"),
+    ]
+
 class EntryMode(EnumClass):
     PREFER_RAMP = 1
     PREFER_HELIX = 2
@@ -385,18 +393,26 @@ class DrillBitCutter(CutterBase):
         return f"{Format.cutter_dia(self.diameter)} {self.material.name} drill bit" + (f", L={Format.cutter_length(self.length)}" if self.length is not None else "")
     
 class ThreadMillPreset(PresetBase):
-    properties = [ 'rpm', 'vfeed', 'stepover', 'coolant_mode', IdRefProperty('toolbit') ]
+    properties = [ 'rpm', 'vfeed', 'stepover', 'coolant_mode', 'thread_pitch', 'thread_type', IdRefProperty('toolbit') ]
     @classmethod
-    def new(klass, id, name, toolbit, rpm, vfeed, stepover, coolant_mode):
+    def new(klass, id, name, toolbit, rpm, vfeed, stepover, coolant_mode, thread_pitch, thread_type):
         res = klass(id, name)
         res.toolbit = toolbit
         res.rpm = rpm
         res.vfeed = vfeed
         res.stepover = stepover
         res.coolant_mode = coolant_mode
+        res.thread_pitch = thread_pitch
+        res.thread_type = thread_type
         return res
     def description_only(self):
         res = []
+        if self.thread_type == ThreadType.LH:
+            res.append(f"Left-hand")
+        if self.thread_pitch is not None:
+            res.append(f"{Format.thread_pitch(self.thread_pitch)}")
+        else:
+            res.append("no pitch")
         if self.vfeed:
             res.append(f"f\u2193{Format.feed(self.vfeed, brief=True)}")
         if self.stepover:
@@ -417,8 +433,8 @@ class ThreadMillCutter(CutterBase):
         res.max_pitch = max_pitch
         res.thread_angle = thread_angle or 60
         return res
-    def addPreset(self, id, name, rpm, vfeed, stepover, coolant_mode):
-        self.presets.append(ThreadMillPreset.new(id, name, self, rpm, vfeed, stepover, coolant_mode))
+    def addPreset(self, id, name, rpm, vfeed, stepover, coolant_mode, thread_pitch, thread_type):
+        self.presets.append(ThreadMillPreset.new(id, name, self, rpm, vfeed, stepover, coolant_mode, thread_pitch, thread_type))
         return self
     def description_only(self):
         if self.min_pitch == self.max_pitch:

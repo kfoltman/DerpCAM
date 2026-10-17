@@ -45,6 +45,8 @@ class PresetDerivedAttributes(object):
     attrs_all = attrs_common + attrs_endmill
     attrs_thread_only = [
         PresetDerivedAttributeItem('vfeed'),
+        PresetDerivedAttributeItem('thread_pitch'),
+        PresetDerivedAttributeItem('thread_type', def_value=inventory.ThreadType.RH),
     ]
     attrs_thread = attrs_thread_only + [
         PresetDerivedAttributeItem('rpm'),
@@ -106,6 +108,10 @@ class PresetDerivedAttributes(object):
                             self.vfeed = st.vfeed
                         if self.stepover is None:
                             self.stepover = st.stepover * 100
+                        if self.thread_pitch is None:
+                            self.thread_pitch = operation.threadPitch()
+                        if self.thread_type is None:
+                            self.thread_type = inventory.ThreadType.RH
             except ValueError as e:
                 if addError:
                     addError(str(e))
@@ -315,6 +321,8 @@ class ToolPresetTreeItem(CAMTreeItem):
     prop_min_eh_diameter = FloatDistEditableProperty("Entry helix min %dia", "min_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_max_eh_diameter = FloatDistEditableProperty("Entry helix max %dia", "max_eh_diameter", format=Format.percent, unit='%', min=0, max=100, allow_none=True)
     prop_entry_mode = EnumEditableProperty("Entry mode", "entry_mode", inventory.EntryMode, allow_none=True)
+    prop_thread_pitch = FloatDistEditableProperty("Thread pitch", "thread_pitch", Format.thread_pitch, unit="mm", min=0.01, max=10, allow_none=True)
+    prop_thread_type = EnumEditableProperty("Thread type", "thread_type", inventory.ThreadType, allow_none=True)
     
     props_percent = set(['stepover', 'extra_width', 'trc_rate', 'min_eh_diameter', 'max_eh_diameter'])
 
@@ -360,7 +368,7 @@ class ToolPresetTreeItem(CAMTreeItem):
         return [klass.prop_name, klass.prop_doc, klass.prop_vfeed, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode]
     @classmethod
     def properties_threadmill(klass):
-        return [klass.prop_name, klass.prop_vfeed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode]
+        return [klass.prop_name, klass.prop_vfeed, klass.prop_stepover, klass.prop_rpm, klass.prop_surf_speed, klass.prop_chipload, klass.prop_coolant_mode, klass.prop_thread_pitch, klass.prop_thread_type]
     def getDefaultPropertyValue(self, name):
         if name != 'surf_speed' and name != 'chipload':
             attr = PresetDerivedAttributes.attrs[self.inventory_preset.toolbit.__class__][name]
