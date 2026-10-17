@@ -410,7 +410,7 @@ class Toolpath(object):
             if not use_clipper_for_circles:
                 subjects.append(PtsToInts(circle(c.cx, c.cy, c.r + diameter / 2), resolution))
             else:
-                subjects += run_clipper_offset(PtsToInts([PathPoint(c.cx, c.cy)]), False, (c.r + diameter / 2), joined=True)
+                subjects += run_clipper_offset(PtsToInts([PathPoint(c.cx, c.cy)]), False, (c.r + diameter / 2) / GeometrySettings.RESOLUTION, joined=True)
         subjects2 = []
         grouping = max(50, int(sqrt(len(subjects))))
         for i in range(0, len(subjects), grouping):
