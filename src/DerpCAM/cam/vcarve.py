@@ -20,9 +20,10 @@ class CarveGraph:
         with pyvlock:
             voronoi = hsm_nibble.voronoi_centers.VoronoiCenters(polygon, preserve_edge=True)
         self.voronoi = voronoi
-        self.edges = voronoi.edges # int -> LineString
-        self.v2e = voronoi.vertex_to_edges # Vertex -> List[int]
-        self.e2v = voronoi.edge_to_vertex # int -> (Vertex, Vertex)
+        graph = getattr(voronoi, 'graph', voronoi)
+        self.edges = graph.edges # int -> LineString
+        self.v2e = graph.vertex_to_edges # Vertex -> List[int]
+        self.e2v = graph.edge_to_vertex # int -> (Vertex, Vertex)
         self.edge2maxdia = {}
         self.point2dia = {}
         self.overall_maxdia = 0
