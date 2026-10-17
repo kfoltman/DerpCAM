@@ -83,7 +83,7 @@ contour_parallel_cache = {}
 def contour_parallel(shape, tool, displace=0, roughing_offset=0, finish_outer_contour=True, outer_margin=0):
     if not shape.closed:
         raise ValueError("Cannot mill pockets of open polylines")
-    key = (repr(shape.boundary), "|".join(repr(i) for i in shape.islands), tool.diameter, tool.climb, displace, roughing_offset, finish_outer_contour, outer_margin, geom.settingsCacheKey())
+    key = (repr(shape.boundary), "|".join(repr(i) for i in shape.islands), tool.diameter, tool.stepover, tool.climb, displace, roughing_offset, finish_outer_contour, outer_margin, geom.settingsCacheKey())
     tps = contour_parallel_cache.get(key)
     if tps:
         return tps
@@ -459,8 +459,7 @@ def add_finishing_outlines(tps, polygon, tool, from_outside, safe_entry):
                 t = polygon.exterior.project(nearest[1])
                 exterior1 = substring(polygon.exterior, start_dist=t, end_dist=polygon.exterior.length)
                 exterior2 = substring(polygon.exterior, start_dist=0, end_dist=t)
-                tps[-1].path.nodes += linestring2path(exterior1, tool.climb).nodes
-                tps[-1].path.nodes += linestring2path(exterior2, tool.climb).nodes
+                tps[-1].path.nodes += linestring2path(LineString(exterior1.coords[:] + exterior2.coords[:]), tool.climb).nodes
                 added = True
         if not added:
             add_toolpath_to_finish_pass(tps, linestring2path(polygon.exterior, tool.climb), tool, safe_entry)
