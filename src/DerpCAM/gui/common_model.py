@@ -213,7 +213,7 @@ class FillType(EnumClass):
 def cutterTypesForOperationType(operationType):
     if OperationType.is_threading(operationType):
         return inventory.ThreadMillCutter
-    elif OperationType.is_threading(operationType):
+    elif OperationType.is_drilling(operationType):
         return (inventory.DrillBitCutter, inventory.EndMillCutter)
     else:
         return inventory.EndMillCutter

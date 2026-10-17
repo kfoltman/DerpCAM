@@ -659,7 +659,7 @@ class OpTypeTest(unittest.TestCase):
             cutter_types = gui.model.cutterTypesForOperationType(id)
             if name == 'Drill':
                 assert cutter_types == (gui.inventory.DrillBitCutter, gui.inventory.EndMillCutter)
-            elif name == 'Internal thread':
+            elif name == 'Internal thread' or name == 'External thread':
                 assert cutter_types == gui.inventory.ThreadMillCutter
             else:
                 assert cutter_types == gui.inventory.EndMillCutter
