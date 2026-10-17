@@ -710,7 +710,7 @@ class HelicalDrillFullDepth(HelicalDrill):
         gcode.rapid(z=self.machine_params.safe_z)
 
 class ThreadMill(UntabbedOperation):
-    def __init__(self, x, y, d, pitch, tool, machine_params, props):
+    def __init__(self, x, y, d, pitch, external, left_handed, tool, machine_params, props):
         if not isinstance(tool, DerpCAM.cam.milling_tool.ThreadCutter):
             raise ValueError("Thread cutter required")
         if tool.min_pitch == tool.max_pitch:
@@ -725,19 +725,37 @@ class ThreadMill(UntabbedOperation):
         self.y = y
         self.d = d
         self.pitch = pitch
+        self.external = external
+        self.left_handed = left_handed
         self.minor_dia = d - pitch
+        # This probably needs to be settable
+        self.ext_thread_safety = 0.1
         # If pitch is greater than maximum, only pre-thread for further tapping etc. - only go as deep as the cutter allows, do not touch the full major dia
-        self.d_corr = min(self.d, self.minor_dia + tool.max_pitch)
-        if self.minor_dia <= tool.relief_diameter:
+        if external:
+            self.d_corr = max(self.minor_dia, self.d - tool.max_pitch)
+        else:
+            self.d_corr = min(self.d, self.minor_dia + tool.max_pitch)
+        if not external and self.minor_dia <= tool.relief_diameter:
             raise ValueError(f"Thread minor diameter ({Format.coord(self.minor_dia)}) smaller than the cutter relief diameter ({Format.cutter_dia(tool.relief_diameter)})")
         shape = shapes.Shape.circle(x, y, r=0.5*d)
         UntabbedOperation.__init__(self, shape, tool, machine_params, props)
     def diameters(self):
         res = []
-        d = self.minor_dia
-        while d < self.d_corr:
-            d = min(self.d_corr, d + self.pitch * self.tool.stepover)
-            res.append(d - self.tool.diameter)
+        # d = diameter of the circles made by the tip, res = diameters of the circle
+        # made by the cutter, i.e. shifted by tool radius on each side
+        # XXXKF, this really needs to take into account the axial engagement too, at least
+        # if the cutting forces/MRR need to be equalised between passes. In other words,
+        # needs to be based on the area of the tip inside the cut, not only linear depth.
+        if self.external:
+            d = self.d
+            while d > self.minor_dia:
+                d = max(self.d_corr, d - self.pitch * self.tool.stepover)
+                res.append(d + self.tool.diameter)
+        else:
+            d = self.minor_dia
+            while d < self.d_corr:
+                d = min(self.d_corr, d + self.pitch * self.tool.stepover)
+                res.append(d - self.tool.diameter)
         return res
     def build_paths(self, margin):
         paths = []
@@ -770,14 +788,22 @@ class ThreadMill(UntabbedOperation):
             istart = -r * cos(angle)
             jstart = -r * sin(angle)
             nextz = max(curz - doc, self.props.depth)
-            angle = start_angle + 2 * pi * (startz - nextz) / self.pitch
+            angle = start_angle + 2 * pi * (startz - nextz) / self.pitch * (-1 if self.left_handed else +1)
             iend = r * cos(angle)
             jend = r * sin(angle)
-            # XXXKF allow left-handed threads here
-            gcode.arc_cw(x=self.x + iend, y=self.y + jend, i=istart, j=jstart, z=nextz)
+            # XXXKF LH threads are untested, not wired to the UI
+            if self.left_handed:
+                gcode.arc_ccw(x=self.x + iend, y=self.y + jend, i=istart, j=jstart, z=nextz)
+            else:
+                gcode.arc_cw(x=self.x + iend, y=self.y + jend, i=istart, j=jstart, z=nextz)
             curz = nextz
         gcode.section_info("End helix")
-        gcode.rapid(x=self.x, y=self.y)
+        if self.external:
+            r = (self.d + self.tool.diameter) / 2 + self.ext_thread_safety
+            # It needs to finish at the same angle as the thread, or it's going to cut the thread across... or worse.
+            gcode.rapid(x=self.x + r * cos(angle), y=self.y + r * sin(angle))
+        else:
+            gcode.rapid(x=self.x, y=self.y)
 
 def makeWithDraft(func, shape, draft_angle_deg, layer_thickness, props):
     draft = tan(draft_angle_deg * pi / 180)
@@ -854,8 +880,8 @@ class Operations(object):
         self.add(HelicalDrill(x, y, d, self.tool, self.machine_params, props or self.props))
     def helical_drill_full_depth(self, x, y, d, props=None):
         self.add(HelicalDrillFullDepth(x, y, d, self.tool, self.machine_params, props or self.props))
-    def thread_mill(self, x, y, d, pitch, props=None):
-        self.add(ThreadMill(x, y, d, pitch, self.tool, self.machine_params, props or self.props))
+    def thread_mill(self, x, y, d, pitch, external, left_handed, props=None):
+        self.add(ThreadMill(x, y, d, pitch, external, left_handed, self.tool, self.machine_params, props or self.props))
     def to_gcode(self):
         gcode = Gcode()
         gcode.reset()

@@ -279,9 +279,9 @@ class OperationTreeItem(CAMTreeItem):
             return False
         if self.operation != OperationType.PATTERN_FILL and self.operation != OperationType.V_CARVE and name in ['pattern_angle', 'pattern_scale', 'pattern_type', 'pattern_x_ofs', 'pattern_y_ofs']:
             return False
-        if self.operation == OperationType.INSIDE_THREAD and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode', 'doc']:
+        if OperationType.is_threading(self.operation) and name in ['hfeed', 'trc_rate', 'direction', 'dogbones', 'offset', 'roughing_offset', 'entry_mode', 'doc']:
             return False
-        if self.operation != OperationType.INSIDE_THREAD and name in ['thread_pitch']:
+        if not OperationType.is_threading(self.operation) and name in ['thread_pitch']:
             return False
         if self.operation != OperationType.INTERPOLATED_HOLE and name in ['hole_strategy']:
             return False
@@ -293,7 +293,7 @@ class OperationTreeItem(CAMTreeItem):
             if self.cutter is not None and isinstance(self.cutter, inventory.DrillBitCutter):
                 return [OperationType.DRILLED_HOLE]
             if self.cutter is not None and isinstance(self.cutter, inventory.ThreadMillCutter):
-                return [OperationType.INSIDE_THREAD] if isinstance(self.orig_shape, DrawingCircleTreeItem) else []
+                return [OperationType.INSIDE_THREAD, OperationType.OUTSIDE_THREAD] if isinstance(self.orig_shape, DrawingCircleTreeItem) else []
             if isinstance(self.orig_shape, DrawingCircleTreeItem):
                 return [OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.SIDE_MILL, OperationType.ENGRAVE, OperationType.INTERPOLATED_HOLE, OperationType.DRILLED_HOLE, OperationType.FACE, OperationType.PATTERN_FILL]
             if isinstance(self.orig_shape, DrawingPolylineTreeItem) or isinstance(self.orig_shape, DrawingTextTreeItem):
@@ -421,11 +421,11 @@ class OperationTreeItem(CAMTreeItem):
                 if self.orig_shape and self.cutter.diameter > 2 * self.orig_shape.r + 0.2:
                     return f"Oversize Drill {self.cutter.diameter:0.1f}mm" if self.cutter else ""
             return OperationType.toString(self.operation) + (f" {self.cutter.diameter:0.1f}mm" if self.cutter else "")
-        if self.operation == OperationType.INSIDE_THREAD:
+        if OperationType.is_threading(self.operation):
             pitch = self.thread_pitch or self.threadPitch()
             opStr = OperationType.toString(self.operation)
             if pitch is not None and pitch > self.cutter.max_pitch:
-                opStr = "Internal pre-thread"
+                opStr = opStr.replace("thread", "pre-thread")
             pitch = "?" if pitch is None else Format.thread_pitch(pitch, brief=True)
             return opStr + (f" {Format.coord(2 * self.orig_shape.r, brief=True)} x {pitch}" if self.cutter else "")
         return OperationType.toString(self.operation)
@@ -556,7 +556,9 @@ class OperationTreeItem(CAMTreeItem):
         elif self.operation == OperationType.PATTERN_FILL:
             return lambda: parent_cam.pattern_fill(shape, self.patternData())
         elif self.operation == OperationType.INSIDE_THREAD:
-            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch())
+            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch(), False, False)
+        elif self.operation == OperationType.OUTSIDE_THREAD:
+            return lambda: parent_cam.thread_mill(self.orig_shape.centre.x + translation[0], self.orig_shape.centre.y + translation[1], 2 * self.orig_shape.r, self.threadPitch(), True, False)
         raise ValueError("Unsupported operation")
     DEFAULT_METRIC_PITCHES = {
         1.6 : 0.35,

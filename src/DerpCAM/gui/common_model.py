@@ -162,6 +162,7 @@ class OperationType(EnumClass):
     V_CARVE = 10
     PATTERN_FILL = 11
     INSIDE_THREAD = 12
+    OUTSIDE_THREAD = 13
     descriptions = [
         (OUTSIDE_CONTOUR, "Outside contour"),
         (INSIDE_CONTOUR, "Inside contour"),
@@ -175,6 +176,7 @@ class OperationType(EnumClass):
         (V_CARVE, "V-Carve"),
         (PATTERN_FILL, "Pattern fill"),
         (INSIDE_THREAD, "Internal thread"),
+        (OUTSIDE_THREAD, "External thread"),
     ]
     @staticmethod
     def has_islands(value):
@@ -185,6 +187,12 @@ class OperationType(EnumClass):
     @staticmethod
     def has_entry_helix(value):
         return value in (OperationType.OUTSIDE_CONTOUR, OperationType.INSIDE_CONTOUR, OperationType.POCKET, OperationType.REFINE, OperationType.FACE, OperationType.INTERPOLATED_HOLE)
+    @staticmethod
+    def is_threading(value):
+        return value in (OperationType.INSIDE_THREAD, OperationType.OUTSIDE_THREAD)
+    @staticmethod
+    def is_drilling(value):
+        return value == OperationType.DRILLED_HOLE
 
 class FillType(EnumClass):
     LINES = 1
@@ -203,9 +211,9 @@ class FillType(EnumClass):
     ]
 
 def cutterTypesForOperationType(operationType):
-    if operationType == OperationType.INSIDE_THREAD:
+    if OperationType.is_threading(operationType):
         return inventory.ThreadMillCutter
-    elif operationType == OperationType.DRILLED_HOLE:
+    elif OperationType.is_threading(operationType):
         return (inventory.DrillBitCutter, inventory.EndMillCutter)
     else:
         return inventory.EndMillCutter
