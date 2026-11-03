@@ -1073,13 +1073,16 @@ class DXFExporter(object):
             if isinstance(node, geom.PathPoint):
                 points.append((node.x, node.y, 0))
             else:
-                print ("bulge", )
                 r = node.c.r
-                mx = (node.p1.x + node.p2.x) / 2
-                my = (node.p1.y + node.p2.y) / 2
-                nr = node.c.distxy(mx, my)
-                bulge = (r - nr) / r
-                points[-1] = (points[-1][0], points[-1][1], bulge)
+                if r and node.p1.dist(node.p2):
+                    mx = (node.p1.x + node.p2.x) / 2
+                    my = (node.p1.y + node.p2.y) / 2
+                    midp = node.at_fraction(0.5)
+                    nr = midp.dist(geom.PathPoint(mx, my))
+                    bulge = nr / node.p1.dist(geom.PathPoint(mx, my))
+                    if node.sspan < 0:
+                        bulge = -bulge
+                    points[-1] = (points[-1][0], points[-1][1], bulge)
                 points.append((node.p2.x, node.p2.y, 0))
         if item.closed:
             points.append((item.points[0].x, item.points[0].y, 0))
